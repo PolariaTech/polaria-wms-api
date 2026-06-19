@@ -3,6 +3,7 @@
 /node_modules
 /build
 /src/generated
+tsconfig.build.tsbuildinfo
 
 # Logs
 logs

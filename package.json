@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "prisma:generate": "prisma generate",
-    "build": "prisma generate && nest build",
+    "build": "prisma generate && nest build && tsc -p tsconfig.prisma-client.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
