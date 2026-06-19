@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   NotFoundException,
   UnauthorizedException,
@@ -6,9 +7,11 @@ import {
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthService } from '../../core/auth/supabase-auth.service';
+import { AUTH_CLIENT } from '../../shared/constants/auth-client.constants';
 import { WmsRol } from '../../generated/prisma/client';
 import { AuthService } from './auth.service';
 import { UsuarioRepository } from './infrastructure/usuario.repository';
+import { MateoHandoffService } from './mateo-handoff.service';
 
 const mockConfigurador = {
   idUsuario: 'usr-config',
@@ -56,6 +59,7 @@ describe('AuthService', () => {
   let service: AuthService;
   let usuarioRepository: jest.Mocked<UsuarioRepository>;
   let supabaseAuth: jest.Mocked<SupabaseAuthService>;
+  let mateoHandoffService: jest.Mocked<MateoHandoffService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -65,6 +69,8 @@ describe('AuthService', () => {
           provide: UsuarioRepository,
           useValue: {
             findActiveByIdentificador: jest.fn(),
+            findActiveByUsername: jest.fn(),
+            findActiveByCorreo: jest.fn(),
             findActiveByIdAuth: jest.fn(),
             isConfigurador: jest.fn((idRol: string) => idRol === WmsRol.configurador),
           },
@@ -73,8 +79,16 @@ describe('AuthService', () => {
           provide: SupabaseAuthService,
           useValue: {
             signInWithPassword: jest.fn(),
+            createSessionForEmail: jest.fn(),
             getUserFromToken: jest.fn(),
             signOut: jest.fn(),
+          },
+        },
+        {
+          provide: MateoHandoffService,
+          useValue: {
+            generateCode: jest.fn(),
+            redeemCode: jest.fn(),
           },
         },
       ],
@@ -83,6 +97,7 @@ describe('AuthService', () => {
     service = module.get(AuthService);
     usuarioRepository = module.get(UsuarioRepository);
     supabaseAuth = module.get(SupabaseAuthService);
+    mateoHandoffService = module.get(MateoHandoffService);
   });
 
   describe('prelogin', () => {
@@ -121,6 +136,66 @@ describe('AuthService', () => {
 
       expect(result.flow).toBe('tenant');
       expect(result.userPreview.codigoEmpresa).toBe('EMP001');
+    });
+
+    it('client=wms rechaza username sin @', async () => {
+      await expect(
+        service.prelogin(
+          { identificador: 'admin.cuenta' },
+          AUTH_CLIENT.WMS,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(usuarioRepository.findActiveByCorreo).not.toHaveBeenCalled();
+    });
+
+    it('client=wms busca por correo', async () => {
+      usuarioRepository.findActiveByCorreo.mockResolvedValue(
+        mockTenantUser as never,
+      );
+
+      const result = await service.prelogin(
+        {
+          identificador: 'admin@empresa.com',
+          codigoEmpresa: 'EMP001',
+        },
+        AUTH_CLIENT.WMS,
+      );
+
+      expect(usuarioRepository.findActiveByCorreo).toHaveBeenCalledWith(
+        'admin@empresa.com',
+      );
+      expect(result.flow).toBe('tenant');
+    });
+
+    it('client=mateo rechaza correo como identificador', async () => {
+      await expect(
+        service.prelogin(
+          { identificador: 'admin@empresa.com', codigoEmpresa: 'EMP001' },
+          AUTH_CLIENT.MATEO,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(usuarioRepository.findActiveByUsername).not.toHaveBeenCalled();
+    });
+
+    it('client=mateo busca por username', async () => {
+      usuarioRepository.findActiveByUsername.mockResolvedValue(
+        mockTenantUser as never,
+      );
+
+      const result = await service.prelogin(
+        {
+          identificador: 'admin.cuenta',
+          codigoEmpresa: 'EMP001',
+        },
+        AUTH_CLIENT.MATEO,
+      );
+
+      expect(usuarioRepository.findActiveByUsername).toHaveBeenCalledWith(
+        'admin.cuenta',
+      );
+      expect(result.flow).toBe('tenant');
     });
 
     it('lanza 404 si usuario no existe', async () => {
@@ -215,6 +290,78 @@ describe('AuthService', () => {
           password: 'wrong',
         }),
       ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('createMateoHandoff', () => {
+    it('genera código para usuario activo', async () => {
+      usuarioRepository.findActiveByIdAuth.mockResolvedValue(
+        mockTenantUser as never,
+      );
+      mateoHandoffService.generateCode.mockReturnValue({
+        code: 'handoff-code',
+        expiresIn: 60,
+      });
+
+      const result = await service.createMateoHandoff('auth-tenant');
+
+      expect(mateoHandoffService.generateCode).toHaveBeenCalledWith(
+        'auth-tenant',
+      );
+      expect(result).toEqual({ code: 'handoff-code', expiresIn: 60 });
+    });
+
+    it('lanza 404 si usuario no existe', async () => {
+      usuarioRepository.findActiveByIdAuth.mockResolvedValue(null);
+
+      await expect(service.createMateoHandoff('auth-unknown')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('exchangeMateoCode', () => {
+    it('canjea código y retorna tokens + usuario', async () => {
+      mateoHandoffService.redeemCode.mockReturnValue('auth-tenant');
+      usuarioRepository.findActiveByIdAuth.mockResolvedValue(
+        mockTenantUser as never,
+      );
+      supabaseAuth.createSessionForEmail.mockResolvedValue({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresIn: 3600,
+        tokenType: 'bearer',
+      });
+
+      const result = await service.exchangeMateoCode('valid-code');
+
+      expect(supabaseAuth.createSessionForEmail).toHaveBeenCalledWith(
+        'admin@empresa.com',
+      );
+      expect(result).toEqual({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        user: {
+          idUsuario: 'usr-tenant',
+          username: 'admin.cuenta',
+          nombre: 'Admin Cuenta',
+          correo: 'admin@empresa.com',
+          nombreRol: 'Administrador de cuenta',
+          codigoEmpresa: 'EMP001',
+          codigoCuenta: null,
+          scope: 'tenant',
+        },
+      });
+    });
+
+    it('propaga 401 si el código es inválido', async () => {
+      mateoHandoffService.redeemCode.mockImplementation(() => {
+        throw new UnauthorizedException('Código inválido o expirado');
+      });
+
+      await expect(service.exchangeMateoCode('bad-code')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 

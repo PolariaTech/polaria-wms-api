@@ -12,6 +12,12 @@ export type UsuarioWithRelations = Awaited<
 export class UsuarioRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly activeInclude = {
+    rol: true,
+    empresa: true,
+    cuenta: true,
+  } as const;
+
   findActiveByIdentificador(identificador: string) {
     const normalized = identificador.trim();
 
@@ -20,11 +26,27 @@ export class UsuarioRepository {
         estaActivo: true,
         OR: [{ username: normalized }, { correo: normalized }],
       },
-      include: {
-        rol: true,
-        empresa: true,
-        cuenta: true,
+      include: this.activeInclude,
+    });
+  }
+
+  findActiveByUsername(username: string) {
+    return this.prisma.usuario.findFirst({
+      where: {
+        estaActivo: true,
+        username: username.trim(),
       },
+      include: this.activeInclude,
+    });
+  }
+
+  findActiveByCorreo(correo: string) {
+    return this.prisma.usuario.findFirst({
+      where: {
+        estaActivo: true,
+        correo: correo.trim(),
+      },
+      include: this.activeInclude,
     });
   }
 

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiHeader,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
@@ -18,6 +19,9 @@ import {
 } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
 import { SupabaseAuthGuard } from '../../core/auth/supabase-auth.guard';
+import { AUTH_CLIENT_HEADER } from '../../shared/constants/auth-client.constants';
+import type { AuthClient } from '../../shared/constants/auth-client.constants';
+import { AuthClientParam } from '../../shared/decorators/auth-client.decorator';
 import {
   CurrentAccessToken,
   CurrentSupabaseUser,
@@ -29,8 +33,15 @@ import {
   PreloginResponseDto,
 } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { MateoExchangeDto } from './dto/mateo-exchange.dto';
 import { PreloginDto } from './dto/prelogin.dto';
-import type { LoginResponse, MeResponse, PreloginResponse } from './interfaces/auth.interfaces';
+import type {
+  LoginResponse,
+  MateoExchangeResponse,
+  MateoHandoffResponse,
+  MeResponse,
+  PreloginResponse,
+} from './interfaces/auth.interfaces';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -42,32 +53,106 @@ export class AuthController {
   @ApiOperation({
     summary: 'Validar identidad y contexto',
     description:
-      'Valida identidad y contexto (platform/tenant) antes de solicitar contraseña.',
+      'Valida identidad y contexto (platform/tenant) antes de solicitar contrase?a.',
+  })
+  @ApiHeader({
+    name: AUTH_CLIENT_HEADER,
+    required: false,
+    description: 'Cliente de autenticaci?n: wms | mateo',
   })
   @ApiOkResponse({ type: PreloginResponseDto })
-  @ApiResponse({ status: 400, description: 'Body inválido (validación DTO)' })
+  @ApiResponse({ status: 400, description: 'Body inv?lido (validaci?n DTO)' })
   @ApiResponse({ status: 403, description: 'Empresa no coincide o inactiva' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado o inactivo' })
   @ApiResponse({ status: 422, description: 'Tenant sin codigoEmpresa' })
-  prelogin(@Body() dto: PreloginDto): Promise<PreloginResponse> {
-    return this.authService.prelogin(dto);
+  prelogin(
+    @Body() dto: PreloginDto,
+    @AuthClientParam() client: AuthClient | null,
+  ): Promise<PreloginResponse> {
+    return this.authService.prelogin(dto, client);
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Iniciar sesión',
+    summary: 'Iniciar sesi?n',
     description:
       'Autentica con Supabase Auth tras repetir las validaciones de prelogin.',
   })
+  @ApiHeader({
+    name: AUTH_CLIENT_HEADER,
+    required: false,
+    description: 'Cliente de autenticaci?n: wms | mateo',
+  })
   @ApiOkResponse({ type: LoginResponseDto })
-  @ApiResponse({ status: 400, description: 'Body inválido' })
-  @ApiResponse({ status: 401, description: 'Credenciales Supabase inválidas' })
+  @ApiResponse({ status: 400, description: 'Body inv?lido' })
+  @ApiResponse({ status: 401, description: 'Credenciales Supabase inv?lidas' })
   @ApiResponse({ status: 403, description: 'Empresa no coincide o inactiva' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   @ApiResponse({ status: 422, description: 'Tenant sin codigoEmpresa' })
-  login(@Body() dto: LoginDto): Promise<LoginResponse> {
-    return this.authService.login(dto);
+  login(
+    @Body() dto: LoginDto,
+    @AuthClientParam() client: AuthClient | null,
+  ): Promise<LoginResponse> {
+    return this.authService.login(dto, client);
+  }
+
+  @Post('mateo-handoff')
+  @UseGuards(SupabaseAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Generar c?digo SSO para Mateo',
+    description:
+      'Usuario autenticado en WMS obtiene un c?digo de un solo uso (TTL 60s) para entrar a Mateo sin contrase?a.',
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        code: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        expiresIn: 60,
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({ description: 'Token ausente o inv?lido' })
+  createMateoHandoff(
+    @CurrentSupabaseUser() user: User,
+  ): Promise<MateoHandoffResponse> {
+    return this.authService.createMateoHandoff(user.id);
+  }
+
+  @Post('mateo-exchange')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Canjear c?digo SSO de Mateo',
+    description:
+      'Intercambia el c?digo de handoff por tokens Supabase y perfil de usuario.',
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        accessToken: 'eyJ...',
+        refreshToken: 'v1...',
+        user: {
+          idUsuario: 'uuid',
+          username: 'usuario',
+          nombre: 'Nombre',
+          correo: 'user@empresa.com',
+          nombreRol: 'Administrador de cuenta',
+          codigoEmpresa: 'EMP001',
+          codigoCuenta: null,
+          scope: 'tenant',
+        },
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({
+    description: 'C?digo inv?lido, expirado o ya utilizado',
+  })
+  exchangeMateoCode(
+    @Body() dto: MateoExchangeDto,
+  ): Promise<MateoExchangeResponse> {
+    return this.authService.exchangeMateoCode(dto.code);
   }
 
   @Get('me')
@@ -75,11 +160,11 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Perfil del usuario autenticado',
-    description: 'Retorna perfil y contexto de sesión del usuario autenticado.',
+    description: 'Retorna perfil y contexto de sesi?n del usuario autenticado.',
   })
   @ApiOkResponse({ type: MeResponseDto })
   @ApiUnauthorizedResponse({
-    description: 'Token ausente, inválido o expirado',
+    description: 'Token ausente, inv?lido o expirado',
   })
   @ApiResponse({ status: 404, description: 'Usuario inactivo o no vinculado' })
   getMe(@CurrentSupabaseUser() user: User): Promise<MeResponse> {
@@ -91,12 +176,12 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth('access-token')
   @ApiOperation({
-    summary: 'Cerrar sesión',
-    description: 'Invalida la sesión global del usuario en Supabase Auth.',
+    summary: 'Cerrar sesi?n',
+    description: 'Invalida la sesi?n global del usuario en Supabase Auth.',
   })
-  @ApiNoContentResponse({ description: 'Sesión cerrada correctamente' })
+  @ApiNoContentResponse({ description: 'Sesi?n cerrada correctamente' })
   @ApiUnauthorizedResponse({
-    description: 'Token inválido o fallo al cerrar sesión',
+    description: 'Token inv?lido o fallo al cerrar sesi?n',
   })
   async logout(@CurrentAccessToken() accessToken: string): Promise<void> {
     await this.authService.logout(accessToken);

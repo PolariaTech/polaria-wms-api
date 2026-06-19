@@ -55,3 +55,25 @@ export interface ValidatedUserContext {
   flow: AuthFlow;
   scope: AuthScope;
 }
+
+export interface MateoHandoffResponse {
+  code: string;
+  expiresIn: number;
+}
+
+export interface MateoExchangeUser {
+  idUsuario: string;
+  username: string;
+  nombre: string;
+  correo: string;
+  nombreRol: string;
+  codigoEmpresa: string | null;
+  codigoCuenta: string | null;
+  scope: AuthScope;
+}
+
+export interface MateoExchangeResponse {
+  accessToken: string;
+  refreshToken: string;
+  user: MateoExchangeUser;
+}

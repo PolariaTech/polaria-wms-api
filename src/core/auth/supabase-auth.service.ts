@@ -74,4 +74,39 @@ export class SupabaseAuthService {
       throw new UnauthorizedException('No se pudo cerrar la sesión');
     }
   }
+
+  async createSessionForEmail(email: string): Promise<SupabaseSessionTokens> {
+    const { data: linkData, error: linkError } =
+      await this.adminClient.auth.admin.generateLink({
+        type: 'magiclink',
+        email,
+      });
+
+    if (linkError || !linkData?.properties?.hashed_token) {
+      this.logger.warn(
+        `No se pudo generar sesión para ${email}: ${linkError?.message ?? 'sin token'}`,
+      );
+      throw new UnauthorizedException('No se pudo crear la sesión');
+    }
+
+    const { data: sessionData, error: verifyError } =
+      await this.anonClient.auth.verifyOtp({
+        type: 'magiclink',
+        token_hash: linkData.properties.hashed_token,
+      });
+
+    if (verifyError || !sessionData.session) {
+      this.logger.warn(
+        `Verificación OTP fallida para ${email}: ${verifyError?.message ?? 'sin sesión'}`,
+      );
+      throw new UnauthorizedException('No se pudo crear la sesión');
+    }
+
+    return {
+      accessToken: sessionData.session.access_token,
+      refreshToken: sessionData.session.refresh_token,
+      expiresIn: sessionData.session.expires_in ?? 3600,
+      tokenType: 'bearer',
+    };
+  }
 }

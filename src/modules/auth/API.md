@@ -183,8 +183,12 @@ Authorization: Bearer <accessToken>
 |---|---|
 | `SUPABASE_URL` | Cliente Auth |
 | `SUPABASE_ANON_KEY` | `signInWithPassword`, validación JWT |
-| `SUPABASE_SERVICE_ROLE_KEY` | `admin.signOut` global |
+| `SUPABASE_SERVICE_ROLE_KEY` | `admin.signOut` global, `generateLink` (SSO Mateo) |
 | `DATABASE_URL` | Prisma (lookups backend, bypass RLS) |
+| `MATEO_HANDOFF_SECRET` | JWT de handoff SSO WMS → Mateo |
+| `MATEO_ALLOWED_ORIGINS` | CORS para chatbot-mateo (opcional) |
+
+Ver [docs/MATEO-INTEGRATION.md](../../docs/MATEO-INTEGRATION.md) para el contrato completo con Mateo.
 
 ---
 

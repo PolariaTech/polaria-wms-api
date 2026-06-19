@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -7,14 +8,21 @@ import {
 } from '@nestjs/common';
 import { SupabaseAuthService } from '../../core/auth/supabase-auth.service';
 import {
+  AUTH_CLIENT,
+  type AuthClient,
+} from '../../shared/constants/auth-client.constants';
+import {
   AUTH_FLOW,
   AUTH_SCOPE,
   ROL_CONFIGURADOR,
 } from '../../shared/constants/auth.constants';
+import { isValidEmail } from '../../shared/utils/email.util';
 import { LoginDto } from './dto/login.dto';
 import { PreloginDto } from './dto/prelogin.dto';
 import type {
   LoginResponse,
+  MateoExchangeResponse,
+  MateoHandoffResponse,
   MeResponse,
   PreloginResponse,
   SessionContext,
@@ -25,6 +33,7 @@ import {
   UsuarioRepository,
   UsuarioWithRelations,
 } from './infrastructure/usuario.repository';
+import { MateoHandoffService } from './mateo-handoff.service';
 
 @Injectable()
 export class AuthService {
@@ -33,12 +42,17 @@ export class AuthService {
   constructor(
     private readonly usuarioRepository: UsuarioRepository,
     private readonly supabaseAuth: SupabaseAuthService,
+    private readonly mateoHandoffService: MateoHandoffService,
   ) {}
 
-  async prelogin(dto: PreloginDto): Promise<PreloginResponse> {
+  async prelogin(
+    dto: PreloginDto,
+    client: AuthClient | null = null,
+  ): Promise<PreloginResponse> {
     const context = await this.validateUserAccess(
       dto.identificador,
       dto.codigoEmpresa,
+      client,
     );
 
     return {
@@ -49,10 +63,14 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto): Promise<LoginResponse> {
+  async login(
+    dto: LoginDto,
+    client: AuthClient | null = null,
+  ): Promise<LoginResponse> {
     const context = await this.validateUserAccess(
       dto.identificador,
       dto.codigoEmpresa,
+      client,
     );
 
     const tokens = await this.supabaseAuth.signInWithPassword(
@@ -61,12 +79,45 @@ export class AuthService {
     );
 
     this.logger.log(
-      `Login exitoso: usuario=${context.usuario.idUsuario} scope=${context.scope}`,
+      `Login exitoso: usuario=${context.usuario.idUsuario} scope=${context.scope} client=${client ?? 'legacy'}`,
     );
 
     return {
       ...tokens,
       context: this.toSessionContext(context),
+    };
+  }
+
+  async createMateoHandoff(idAuth: string): Promise<MateoHandoffResponse> {
+    const usuario = await this.usuarioRepository.findActiveByIdAuth(idAuth);
+
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado o inactivo');
+    }
+
+    return this.mateoHandoffService.generateCode(idAuth);
+  }
+
+  async exchangeMateoCode(code: string): Promise<MateoExchangeResponse> {
+    const idAuth = this.mateoHandoffService.redeemCode(code);
+    const usuario = await this.usuarioRepository.findActiveByIdAuth(idAuth);
+
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado o inactivo');
+    }
+
+    const tokens = await this.supabaseAuth.createSessionForEmail(
+      usuario.correo,
+    );
+
+    this.logger.log(
+      `Exchange Mateo exitoso: usuario=${usuario.idUsuario}`,
+    );
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: this.toMateoExchangeUser(usuario),
     };
   }
 
@@ -105,13 +156,41 @@ export class AuthService {
     this.logger.log('Sesión cerrada correctamente');
   }
 
+  private async resolveUsuario(
+    identificador: string,
+    client: AuthClient | null,
+  ): Promise<UsuarioWithRelations | null> {
+    const normalized = identificador.trim();
+
+    if (client === AUTH_CLIENT.WMS) {
+      if (!isValidEmail(normalized)) {
+        throw new BadRequestException(
+          'El identificador debe ser un correo electrónico válido',
+        );
+      }
+
+      return this.usuarioRepository.findActiveByCorreo(normalized);
+    }
+
+    if (client === AUTH_CLIENT.MATEO) {
+      if (isValidEmail(normalized)) {
+        throw new BadRequestException(
+          'Mateo requiere nombre de usuario, no correo electrónico',
+        );
+      }
+
+      return this.usuarioRepository.findActiveByUsername(normalized);
+    }
+
+    return this.usuarioRepository.findActiveByIdentificador(normalized);
+  }
+
   private async validateUserAccess(
     identificador: string,
-    codigoEmpresa?: string,
+    codigoEmpresa: string | undefined,
+    client: AuthClient | null = null,
   ): Promise<ValidatedUserContext> {
-    const usuario = await this.usuarioRepository.findActiveByIdentificador(
-      identificador.trim(),
-    );
+    const usuario = await this.resolveUsuario(identificador, client);
 
     if (!usuario) {
       throw new NotFoundException('Usuario no encontrado o inactivo');
@@ -185,6 +264,21 @@ export class AuthService {
       codigoEmpresa: isConfigurador ? null : context.usuario.codigoEmpresa,
       codigoCuenta: isConfigurador ? null : context.usuario.codigoCuenta,
       scope: context.scope,
+    };
+  }
+
+  private toMateoExchangeUser(usuario: UsuarioWithRelations) {
+    const isConfigurador = this.usuarioRepository.isConfigurador(usuario.idRol);
+
+    return {
+      idUsuario: usuario.idUsuario,
+      username: usuario.username,
+      nombre: usuario.nombre,
+      correo: usuario.correo,
+      nombreRol: usuario.rol.nombre,
+      codigoEmpresa: isConfigurador ? null : usuario.codigoEmpresa,
+      codigoCuenta: isConfigurador ? null : usuario.codigoCuenta,
+      scope: isConfigurador ? AUTH_SCOPE.PLATFORM : AUTH_SCOPE.TENANT,
     };
   }
 }
