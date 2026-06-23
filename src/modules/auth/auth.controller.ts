@@ -108,9 +108,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
   @ApiOperation({
-    summary: 'Generar c?digo SSO para Mateo',
+    summary: 'Generar código SSO (WMS ↔ Mateo)',
     description:
-      'Usuario autenticado en WMS obtiene un c?digo JWT de un solo uso (TTL 60s) para entrar a Mateo sin contrase?a. El chatbot canjea el c?digo en POST /auth/mateo-exchange.',
+      'Usuario autenticado (Bearer Supabase, sesión WMS o Mateo) obtiene un código JWT de un solo uso (TTL 60s). El cliente destino lo canjea en POST /auth/mateo-exchange.',
   })
   @ApiOkResponse({ type: MateoHandoffResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token ausente o inv?lido' })
@@ -124,9 +124,9 @@ export class AuthController {
   @Post('mateo-exchange')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Canjear c?digo SSO de Mateo',
+    summary: 'Canjear código SSO (WMS ↔ Mateo)',
     description:
-      'Intercambia el c?digo JWT obtenido en mateo-handoff por tokens Supabase y perfil de usuario. Endpoint p?blico; el c?digo es de un solo uso y expira en 60 segundos.',
+      'Intercambia el código JWT obtenido en mateo-handoff por tokens Supabase y perfil de usuario. Endpoint público; bidireccional (WMS→Mateo o Mateo→WMS). El código es de un solo uso y expira en 60 segundos.',
   })
   @ApiBody({ type: MateoExchangeDto })
   @ApiOkResponse({ type: MateoExchangeResponseDto })

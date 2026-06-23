@@ -311,6 +311,30 @@ describe('AuthService', () => {
       expect(result).toEqual({ code: 'handoff-code', expiresIn: 60 });
     });
 
+    it('genera el mismo handoff para idAuth sin importar cliente de login (wms vs mateo)', async () => {
+      usuarioRepository.findActiveByIdAuth.mockResolvedValue(
+        mockTenantUser as never,
+      );
+      mateoHandoffService.generateCode.mockReturnValue({
+        code: 'handoff-code',
+        expiresIn: 60,
+      });
+
+      const fromWmsSession = await service.createMateoHandoff('auth-tenant');
+      const fromMateoSession = await service.createMateoHandoff('auth-tenant');
+
+      expect(fromWmsSession).toEqual(fromMateoSession);
+      expect(mateoHandoffService.generateCode).toHaveBeenCalledTimes(2);
+      expect(mateoHandoffService.generateCode).toHaveBeenNthCalledWith(
+        1,
+        'auth-tenant',
+      );
+      expect(mateoHandoffService.generateCode).toHaveBeenNthCalledWith(
+        2,
+        'auth-tenant',
+      );
+    });
+
     it('lanza 404 si usuario no existe', async () => {
       usuarioRepository.findActiveByIdAuth.mockResolvedValue(null);
 

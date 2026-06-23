@@ -15,6 +15,8 @@ describe('AuthController (e2e)', () => {
     login: jest.Mock;
     getMe: jest.Mock;
     logout: jest.Mock;
+    createMateoHandoff: jest.Mock;
+    exchangeMateoCode: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -23,6 +25,8 @@ describe('AuthController (e2e)', () => {
       login: jest.fn(),
       getMe: jest.fn(),
       logout: jest.fn(),
+      createMateoHandoff: jest.fn(),
+      exchangeMateoCode: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -152,5 +156,62 @@ describe('AuthController (e2e)', () => {
       .post('/auth/logout')
       .set('Authorization', 'Bearer valid-token')
       .expect(204);
+  });
+
+  it('POST /auth/mateo-handoff responde 200 con Bearer (sesión WMS o Mateo)', async () => {
+    authService.createMateoHandoff.mockResolvedValue({
+      code: 'handoff-jwt',
+      expiresIn: 60,
+    });
+
+    await request(app.getHttpServer())
+      .post('/auth/mateo-handoff')
+      .set('Authorization', 'Bearer mateo-or-wms-token')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.code).toBe('handoff-jwt');
+        expect(res.body.expiresIn).toBe(60);
+      });
+
+    expect(authService.createMateoHandoff).toHaveBeenCalledWith('auth-tenant');
+  });
+
+  it('POST /auth/mateo-handoff responde 401 sin token', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/mateo-handoff')
+      .expect(401);
+  });
+
+  it('POST /auth/mateo-exchange responde 200 con código válido', async () => {
+    authService.exchangeMateoCode.mockResolvedValue({
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      user: {
+        idUsuario: 'usr-tenant',
+        username: 'admin.cuenta',
+        nombre: 'Admin Cuenta',
+        correo: 'admin@empresa.com',
+        nombreRol: 'Administrador de cuenta',
+        codigoEmpresa: 'EMP001',
+        codigoCuenta: null,
+        scope: 'tenant',
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post('/auth/mateo-exchange')
+      .send({ code: 'handoff-jwt' })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.accessToken).toBe('access-token');
+        expect(res.body.user.scope).toBe('tenant');
+      });
+  });
+
+  it('POST /auth/mateo-exchange responde 400 sin code', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/mateo-exchange')
+      .send({})
+      .expect(400);
   });
 });

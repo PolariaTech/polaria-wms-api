@@ -51,6 +51,14 @@ describe('MateoHandoffService', () => {
     expect(() => service.redeemCode(code)).toThrow(UnauthorizedException);
   });
 
+  it('canjea códigos generados para el mismo idAuth (handoff bidireccional)', () => {
+    const wmsOrigin = service.generateCode('auth-tenant');
+    const mateoOrigin = service.generateCode('auth-tenant');
+
+    expect(service.redeemCode(wmsOrigin.code)).toBe('auth-tenant');
+    expect(service.redeemCode(mateoOrigin.code)).toBe('auth-tenant');
+  });
+
   it('rechaza un código inválido', () => {
     expect(() => service.redeemCode('invalid-code')).toThrow(
       UnauthorizedException,
