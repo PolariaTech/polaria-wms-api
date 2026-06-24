@@ -20,7 +20,10 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
-import { SupabaseAuthGuard } from '../../core/auth/supabase-auth.guard';
+import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
+import { TenantGuard } from '../../core/guards/tenant.guard';
+import { TenantCtx } from '../../core/decorators/tenant-context.decorator';
+import type { TenantContext } from '../../core/tenant/tenant-context.interface';
 import { AUTH_CLIENT_HEADER } from '../../shared/constants/auth-client.constants';
 import type { AuthClient } from '../../shared/constants/auth-client.constants';
 import { AuthClientParam } from '../../shared/decorators/auth-client.decorator';
@@ -104,7 +107,7 @@ export class AuthController {
   }
 
   @Post('mateo-handoff')
-  @UseGuards(SupabaseAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard)
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
   @ApiOperation({
@@ -117,6 +120,7 @@ export class AuthController {
   @ApiNotFoundResponse({ description: 'Usuario no encontrado o inactivo' })
   createMateoHandoff(
     @CurrentSupabaseUser() user: User,
+    @TenantCtx() _ctx: TenantContext,
   ): Promise<MateoHandoffResponse> {
     return this.authService.createMateoHandoff(user.id);
   }
@@ -141,7 +145,7 @@ export class AuthController {
   }
 
   @Get('me')
-  @UseGuards(SupabaseAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Perfil del usuario autenticado',
@@ -152,12 +156,12 @@ export class AuthController {
     description: 'Token ausente, inv?lido o expirado',
   })
   @ApiResponse({ status: 404, description: 'Usuario inactivo o no vinculado' })
-  getMe(@CurrentSupabaseUser() user: User): Promise<MeResponse> {
-    return this.authService.getMe(user.id);
+  getMe(@TenantCtx() ctx: TenantContext): Promise<MeResponse> {
+    return this.authService.getMe(ctx);
   }
 
   @Post('logout')
-  @UseGuards(SupabaseAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth('access-token')
   @ApiOperation({

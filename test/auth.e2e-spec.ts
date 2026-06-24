@@ -2,11 +2,14 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { SupabaseAuthGuard } from '../src/core/auth/supabase-auth.guard';
 import { SupabaseAuthService } from '../src/core/auth/supabase-auth.service';
+import { JwtAuthGuard } from '../src/core/guards/jwt-auth.guard';
+import { TenantGuard } from '../src/core/guards/tenant.guard';
 import { GlobalExceptionFilter } from '../src/core/filters/global-exception.filter';
+import { TenantService } from '../src/core/tenant/tenant.service';
 import { AuthController } from '../src/modules/auth/auth.controller';
 import { AuthService } from '../src/modules/auth/auth.service';
+import { RolNivel, WmsRol } from '../src/generated/prisma/client';
 
 describe('AuthController (e2e)', () => {
   let app: INestApplication<App>;
@@ -17,6 +20,15 @@ describe('AuthController (e2e)', () => {
     logout: jest.Mock;
     createMateoHandoff: jest.Mock;
     exchangeMateoCode: jest.Mock;
+  };
+
+  const mockTenantContext = {
+    idUsuario: 'usr-1',
+    idRol: WmsRol.administrador_cuenta,
+    nivelRol: RolNivel.cuenta,
+    codigoEmpresa: 'EMP001',
+    codigoCuenta: null,
+    idBodegas: [],
   };
 
   beforeEach(async () => {
@@ -40,7 +52,14 @@ describe('AuthController (e2e)', () => {
             signOut: jest.fn(),
           },
         },
-        SupabaseAuthGuard,
+        {
+          provide: TenantService,
+          useValue: {
+            buildContext: jest.fn().mockResolvedValue(mockTenantContext),
+          },
+        },
+        JwtAuthGuard,
+        TenantGuard,
       ],
     }).compile();
 
@@ -138,6 +157,7 @@ describe('AuthController (e2e)', () => {
       codigoCuenta: null,
       nombreComercialCuenta: null,
       scope: 'tenant',
+      idBodegas: [],
     });
 
     await request(app.getHttpServer())
@@ -146,7 +166,10 @@ describe('AuthController (e2e)', () => {
       .expect(200)
       .expect((res) => {
         expect(res.body.scope).toBe('tenant');
+        expect(res.body.idBodegas).toEqual([]);
       });
+
+    expect(authService.getMe).toHaveBeenCalledWith(mockTenantContext);
   });
 
   it('POST /auth/logout responde 204', async () => {

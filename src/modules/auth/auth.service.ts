@@ -34,6 +34,7 @@ import {
   UsuarioWithRelations,
 } from './infrastructure/usuario.repository';
 import { MateoHandoffService } from './mateo-handoff.service';
+import type { TenantContext } from '../../core/tenant/tenant-context.interface';
 
 @Injectable()
 export class AuthService {
@@ -121,8 +122,10 @@ export class AuthService {
     };
   }
 
-  async getMe(idAuth: string): Promise<MeResponse> {
-    const usuario = await this.usuarioRepository.findActiveByIdAuth(idAuth);
+  async getMe(ctx: TenantContext): Promise<MeResponse> {
+    const usuario = await this.usuarioRepository.findActiveByIdUsuario(
+      ctx.idUsuario,
+    );
 
     if (!usuario) {
       throw new NotFoundException('Usuario no encontrado o inactivo');
@@ -148,6 +151,7 @@ export class AuthService {
         ? null
         : (usuario.cuenta?.nombreComercial ?? null),
       scope: isConfigurador ? AUTH_SCOPE.PLATFORM : AUTH_SCOPE.TENANT,
+      idBodegas: ctx.idBodegas,
     };
   }
 

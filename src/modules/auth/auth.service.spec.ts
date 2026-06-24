@@ -72,6 +72,7 @@ describe('AuthService', () => {
             findActiveByUsername: jest.fn(),
             findActiveByCorreo: jest.fn(),
             findActiveByIdAuth: jest.fn(),
+            findActiveByIdUsuario: jest.fn(),
             isConfigurador: jest.fn((idRol: string) => idRol === WmsRol.configurador),
           },
         },
@@ -390,33 +391,53 @@ describe('AuthService', () => {
   });
 
   describe('getMe', () => {
+    const tenantContext = {
+      idUsuario: 'usr-tenant',
+      idRol: WmsRol.administrador_cuenta,
+      nivelRol: 'cuenta' as const,
+      codigoEmpresa: 'EMP001',
+      codigoCuenta: null,
+      idBodegas: ['bodega-1'],
+    };
+
+    const configuradorContext = {
+      idUsuario: 'usr-config',
+      idRol: WmsRol.configurador,
+      nivelRol: 'plataforma' as const,
+      codigoEmpresa: null,
+      codigoCuenta: null,
+      idBodegas: [],
+    };
+
     it('retorna scope platform para configurador', async () => {
-      usuarioRepository.findActiveByIdAuth.mockResolvedValue(
+      usuarioRepository.findActiveByIdUsuario.mockResolvedValue(
         mockConfigurador as never,
       );
 
-      const result = await service.getMe('auth-config');
+      const result = await service.getMe(configuradorContext);
 
       expect(result.scope).toBe('platform');
       expect(result.codigoEmpresa).toBeNull();
       expect(result.codigoCuenta).toBeNull();
+      expect(result.idBodegas).toEqual([]);
     });
 
-    it('retorna scope tenant con datos de empresa', async () => {
-      usuarioRepository.findActiveByIdAuth.mockResolvedValue(
+    it('retorna scope tenant con datos de empresa e idBodegas', async () => {
+      usuarioRepository.findActiveByIdUsuario.mockResolvedValue(
         mockTenantUser as never,
       );
 
-      const result = await service.getMe('auth-tenant');
+      const result = await service.getMe(tenantContext);
 
       expect(result.scope).toBe('tenant');
       expect(result.razonSocialEmpresa).toBe('Empresa Demo SA');
+      expect(result.idBodegas).toEqual(['bodega-1']);
     });
 
     it('lanza 404 si no hay usuario activo', async () => {
-      usuarioRepository.findActiveByIdAuth.mockResolvedValue(null);
+      usuarioRepository.findActiveByIdUsuario.mockResolvedValue(null);
 
-      await expect(service.getMe('auth-unknown')).rejects.toThrow(
+      await expect(service.getMe(tenantContext)).rejects.toThrow(
         NotFoundException,
       );
     });

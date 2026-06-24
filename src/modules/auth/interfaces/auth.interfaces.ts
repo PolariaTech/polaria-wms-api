@@ -48,6 +48,7 @@ export interface MeResponse {
   codigoCuenta: string | null;
   nombreComercialCuenta: string | null;
   scope: AuthScope;
+  idBodegas: string[];
 }
 
 export interface ValidatedUserContext {

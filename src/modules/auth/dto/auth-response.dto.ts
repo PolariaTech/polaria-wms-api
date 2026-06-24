@@ -111,4 +111,11 @@ export class MeResponseDto {
 
   @ApiProperty({ enum: Object.values(AUTH_SCOPE), example: AUTH_SCOPE.TENANT })
   scope!: string;
+
+  @ApiProperty({
+    type: [String],
+    example: ['550e8400-e29b-41d4-a716-446655440010'],
+    description: 'Bodegas asignadas al usuario (vacío si no aplica)',
+  })
+  idBodegas!: string[];
 }

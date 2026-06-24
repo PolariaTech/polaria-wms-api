@@ -16,6 +16,7 @@ export class UsuarioRepository {
     rol: true,
     empresa: true,
     cuenta: true,
+    asignacionesBodega: { select: { idBodega: true } },
   } as const;
 
   findActiveByIdentificador(identificador: string) {
@@ -56,11 +57,17 @@ export class UsuarioRepository {
         idAuth,
         estaActivo: true,
       },
-      include: {
-        rol: true,
-        empresa: true,
-        cuenta: true,
+      include: this.activeInclude,
+    });
+  }
+
+  findActiveByIdUsuario(idUsuario: string) {
+    return this.prisma.usuario.findFirst({
+      where: {
+        idUsuario,
+        estaActivo: true,
       },
+      include: this.activeInclude,
     });
   }
 
