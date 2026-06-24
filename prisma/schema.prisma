@@ -147,6 +147,116 @@ enum TipoEvidenciaTransporte {
   @@map("tipo_evidencia_transporte")
 }
 
+enum BodegaTipo {
+  interna
+  externa
+
+  @@map("bodega_tipo")
+}
+
+enum EstadoSolicitudBodega {
+  pendiente
+  atendida
+  rechazada
+  cancelada
+
+  @@map("estado_solicitud_bodega")
+}
+
+enum DestinoTipo {
+  interna
+  externa
+
+  @@map("destino_tipo")
+}
+
+enum EstadoSlot {
+  libre
+  ocupado
+  reservado
+  en_proceso
+
+  @@map("estado_slot")
+}
+
+enum EstadoLote {
+  activo
+  bloqueado
+  vencido
+  agotado
+
+  @@map("estado_lote")
+}
+
+enum TipoCamion {
+  refrigerado
+  seco
+  isotermico
+
+  @@map("tipo_camion")
+}
+
+enum EstadoProcesamiento {
+  borrador
+  pendiente
+  en_proceso
+  pendiente_cierre
+  terminada
+  cancelada
+
+  @@map("estado_procesamiento")
+}
+
+enum TipoAlerta {
+  temperatura
+  demora
+  orden_reportada
+  otro
+
+  @@map("tipo_alerta")
+}
+
+enum EstadoAlerta {
+  abierta
+  cerrada
+
+  @@map("estado_alerta")
+}
+
+enum TipoTarea {
+  ingreso
+  movimiento
+  despacho
+  procesamiento
+  revision
+  otro
+
+  @@map("tipo_tarea")
+}
+
+enum EstadoTarea {
+  pendiente
+  en_proceso
+  completada
+  cancelada
+
+  @@map("estado_tarea")
+}
+
+enum EstadoTareaCuenta {
+  pendiente
+  resuelta
+
+  @@map("estado_tarea_cuenta")
+}
+
+enum EstadoIntegracion {
+  activo
+  finalizado
+
+  @@map("estado_integracion")
+}
+
 model Rol {
   idRol         WmsRol   @id @map("id_rol")
   nombre        String   @db.VarChar(255)
@@ -154,19 +264,21 @@ model Rol {
   puedeCrearRol WmsRol?  @map("puede_crear_rol")
   descripcion   String?
   usuarios      Usuario[]
+  asignaciones  AsignacionBodega[]
 
   @@map("rol")
 }
 
 model Empresa {
-  codigoEmpresa String   @id @map("codigo_empresa") @db.VarChar(32)
-  razonSocial   String   @map("razon_social") @db.VarChar(255)
-  estaActiva    Boolean  @default(true) @map("esta_activa")
-  idCreador     String?  @map("id_creador") @db.Uuid
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  usuarios      Usuario[]
-  cuentas       Cuenta[]
+  codigoEmpresa         String                @id @map("codigo_empresa") @db.VarChar(32)
+  razonSocial           String                @map("razon_social") @db.VarChar(255)
+  estaActiva            Boolean               @default(true) @map("esta_activa")
+  idCreador             String?               @map("id_creador") @db.Uuid
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  usuarios              Usuario[]
+  cuentas               Cuenta[]
+  solicitudesAltaBodega SolicitudAltaBodega[]
 
   @@map("empresa")
 }
@@ -200,7 +312,15 @@ model Cuenta {
   auditorias         AuditoriaOperacion[]
   ordenesTrabajo     OrdenTrabajo[]
   ordenesVenta       OrdenVenta[]
-  viajesTransporte   ViajeTransporte[]
+  viajesTransporte        ViajeTransporte[]
+  solicitudesAltaBodega   SolicitudAltaBodega[]
+  recepcionesCompra       RecepcionCompra[]
+  solicitudesProcesamiento SolicitudProcesamiento[]
+  registrosMerma          RegistroMerma[]
+  alertasOperativas       AlertaOperativa[]
+  tareasCola              TareaCola[]
+  solicitudesIntegracion  SolicitudIntegracion[]
+  tareasCuenta            TareaCuenta[]
 
   @@map("cuenta")
 }
@@ -210,10 +330,16 @@ model Bodega {
   codigoCuenta       String                 @map("codigo_cuenta") @db.VarChar(32)
   codigo             String                 @db.VarChar(32)
   nombre             String                 @db.VarChar(255)
+  tipo               BodegaTipo             @default(interna)
+  capacidadSlots     Int?                   @map("capacidad_slots")
+  idSolicitudOrigen  String?                @map("id_solicitud_origen") @db.Uuid
+  idCreador          String?                @map("id_creador") @db.Uuid
   estaActiva         Boolean                @default(true) @map("esta_activa")
   createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   cuenta             Cuenta                 @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  solicitudOrigen    SolicitudAltaBodega?   @relation("BodegaDesdeSolicitud", fields: [idSolicitudOrigen], references: [idSolicitud])
+  creador            Usuario?               @relation("BodegaCreador", fields: [idCreador], references: [idUsuario])
   asignaciones       AsignacionBodega[]
   tiposUbicacion     TipoUbicacion[]
   zonas              Zona[]
@@ -227,21 +353,56 @@ model Bodega {
   auditorias         AuditoriaOperacion[]
   ordenesTrabajo     OrdenTrabajo[]
   ordenesVenta       OrdenVenta[]
-  viajesTransporte   ViajeTransporte[]
+  viajesTransporte          ViajeTransporte[]
+  recepcionesCompra         RecepcionCompra[]
+  solicitudesProcesamiento  SolicitudProcesamiento[]
+  registrosMerma            RegistroMerma[]
+  alertasOperativas         AlertaOperativa[]
+  tareasCola                TareaCola[]
+  ordenesVentaDestino       OrdenVenta[]             @relation("OrdenVentaBodegaDestino")
+  solicitudesAltaAtendidas  SolicitudAltaBodega[]    @relation("SolicitudBodegaCreada")
 
   @@unique([codigoCuenta, codigo], map: "uq_bodega_cuenta_codigo")
   @@map("bodega")
 }
 
+model SolicitudAltaBodega {
+  idSolicitud       String                @id @default(dbgenerated("gen_random_uuid()")) @map("id_solicitud") @db.Uuid
+  codigoEmpresa     String                @map("codigo_empresa") @db.VarChar(32)
+  codigoCuenta      String                @map("codigo_cuenta") @db.VarChar(32)
+  idSolicitante     String                @map("id_solicitante") @db.Uuid
+  nombreSolicitado  String                @map("nombre_solicitado") @db.VarChar(255)
+  tipo              BodegaTipo            @default(interna)
+  comentarios       String?
+  estado            EstadoSolicitudBodega @default(pendiente)
+  idBodega          String?               @map("id_bodega") @db.Uuid
+  idAtendidoPor     String?               @map("id_atendido_por") @db.Uuid
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  atendidoEn        DateTime?             @map("atendido_en") @db.Timestamptz(6)
+  empresa           Empresa               @relation(fields: [codigoEmpresa], references: [codigoEmpresa])
+  cuenta            Cuenta                @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  solicitante       Usuario               @relation("SolicitudAltaSolicitante", fields: [idSolicitante], references: [idUsuario])
+  atendidoPor       Usuario?              @relation("SolicitudAltaAtendido", fields: [idAtendidoPor], references: [idUsuario])
+  bodegaCreada      Bodega?               @relation("SolicitudBodegaCreada", fields: [idBodega], references: [idBodega])
+  bodegasOrigen     Bodega[]              @relation("BodegaDesdeSolicitud")
+
+  @@map("solicitud_alta_bodega")
+}
+
 model AsignacionBodega {
-  idUsuario String   @map("id_usuario") @db.Uuid
-  idBodega  String   @map("id_bodega") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  idAsignacion  String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_asignacion") @db.Uuid
+  idUsuario     String   @map("id_usuario") @db.Uuid
+  idBodega      String   @map("id_bodega") @db.Uuid
+  idRol         WmsRol   @map("id_rol")
+  vigenteDesde  DateTime @default(now()) @map("vigente_desde") @db.Timestamptz(6)
+  estaActiva    Boolean  @default(true) @map("esta_activa")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   usuario Usuario @relation(fields: [idUsuario], references: [idUsuario], onDelete: Cascade)
   bodega  Bodega  @relation(fields: [idBodega], references: [idBodega], onDelete: Cascade)
+  rol     Rol     @relation(fields: [idRol], references: [idRol])
 
-  @@id([idUsuario, idBodega])
+  @@unique([idUsuario, idBodega], map: "uq_asignacion_usuario_bodega")
   @@map("asignacion_bodega")
 }
 
@@ -261,13 +422,26 @@ model Usuario {
   rol                    Rol                    @relation(fields: [idRol], references: [idRol])
   empresa                Empresa?               @relation(fields: [codigoEmpresa], references: [codigoEmpresa])
   cuenta                 Cuenta?                @relation(fields: [codigoCuenta], references: [codigoCuenta])
-  asignacionesBodega     AsignacionBodega[]
-  solicitudesCompra      SolicitudCompra[]
-  warehouseStatesLocked  WarehouseState[]       @relation("WarehouseStateLockedBy")
-  movimientosInventario  MovimientoInventario[]
-  auditoriasOperacion    AuditoriaOperacion[]
-  ordenesTrabajoAsignadas OrdenTrabajo[]        @relation("OrdenTrabajoAsignado")
-  viajesComoTransportista ViajeTransporte[]     @relation("ViajeTransportista")
+  asignacionesBodega        AsignacionBodega[]
+  solicitudesCompra        SolicitudCompra[]
+  warehouseStatesLocked    WarehouseState[]       @relation("WarehouseStateLockedBy")
+  movimientosInventario    MovimientoInventario[]
+  auditoriasOperacion      AuditoriaOperacion[]
+  ordenesTrabajoAsignadas  OrdenTrabajo[]         @relation("OrdenTrabajoAsignado")
+  ordenesTrabajoSolicitadas OrdenTrabajo[]        @relation("OrdenTrabajoSolicitante")
+  viajesComoTransportista  ViajeTransporte[]      @relation("ViajeTransportista")
+  bodegasCreadas           Bodega[]               @relation("BodegaCreador")
+  solicitudesAltaCreadas   SolicitudAltaBodega[]  @relation("SolicitudAltaSolicitante")
+  solicitudesAltaAtendidas SolicitudAltaBodega[]  @relation("SolicitudAltaAtendido")
+  ordenesCompraCreadas     OrdenCompra[]          @relation("OrdenCompraCreador")
+  ordenesVentaCreadas      OrdenVenta[]           @relation("OrdenVentaCreador")
+  recepcionesCerradas      RecepcionCompra[]      @relation("RecepcionCerradaPor")
+  solicitudesProcesamientoSolicitadas SolicitudProcesamiento[] @relation("SolicitudProcSolicitante")
+  solicitudesProcesamientoAsignadas   SolicitudProcesamiento[] @relation("SolicitudProcProcesador")
+  alertasResponsable       AlertaOperativa[]      @relation("AlertaResponsable")
+  tareasAsignadas          TareaCola[]            @relation("TareaColaAsignado")
+  solicitudesIntegracion   SolicitudIntegracion[] @relation("SolicitudIntegracionSolicitante")
+  tareasCuentaCreadas      TareaCuenta[]          @relation("TareaCuentaCreador")
 
   @@map("usuario")
 }
@@ -317,6 +491,7 @@ model Ubicacion {
   idTipoUbicacion String                 @map("id_tipo_ubicacion") @db.Uuid
   codigo          String                 @db.VarChar(64)
   capacidad       Decimal?               @db.Decimal(18, 4)
+  estadoSlot      EstadoSlot             @default(libre) @map("estado_slot")
   estaActiva      Boolean                @default(true) @map("esta_activa")
   createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -327,102 +502,145 @@ model Ubicacion {
   warehouseStates WarehouseState[]
   movimientosOrigen  MovimientoInventario[] @relation("MovimientoUbicacionOrigen")
   movimientosDestino MovimientoInventario[] @relation("MovimientoUbicacionDestino")
-  lineasOrdenTrabajo OrdenTrabajoLinea[]
+  lineasOrdenTrabajo       OrdenTrabajoLinea[]
+  ordenesTrabajoOrigen     OrdenTrabajo[]         @relation("OrdenTrabajoUbicacionOrigen")
+  ordenesTrabajoDestino    OrdenTrabajo[]         @relation("OrdenTrabajoUbicacionDestino")
+  alertasOperativas        AlertaOperativa[]
 
   @@unique([idBodega, codigo], map: "uq_ubicacion_bodega_codigo")
   @@map("ubicacion")
 }
 
 model Proveedor {
-  idProveedor  String        @id @default(dbgenerated("gen_random_uuid()")) @map("id_proveedor") @db.Uuid
-  codigoCuenta String        @map("codigo_cuenta") @db.VarChar(32)
-  codigo       String        @db.VarChar(32)
-  razonSocial  String        @map("razon_social") @db.VarChar(255)
-  estaActivo   Boolean       @default(true) @map("esta_activo")
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta       Cuenta        @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  idProveedor   String        @id @default(dbgenerated("gen_random_uuid()")) @map("id_proveedor") @db.Uuid
+  codigoCuenta  String        @map("codigo_cuenta") @db.VarChar(32)
+  codigo        String        @db.VarChar(32)
+  razonSocial   String        @map("razon_social") @db.VarChar(255)
+  telefono      String?       @db.VarChar(32)
+  email         String?
+  estaActivo    Boolean       @default(true) @map("esta_activo")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta        Cuenta        @relation(fields: [codigoCuenta], references: [codigoCuenta])
   ordenesCompra OrdenCompra[]
+  solicitudesCompra SolicitudCompra[]
 
   @@unique([codigoCuenta, codigo], map: "uq_proveedor_cuenta_codigo")
   @@map("proveedor")
 }
 
 model Cliente {
-  idCliente    String        @id @default(dbgenerated("gen_random_uuid()")) @map("id_cliente") @db.Uuid
-  codigoCuenta String        @map("codigo_cuenta") @db.VarChar(32)
-  codigo       String        @db.VarChar(32)
-  nombre       String        @db.VarChar(255)
-  estaActivo   Boolean       @default(true) @map("esta_activo")
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta       Cuenta        @relation(fields: [codigoCuenta], references: [codigoCuenta])
-  ordenesVenta OrdenVenta[]
+  idCliente              String                   @id @default(dbgenerated("gen_random_uuid()")) @map("id_cliente") @db.Uuid
+  codigoCuenta           String                   @map("codigo_cuenta") @db.VarChar(32)
+  codigo                 String                   @db.VarChar(32)
+  nombre                 String                   @db.VarChar(255)
+  nit                    String?                  @db.VarChar(32)
+  estaActivo             Boolean                  @default(true) @map("esta_activo")
+  createdAt              DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta                 Cuenta                   @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  ordenesVenta           OrdenVenta[]
+  productos              Producto[]
+  lotes                  Lote[]
+  solicitudesProcesamiento SolicitudProcesamiento[]
+  solicitudesIntegracion SolicitudIntegracion[]
+  tareasCuenta           TareaCuenta[]
 
   @@unique([codigoCuenta, codigo], map: "uq_cliente_cuenta_codigo")
   @@map("cliente")
 }
 
 model Producto {
-  idProducto         String                 @id @default(dbgenerated("gen_random_uuid()")) @map("id_producto") @db.Uuid
-  codigoCuenta       String                 @map("codigo_cuenta") @db.VarChar(32)
-  sku                String                 @db.VarChar(64)
-  descripcion        String                 @db.VarChar(512)
-  unidadMedida       String                 @map("unidad_medida") @db.VarChar(32)
-  requiereLote       Boolean                @default(false) @map("requiere_lote")
-  estaActivo         Boolean                @default(true) @map("esta_activo")
-  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta             Cuenta                 @relation(fields: [codigoCuenta], references: [codigoCuenta])
-  lineasSolicitud    SolicitudCompraLinea[]
-  lineasOrdenCompra  OrdenCompraLinea[]
-  lotes              Lote[]
-  warehouseStates    WarehouseState[]
-  movimientos        MovimientoInventario[]
-  lineasOrdenTrabajo OrdenTrabajoLinea[]
-  lineasOrdenVenta   OrdenVentaLinea[]
+  idProducto                        String                 @id @default(dbgenerated("gen_random_uuid()")) @map("id_producto") @db.Uuid
+  codigoCuenta                      String                 @map("codigo_cuenta") @db.VarChar(32)
+  idCliente                         String?                @map("id_cliente") @db.Uuid
+  sku                               String                 @db.VarChar(64)
+  descripcion                       String                 @db.VarChar(512)
+  unidadMedida                      String                 @map("unidad_medida") @db.VarChar(32)
+  esPrimario                        Boolean                @default(false) @map("es_primario")
+  esSecundario                      Boolean                @default(false) @map("es_secundario")
+  codigoAlmacen                     String?                @map("codigo_almacen") @db.VarChar(32)
+  idProductoPrimario                String?                @map("id_producto_primario") @db.Uuid
+  reglaConversionCantidadPrimario   Decimal?               @map("regla_conversion_cantidad_primario") @db.Decimal(18, 4)
+  reglaConversionUnidadesSecundario Decimal?               @map("regla_conversion_unidades_secundario") @db.Decimal(18, 4)
+  mermaPct                          Decimal?               @map("merma_pct") @db.Decimal(5, 2)
+  unidadVisualizacion               String                 @default("peso") @map("unidad_visualizacion") @db.VarChar(32)
+  requiereLote                      Boolean                @default(false) @map("requiere_lote")
+  estaActivo                        Boolean                @default(true) @map("esta_activo")
+  createdAt                         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta                            Cuenta                 @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  cliente                           Cliente?               @relation(fields: [idCliente], references: [idCliente])
+  productoPrimario                  Producto?              @relation("ProductoSecundarioDe", fields: [idProductoPrimario], references: [idProducto])
+  productosSecundarios              Producto[]             @relation("ProductoSecundarioDe")
+  lineasSolicitud                   SolicitudCompraLinea[]
+  lineasOrdenCompra                 OrdenCompraLinea[]
+  lotes                             Lote[]
+  warehouseStates                   WarehouseState[]
+  movimientos                       MovimientoInventario[]
+  lineasOrdenTrabajo                OrdenTrabajoLinea[]
+  lineasOrdenVenta                  OrdenVentaLinea[]
+  solicitudesProcPrimario           SolicitudProcesamiento[] @relation("SolicitudProcPrimario")
+  solicitudesProcSecundario         SolicitudProcesamiento[] @relation("SolicitudProcSecundario")
+  lineasRecepcion                   RecepcionCompraLinea[]
 
   @@unique([codigoCuenta, sku], map: "uq_producto_cuenta_sku")
   @@map("producto")
 }
 
 model Comprador {
-  idComprador  String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_comprador") @db.Uuid
-  codigoCuenta String   @map("codigo_cuenta") @db.VarChar(32)
-  codigo       String   @db.VarChar(32)
-  nombre       String   @db.VarChar(255)
-  estaActivo   Boolean  @default(true) @map("esta_activo")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta       Cuenta   @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  idComprador  String       @id @default(dbgenerated("gen_random_uuid()")) @map("id_comprador") @db.Uuid
+  codigoCuenta String       @map("codigo_cuenta") @db.VarChar(32)
+  codigo       String       @db.VarChar(32)
+  nombre       String       @db.VarChar(255)
+  contacto     String?      @db.VarChar(255)
+  estaActivo   Boolean      @default(true) @map("esta_activo")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta       Cuenta       @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  ordenesVenta OrdenVenta[]
 
   @@unique([codigoCuenta, codigo], map: "uq_comprador_cuenta_codigo")
   @@map("comprador")
 }
 
 model Planta {
-  idPlanta     String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_planta") @db.Uuid
-  codigoCuenta String   @map("codigo_cuenta") @db.VarChar(32)
-  codigo       String   @db.VarChar(32)
-  nombre       String   @db.VarChar(255)
-  estaActivo   Boolean  @default(true) @map("esta_activo")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta       Cuenta   @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  idPlanta          String       @id @default(dbgenerated("gen_random_uuid()")) @map("id_planta") @db.Uuid
+  codigoCuenta      String       @map("codigo_cuenta") @db.VarChar(32)
+  codigo            String       @db.VarChar(32)
+  nombre            String       @db.VarChar(255)
+  direccion         String?
+  capacidadPallets  Int?         @map("capacidad_pallets")
+  rangoTemperatura  String?      @map("rango_temperatura") @db.VarChar(64)
+  estaActivo        Boolean      @default(true) @map("esta_activo")
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta            Cuenta       @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  ordenesVenta      OrdenVenta[]
 
   @@unique([codigoCuenta, codigo], map: "uq_planta_cuenta_codigo")
   @@map("planta")
 }
 
 model Camion {
-  idCamion     String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_camion") @db.Uuid
-  codigoCuenta String   @map("codigo_cuenta") @db.VarChar(32)
-  placa        String   @db.VarChar(16)
-  descripcion  String?  @db.VarChar(255)
-  estaActivo   Boolean  @default(true) @map("esta_activo")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta       Cuenta   @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  idCamion          String            @id @default(dbgenerated("gen_random_uuid()")) @map("id_camion") @db.Uuid
+  codigoCuenta      String            @map("codigo_cuenta") @db.VarChar(32)
+  codigo            String?           @db.VarChar(32)
+  placa             String            @db.VarChar(16)
+  descripcion       String?           @db.VarChar(255)
+  marca             String?           @db.VarChar(64)
+  modelo            String?           @db.VarChar(64)
+  capacidadKg       Decimal?          @map("capacidad_kg") @db.Decimal(18, 4)
+  capacidadM3       Decimal?          @map("capacidad_m3") @db.Decimal(18, 4)
+  capacidadPallets  Int?              @map("capacidad_pallets")
+  tipo              TipoCamion        @default(refrigerado)
+  rangoTemperatura  String?           @map("rango_temperatura") @db.VarChar(64)
+  disponible        Boolean           @default(true)
+  estaActivo        Boolean           @default(true) @map("esta_activo")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta            Cuenta            @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  viajesTransporte  ViajeTransporte[]
 
   @@unique([codigoCuenta, placa], map: "uq_camion_cuenta_placa")
   @@map("camion")
@@ -432,6 +650,8 @@ model SolicitudCompra {
   idSolicitudCompra String                 @id @default(dbgenerated("gen_random_uuid()")) @map("id_solicitud_compra") @db.Uuid
   codigoCuenta      String                 @map("codigo_cuenta") @db.VarChar(32)
   idBodega          String                 @map("id_bodega") @db.Uuid
+  idProveedor       String?                @map("id_proveedor") @db.Uuid
+  idOrdenCompra     String?                @map("id_orden_compra") @db.Uuid
   codigo            String                 @db.VarChar(32)
   estado            EstadoSolicitudCompra  @default(borrador)
   idSolicitante     String                 @map("id_solicitante") @db.Uuid
@@ -440,9 +660,11 @@ model SolicitudCompra {
   updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   cuenta            Cuenta                 @relation(fields: [codigoCuenta], references: [codigoCuenta])
   bodega            Bodega                 @relation(fields: [idBodega], references: [idBodega])
+  proveedor         Proveedor?             @relation(fields: [idProveedor], references: [idProveedor])
+  ordenCompra       OrdenCompra?           @relation("SolicitudOrdenCompra", fields: [idOrdenCompra], references: [idOrdenCompra], onDelete: SetNull)
   solicitante       Usuario                @relation(fields: [idSolicitante], references: [idUsuario])
   lineas            SolicitudCompraLinea[]
-  ordenesCompra     OrdenCompra[]
+  ordenesCompra     OrdenCompra[]          @relation("OrdenDesdeSolicitud")
 
   @@unique([codigoCuenta, codigo], map: "uq_solicitud_compra_cuenta_codigo")
   @@map("solicitud_compra")
@@ -460,68 +682,116 @@ model SolicitudCompraLinea {
 }
 
 model OrdenCompra {
-  idOrdenCompra      String             @id @default(dbgenerated("gen_random_uuid()")) @map("id_orden_compra") @db.Uuid
-  codigoCuenta       String             @map("codigo_cuenta") @db.VarChar(32)
-  idBodega           String             @map("id_bodega") @db.Uuid
-  idProveedor        String             @map("id_proveedor") @db.Uuid
-  idSolicitudCompra  String?            @map("id_solicitud_compra") @db.Uuid
-  codigo             String             @db.VarChar(32)
-  estado             EstadoOrdenCompra  @default(borrador)
-  fechaEmision       DateTime           @default(now()) @map("fecha_emision") @db.Date
-  observaciones      String?
-  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta             Cuenta             @relation(fields: [codigoCuenta], references: [codigoCuenta])
-  bodega             Bodega             @relation(fields: [idBodega], references: [idBodega])
-  proveedor          Proveedor          @relation(fields: [idProveedor], references: [idProveedor])
-  solicitudCompra    SolicitudCompra?   @relation(fields: [idSolicitudCompra], references: [idSolicitudCompra], onDelete: SetNull)
-  lineas             OrdenCompraLinea[]
+  idOrdenCompra         String             @id @default(dbgenerated("gen_random_uuid()")) @map("id_orden_compra") @db.Uuid
+  codigoCuenta          String             @map("codigo_cuenta") @db.VarChar(32)
+  idBodega              String             @map("id_bodega") @db.Uuid
+  idProveedor           String             @map("id_proveedor") @db.Uuid
+  idSolicitudCompra     String?            @map("id_solicitud_compra") @db.Uuid
+  idCreador             String?            @map("id_creador") @db.Uuid
+  codigo                String             @db.VarChar(32)
+  estado                EstadoOrdenCompra  @default(borrador)
+  fechaEmision          DateTime           @default(now()) @map("fecha_emision") @db.Date
+  fechaEntregaEstimada  DateTime?          @map("fecha_entrega_estimada") @db.Date
+  destinoTipo           DestinoTipo        @default(interna) @map("destino_tipo")
+  observaciones         String?
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta                Cuenta             @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega                Bodega             @relation(fields: [idBodega], references: [idBodega])
+  proveedor             Proveedor          @relation(fields: [idProveedor], references: [idProveedor])
+  solicitudCompra       SolicitudCompra?   @relation("OrdenDesdeSolicitud", fields: [idSolicitudCompra], references: [idSolicitudCompra], onDelete: SetNull)
+  creador               Usuario?           @relation("OrdenCompraCreador", fields: [idCreador], references: [idUsuario])
+  lineas                OrdenCompraLinea[]
+  recepcion             RecepcionCompra?
+  solicitudesConvertidas SolicitudCompra[] @relation("SolicitudOrdenCompra")
 
   @@unique([codigoCuenta, codigo], map: "uq_orden_compra_cuenta_codigo")
   @@map("orden_compra")
 }
 
 model OrdenCompraLinea {
-  idLineaOrdenCompra String      @id @default(dbgenerated("gen_random_uuid()")) @map("id_linea_orden_compra") @db.Uuid
-  idOrdenCompra      String      @map("id_orden_compra") @db.Uuid
-  idProducto         String      @map("id_producto") @db.Uuid
-  cantidad           Decimal     @db.Decimal(18, 4)
-  precioUnitario     Decimal     @default(0) @map("precio_unitario") @db.Decimal(18, 4)
-  cantidadRecibida   Decimal     @default(0) @map("cantidad_recibida") @db.Decimal(18, 4)
-  ordenCompra        OrdenCompra @relation(fields: [idOrdenCompra], references: [idOrdenCompra], onDelete: Cascade)
-  producto           Producto    @relation(fields: [idProducto], references: [idProducto])
+  idLineaOrdenCompra String              @id @default(dbgenerated("gen_random_uuid()")) @map("id_linea_orden_compra") @db.Uuid
+  idOrdenCompra      String              @map("id_orden_compra") @db.Uuid
+  idProducto         String              @map("id_producto") @db.Uuid
+  cantidad           Decimal             @db.Decimal(18, 4)
+  precioUnitario     Decimal             @default(0) @map("precio_unitario") @db.Decimal(18, 4)
+  cantidadRecibida   Decimal             @default(0) @map("cantidad_recibida") @db.Decimal(18, 4)
+  ordenCompra        OrdenCompra         @relation(fields: [idOrdenCompra], references: [idOrdenCompra], onDelete: Cascade)
+  producto           Producto            @relation(fields: [idProducto], references: [idProducto])
+  lineasRecepcion    RecepcionCompraLinea[]
 
   @@map("orden_compra_linea")
 }
 
+model RecepcionCompra {
+  idRecepcion    String                 @id @default(dbgenerated("gen_random_uuid()")) @map("id_recepcion") @db.Uuid
+  codigoCuenta   String                 @map("codigo_cuenta") @db.VarChar(32)
+  idBodega       String                 @map("id_bodega") @db.Uuid
+  idOrdenCompra  String                 @unique @map("id_orden_compra") @db.Uuid
+  sinDiferencias Boolean                @default(false) @map("sin_diferencias")
+  notas          String?
+  cerradaAt      DateTime               @default(now()) @map("cerrada_at") @db.Timestamptz(6)
+  cerradaPor     String                 @map("cerrada_por") @db.Uuid
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  cuenta         Cuenta                 @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega         Bodega                 @relation(fields: [idBodega], references: [idBodega])
+  ordenCompra    OrdenCompra            @relation(fields: [idOrdenCompra], references: [idOrdenCompra])
+  usuarioCierre  Usuario                @relation("RecepcionCerradaPor", fields: [cerradaPor], references: [idUsuario])
+  lineas         RecepcionCompraLinea[]
+
+  @@map("recepcion_compra")
+}
+
+model RecepcionCompraLinea {
+  idLineaRecepcion    String            @id @default(dbgenerated("gen_random_uuid()")) @map("id_linea_recepcion") @db.Uuid
+  idRecepcion         String            @map("id_recepcion") @db.Uuid
+  idLineaOrdenCompra  String?           @map("id_linea_orden_compra") @db.Uuid
+  idProducto          String?           @map("id_producto") @db.Uuid
+  cantidadRecibida    Decimal           @map("cantidad_recibida") @db.Decimal(18, 4)
+  temperaturaRegistrada Decimal?        @map("temperatura_registrada") @db.Decimal(8, 2)
+  esAdicional         Boolean           @default(false) @map("es_adicional")
+  tituloSnapshot      String?           @map("titulo_snapshot") @db.VarChar(512)
+  recepcion           RecepcionCompra   @relation(fields: [idRecepcion], references: [idRecepcion], onDelete: Cascade)
+  lineaOrdenCompra    OrdenCompraLinea? @relation(fields: [idLineaOrdenCompra], references: [idLineaOrdenCompra], onDelete: SetNull)
+  producto            Producto?         @relation(fields: [idProducto], references: [idProducto])
+
+  @@map("recepcion_compra_linea")
+}
+
 model Lote {
-  idLote           String                 @id @default(dbgenerated("gen_random_uuid()")) @map("id_lote") @db.Uuid
-  codigoCuenta     String                 @map("codigo_cuenta") @db.VarChar(32)
-  idBodega         String                 @map("id_bodega") @db.Uuid
-  idProducto       String                 @map("id_producto") @db.Uuid
-  codigoLote       String                 @map("codigo_lote") @db.VarChar(64)
-  fechaVencimiento DateTime?              @map("fecha_vencimiento") @db.Date
-  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta           Cuenta                 @relation(fields: [codigoCuenta], references: [codigoCuenta])
-  bodega           Bodega                 @relation(fields: [idBodega], references: [idBodega])
-  producto         Producto               @relation(fields: [idProducto], references: [idProducto])
-  warehouseStates  WarehouseState[]
-  movimientos      MovimientoInventario[]
+  idLote              String                 @id @default(dbgenerated("gen_random_uuid()")) @map("id_lote") @db.Uuid
+  codigoCuenta        String                 @map("codigo_cuenta") @db.VarChar(32)
+  idBodega            String                 @map("id_bodega") @db.Uuid
+  idProducto          String                 @map("id_producto") @db.Uuid
+  idCliente           String?                @map("id_cliente") @db.Uuid
+  codigoLote          String                 @map("codigo_lote") @db.VarChar(64)
+  estadoLote          EstadoLote             @default(activo) @map("estado_lote")
+  fechaVencimiento    DateTime?              @map("fecha_vencimiento") @db.Date
+  temperaturaObjetivo Decimal?               @map("temperatura_objetivo") @db.Decimal(8, 2)
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta              Cuenta                 @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega              Bodega                 @relation(fields: [idBodega], references: [idBodega])
+  producto            Producto               @relation(fields: [idProducto], references: [idProducto])
+  cliente             Cliente?               @relation(fields: [idCliente], references: [idCliente])
+  warehouseStates     WarehouseState[]
+  movimientos         MovimientoInventario[]
+  ordenesTrabajo      OrdenTrabajo[]
 
   @@unique([idBodega, idProducto, codigoLote], map: "uq_lote_bodega_producto_codigo")
   @@map("lote")
 }
 
 model WarehouseState {
-  idWarehouseState String    @id @default(dbgenerated("gen_random_uuid()")) @map("id_warehouse_state") @db.Uuid
-  codigoCuenta     String    @map("codigo_cuenta") @db.VarChar(32)
-  idBodega         String    @map("id_bodega") @db.Uuid
-  idUbicacion      String    @map("id_ubicacion") @db.Uuid
-  idProducto       String    @map("id_producto") @db.Uuid
-  idLote           String?   @map("id_lote") @db.Uuid
-  cantidad         Decimal   @db.Decimal(18, 4)
-  temperatura      Decimal?  @db.Decimal(8, 2)
+  idWarehouseState  String    @id @default(dbgenerated("gen_random_uuid()")) @map("id_warehouse_state") @db.Uuid
+  codigoCuenta      String    @map("codigo_cuenta") @db.VarChar(32)
+  idBodega          String    @map("id_bodega") @db.Uuid
+  idUbicacion       String    @map("id_ubicacion") @db.Uuid
+  idProducto        String    @map("id_producto") @db.Uuid
+  idLote            String?   @map("id_lote") @db.Uuid
+  cantidad          Decimal   @db.Decimal(18, 4)
+  cantidadReservada Decimal   @default(0) @map("cantidad_reservada") @db.Decimal(18, 4)
+  temperatura       Decimal?  @db.Decimal(8, 2)
   lockedBy         String?   @map("locked_by") @db.Uuid
   lockedAt         DateTime? @map("locked_at") @db.Timestamptz(6)
   version          Int       @default(1)
@@ -595,20 +865,32 @@ model AuditoriaOperacion {
 }
 
 model OrdenTrabajo {
-  idOrdenTrabajo String             @id @default(dbgenerated("gen_random_uuid()")) @map("id_orden_trabajo") @db.Uuid
-  codigoCuenta   String             @map("codigo_cuenta") @db.VarChar(32)
-  idBodega       String             @map("id_bodega") @db.Uuid
-  codigo         String             @db.VarChar(32)
-  estado         EstadoOrdenTrabajo @default(planificada)
-  tipo           TipoOrdenTrabajo   @default(otro)
-  idAsignado     String?            @map("id_asignado") @db.Uuid
-  observaciones  String?
-  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta         Cuenta             @relation(fields: [codigoCuenta], references: [codigoCuenta])
-  bodega         Bodega             @relation(fields: [idBodega], references: [idBodega])
-  asignado       Usuario?           @relation("OrdenTrabajoAsignado", fields: [idAsignado], references: [idUsuario])
-  lineas         OrdenTrabajoLinea[]
+  idOrdenTrabajo            String                  @id @default(dbgenerated("gen_random_uuid()")) @map("id_orden_trabajo") @db.Uuid
+  codigoCuenta              String                  @map("codigo_cuenta") @db.VarChar(32)
+  idBodega                  String                  @map("id_bodega") @db.Uuid
+  codigo                    String                  @db.VarChar(32)
+  estado                    EstadoOrdenTrabajo      @default(planificada)
+  tipo                      TipoOrdenTrabajo        @default(otro)
+  idAsignado                String?                 @map("id_asignado") @db.Uuid
+  idSolicitante             String?                 @map("id_solicitante") @db.Uuid
+  idLote                    String?                 @map("id_lote") @db.Uuid
+  idUbicacionOrigen         String?                 @map("id_ubicacion_origen") @db.Uuid
+  idUbicacionDestino        String?                 @map("id_ubicacion_destino") @db.Uuid
+  idSolicitudProcesamiento  String?                 @map("id_solicitud_procesamiento") @db.Uuid
+  observaciones             String?
+  createdAt                 DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta                    Cuenta                  @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega                    Bodega                  @relation(fields: [idBodega], references: [idBodega])
+  asignado                  Usuario?                @relation("OrdenTrabajoAsignado", fields: [idAsignado], references: [idUsuario])
+  solicitante               Usuario?                @relation("OrdenTrabajoSolicitante", fields: [idSolicitante], references: [idUsuario])
+  lote                      Lote?                   @relation(fields: [idLote], references: [idLote])
+  ubicacionOrigen           Ubicacion?              @relation("OrdenTrabajoUbicacionOrigen", fields: [idUbicacionOrigen], references: [idUbicacion])
+  ubicacionDestino          Ubicacion?              @relation("OrdenTrabajoUbicacionDestino", fields: [idUbicacionDestino], references: [idUbicacion])
+  solicitudProcesamiento    SolicitudProcesamiento? @relation(fields: [idSolicitudProcesamiento], references: [idSolicitudProcesamiento], onDelete: SetNull)
+  lineas                    OrdenTrabajoLinea[]
+  alertas                   AlertaOperativa[]
+  tareasCola                TareaCola[]
 
   @@unique([codigoCuenta, codigo], map: "uq_orden_trabajo_cuenta_codigo")
   @@map("orden_trabajo")
@@ -629,34 +911,43 @@ model OrdenTrabajoLinea {
 }
 
 model OrdenVenta {
-  idOrdenVenta  String           @id @default(dbgenerated("gen_random_uuid()")) @map("id_orden_venta") @db.Uuid
-  codigoCuenta  String           @map("codigo_cuenta") @db.VarChar(32)
-  idBodega      String           @map("id_bodega") @db.Uuid
-  idCliente     String           @map("id_cliente") @db.Uuid
-  codigo        String           @db.VarChar(32)
-  estado        EstadoOrdenVenta @default(borrador)
-  fechaPedido   DateTime         @default(now()) @map("fecha_pedido") @db.Date
-  observaciones String?
-  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta        Cuenta           @relation(fields: [codigoCuenta], references: [codigoCuenta])
-  bodega        Bodega           @relation(fields: [idBodega], references: [idBodega])
-  cliente       Cliente          @relation(fields: [idCliente], references: [idCliente])
-  lineas        OrdenVentaLinea[]
-  guiasEnvio    GuiaEnvio[]
+  idOrdenVenta     String           @id @default(dbgenerated("gen_random_uuid()")) @map("id_orden_venta") @db.Uuid
+  codigoCuenta     String           @map("codigo_cuenta") @db.VarChar(32)
+  idBodega         String           @map("id_bodega") @db.Uuid
+  idCliente        String           @map("id_cliente") @db.Uuid
+  idComprador      String?          @map("id_comprador") @db.Uuid
+  idPlanta         String?          @map("id_planta") @db.Uuid
+  idCreador        String?          @map("id_creador") @db.Uuid
+  idBodegaDestino  String?          @map("id_bodega_destino") @db.Uuid
+  codigo           String           @db.VarChar(32)
+  estado           EstadoOrdenVenta @default(borrador)
+  fechaPedido      DateTime         @default(now()) @map("fecha_pedido") @db.Date
+  observaciones    String?
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta           Cuenta           @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega           Bodega           @relation(fields: [idBodega], references: [idBodega])
+  cliente          Cliente          @relation(fields: [idCliente], references: [idCliente])
+  comprador        Comprador?       @relation(fields: [idComprador], references: [idComprador])
+  planta           Planta?          @relation(fields: [idPlanta], references: [idPlanta])
+  creador          Usuario?         @relation("OrdenVentaCreador", fields: [idCreador], references: [idUsuario])
+  bodegaDestino    Bodega?          @relation("OrdenVentaBodegaDestino", fields: [idBodegaDestino], references: [idBodega])
+  lineas           OrdenVentaLinea[]
+  guiasEnvio       GuiaEnvio[]
 
   @@unique([codigoCuenta, codigo], map: "uq_orden_venta_cuenta_codigo")
   @@map("orden_venta")
 }
 
 model OrdenVentaLinea {
-  idLineaOrdenVenta  String     @id @default(dbgenerated("gen_random_uuid()")) @map("id_linea_orden_venta") @db.Uuid
-  idOrdenVenta       String     @map("id_orden_venta") @db.Uuid
-  idProducto         String     @map("id_producto") @db.Uuid
-  cantidadPedida     Decimal    @map("cantidad_pedida") @db.Decimal(18, 4)
-  cantidadDespachada Decimal    @default(0) @map("cantidad_despachada") @db.Decimal(18, 4)
-  ordenVenta         OrdenVenta @relation(fields: [idOrdenVenta], references: [idOrdenVenta], onDelete: Cascade)
-  producto           Producto   @relation(fields: [idProducto], references: [idProducto])
+  idLineaOrdenVenta  String                @id @default(dbgenerated("gen_random_uuid()")) @map("id_linea_orden_venta") @db.Uuid
+  idOrdenVenta       String                @map("id_orden_venta") @db.Uuid
+  idProducto         String                @map("id_producto") @db.Uuid
+  cantidadPedida     Decimal               @map("cantidad_pedida") @db.Decimal(18, 4)
+  cantidadDespachada Decimal               @default(0) @map("cantidad_despachada") @db.Decimal(18, 4)
+  ordenVenta         OrdenVenta            @relation(fields: [idOrdenVenta], references: [idOrdenVenta], onDelete: Cascade)
+  producto           Producto              @relation(fields: [idProducto], references: [idProducto])
+  evidenciasTransporte EvidenciaTransporte[]
 
   @@map("orden_venta_linea")
 }
@@ -665,6 +956,7 @@ model ViajeTransporte {
   idViaje          String                @id @default(dbgenerated("gen_random_uuid()")) @map("id_viaje") @db.Uuid
   codigoCuenta     String                @map("codigo_cuenta") @db.VarChar(32)
   idBodega         String                @map("id_bodega") @db.Uuid
+  idCamion         String?               @map("id_camion") @db.Uuid
   codigo           String                @db.VarChar(32)
   estado           EstadoViajeTransporte @default(programado)
   idTransportista  String?               @map("id_transportista") @db.Uuid
@@ -676,6 +968,7 @@ model ViajeTransporte {
   updatedAt        DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
   cuenta           Cuenta                @relation(fields: [codigoCuenta], references: [codigoCuenta])
   bodega           Bodega                @relation(fields: [idBodega], references: [idBodega])
+  camion           Camion?               @relation(fields: [idCamion], references: [idCamion])
   transportista    Usuario?              @relation("ViajeTransportista", fields: [idTransportista], references: [idUsuario])
   guias            GuiaEnvio[]
 
@@ -702,12 +995,151 @@ model GuiaEnvio {
 }
 
 model EvidenciaTransporte {
-  idEvidencia    String                  @id @default(dbgenerated("gen_random_uuid()")) @map("id_evidencia") @db.Uuid
-  idGuia         String                  @map("id_guia") @db.Uuid
-  tipo           TipoEvidenciaTransporte
-  urlCloudinary  String                  @map("url_cloudinary")
-  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  guia           GuiaEnvio               @relation(fields: [idGuia], references: [idGuia], onDelete: Cascade)
+  idEvidencia         String                  @id @default(dbgenerated("gen_random_uuid()")) @map("id_evidencia") @db.Uuid
+  idGuia              String                  @map("id_guia") @db.Uuid
+  idLineaOrdenVenta   String?                 @map("id_linea_orden_venta") @db.Uuid
+  tipo                TipoEvidenciaTransporte
+  urlCloudinary       String                  @map("url_cloudinary")
+  cantidadEntregada   Decimal?                @map("cantidad_entregada") @db.Decimal(18, 4)
+  incidencia          String?
+  entregaConforme     Boolean?                @map("entrega_conforme")
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  guia                GuiaEnvio               @relation(fields: [idGuia], references: [idGuia], onDelete: Cascade)
+  lineaOrdenVenta     OrdenVentaLinea?        @relation(fields: [idLineaOrdenVenta], references: [idLineaOrdenVenta], onDelete: SetNull)
 
   @@map("evidencia_transporte")
+}
+
+model SolicitudProcesamiento {
+  idSolicitudProcesamiento          String              @id @default(dbgenerated("gen_random_uuid()")) @map("id_solicitud_procesamiento") @db.Uuid
+  codigoCuenta                      String              @map("codigo_cuenta") @db.VarChar(32)
+  idBodega                          String              @map("id_bodega") @db.Uuid
+  codigo                            String              @db.VarChar(32)
+  idCliente                         String?             @map("id_cliente") @db.Uuid
+  idProductoPrimario                String              @map("id_producto_primario") @db.Uuid
+  idProductoSecundario              String              @map("id_producto_secundario") @db.Uuid
+  idSolicitante                     String              @map("id_solicitante") @db.Uuid
+  idProcesador                      String?             @map("id_procesador") @db.Uuid
+  estado                            EstadoProcesamiento @default(borrador)
+  kilosPrimario                     Decimal             @map("kilos_primario") @db.Decimal(18, 4)
+  kilosSecundario                   Decimal?            @map("kilos_secundario") @db.Decimal(18, 4)
+  kilosMerma                        Decimal?            @map("kilos_merma") @db.Decimal(18, 4)
+  sobranteKg                        Decimal?            @map("sobrante_kg") @db.Decimal(18, 4)
+  reglaConversionCantidadPrimario   Decimal?            @map("regla_conversion_cantidad_primario") @db.Decimal(18, 4)
+  reglaConversionUnidadesSecundario Decimal?            @map("regla_conversion_unidades_secundario") @db.Decimal(18, 4)
+  perdidaProcesamientoPct           Decimal?            @map("perdida_procesamiento_pct") @db.Decimal(5, 2)
+  estimadoUnidadesSecundario        Decimal?            @map("estimado_unidades_secundario") @db.Decimal(18, 4)
+  kgPrimarioDescontado              Decimal?            @map("kg_primario_descontado") @db.Decimal(18, 4)
+  cierreDesdeProcesador             Boolean             @default(false) @map("cierre_desde_procesador")
+  observaciones                     String?
+  createdAt                         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta                            Cuenta              @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega                            Bodega              @relation(fields: [idBodega], references: [idBodega])
+  cliente                           Cliente?            @relation(fields: [idCliente], references: [idCliente])
+  productoPrimario                  Producto            @relation("SolicitudProcPrimario", fields: [idProductoPrimario], references: [idProducto])
+  productoSecundario                Producto            @relation("SolicitudProcSecundario", fields: [idProductoSecundario], references: [idProducto])
+  solicitante                       Usuario             @relation("SolicitudProcSolicitante", fields: [idSolicitante], references: [idUsuario])
+  procesador                        Usuario?            @relation("SolicitudProcProcesador", fields: [idProcesador], references: [idUsuario])
+  registrosMerma                    RegistroMerma[]
+  ordenesTrabajo                    OrdenTrabajo[]
+
+  @@unique([codigoCuenta, codigo], map: "uq_solicitud_procesamiento_cuenta_codigo")
+  @@map("solicitud_procesamiento")
+}
+
+model RegistroMerma {
+  idRegistro               String                 @id @default(dbgenerated("gen_random_uuid()")) @map("id_registro") @db.Uuid
+  idSolicitudProcesamiento String                 @map("id_solicitud_procesamiento") @db.Uuid
+  idBodega                 String                 @map("id_bodega") @db.Uuid
+  codigoCuenta             String                 @map("codigo_cuenta") @db.VarChar(32)
+  kilosMerma               Decimal                @map("kilos_merma") @db.Decimal(18, 4)
+  periodo                  DateTime               @db.Date
+  createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  solicitudProcesamiento   SolicitudProcesamiento @relation(fields: [idSolicitudProcesamiento], references: [idSolicitudProcesamiento])
+  bodega                   Bodega                 @relation(fields: [idBodega], references: [idBodega])
+  cuenta                   Cuenta                 @relation(fields: [codigoCuenta], references: [codigoCuenta])
+
+  @@map("registro_merma")
+}
+
+model AlertaOperativa {
+  idAlerta       String        @id @default(dbgenerated("gen_random_uuid()")) @map("id_alerta") @db.Uuid
+  codigoCuenta   String        @map("codigo_cuenta") @db.VarChar(32)
+  idBodega       String        @map("id_bodega") @db.Uuid
+  tipo           TipoAlerta
+  estado         EstadoAlerta  @default(abierta)
+  idUbicacion    String?       @map("id_ubicacion") @db.Uuid
+  idOrdenTrabajo String?       @map("id_orden_trabajo") @db.Uuid
+  idResponsable  String?       @map("id_responsable") @db.Uuid
+  titulo         String        @db.VarChar(255)
+  descripcion    String?
+  motivoCierre   String?       @map("motivo_cierre")
+  metadata       Json?
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  cerradaAt      DateTime?     @map("cerrada_at") @db.Timestamptz(6)
+  cuenta         Cuenta        @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega         Bodega        @relation(fields: [idBodega], references: [idBodega])
+  ubicacion      Ubicacion?    @relation(fields: [idUbicacion], references: [idUbicacion])
+  ordenTrabajo   OrdenTrabajo? @relation(fields: [idOrdenTrabajo], references: [idOrdenTrabajo], onDelete: SetNull)
+  responsable    Usuario?      @relation("AlertaResponsable", fields: [idResponsable], references: [idUsuario])
+
+  @@map("alerta_operativa")
+}
+
+model TareaCola {
+  idTarea        String        @id @default(dbgenerated("gen_random_uuid()")) @map("id_tarea") @db.Uuid
+  codigoCuenta   String        @map("codigo_cuenta") @db.VarChar(32)
+  idBodega       String        @map("id_bodega") @db.Uuid
+  tipo           TipoTarea     @default(otro)
+  estado         EstadoTarea   @default(pendiente)
+  idAsignado     String?       @map("id_asignado") @db.Uuid
+  idOrdenTrabajo String?       @map("id_orden_trabajo") @db.Uuid
+  titulo         String?       @db.VarChar(255)
+  descripcion    String?
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta         Cuenta        @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega         Bodega        @relation(fields: [idBodega], references: [idBodega])
+  asignado       Usuario?      @relation("TareaColaAsignado", fields: [idAsignado], references: [idUsuario])
+  ordenTrabajo   OrdenTrabajo? @relation(fields: [idOrdenTrabajo], references: [idOrdenTrabajo], onDelete: SetNull)
+
+  @@map("tarea_cola")
+}
+
+model SolicitudIntegracion {
+  idSolicitudIntegracion String            @id @default(dbgenerated("gen_random_uuid()")) @map("id_solicitud_integracion") @db.Uuid
+  codigoCuenta           String            @map("codigo_cuenta") @db.VarChar(32)
+  idCliente              String            @map("id_cliente") @db.Uuid
+  bodegaExternaId        String            @map("bodega_externa_id") @db.VarChar(64)
+  bodegaExternaNombre    String            @map("bodega_externa_nombre") @db.VarChar(255)
+  scraping               Boolean           @default(false)
+  api                    Boolean           @default(false)
+  csvPlano               Boolean           @default(false) @map("csv_plano")
+  estado                 EstadoIntegracion @default(activo)
+  idSolicitante          String            @map("id_solicitante") @db.Uuid
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  finalizadaAt           DateTime?         @map("finalizada_at") @db.Timestamptz(6)
+  cuenta                 Cuenta            @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  cliente                Cliente           @relation(fields: [idCliente], references: [idCliente])
+  solicitante            Usuario           @relation("SolicitudIntegracionSolicitante", fields: [idSolicitante], references: [idUsuario])
+
+  @@map("solicitud_integracion")
+}
+
+model TareaCuenta {
+  idTareaCuenta String            @id @default(dbgenerated("gen_random_uuid()")) @map("id_tarea_cuenta") @db.Uuid
+  codigoCuenta  String            @map("codigo_cuenta") @db.VarChar(32)
+  idCliente     String            @map("id_cliente") @db.Uuid
+  titulo        String            @db.VarChar(255)
+  detalle       String?
+  estado        EstadoTareaCuenta @default(pendiente)
+  idCreador     String            @map("id_creador") @db.Uuid
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  resueltaAt    DateTime?         @map("resuelta_at") @db.Timestamptz(6)
+  cuenta        Cuenta            @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  cliente       Cliente           @relation(fields: [idCliente], references: [idCliente])
+  creador       Usuario           @relation("TareaCuentaCreador", fields: [idCreador], references: [idUsuario])
+
+  @@map("tarea_cuenta")
 }
