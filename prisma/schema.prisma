@@ -64,6 +64,7 @@ model Cuenta {
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   empresa         Empresa  @relation(fields: [codigoEmpresa], references: [codigoEmpresa])
   usuarios        Usuario[]
+    bodegas         Bodega[]
 
   @@map("cuenta")
 }
@@ -85,6 +86,39 @@ model Usuario {
   rol     Rol      @relation(fields: [idRol], references: [idRol])
   empresa Empresa? @relation(fields: [codigoEmpresa], references: [codigoEmpresa])
   cuenta  Cuenta?  @relation(fields: [codigoCuenta], references: [codigoCuenta])
+    asignacionesBodega AsignacionBodega[] @relation("UsuarioAsignacionesBodega")
 
   @@map("usuario")
+}
+
+model Bodega {
+    idBodega      String               @id @default(dbgenerated("gen_random_uuid()")) @map("id_bodega") @db.Uuid
+    codigoCuenta  String               @map("codigo_cuenta") @db.VarChar(32)
+    codigoBodega  String               @map("codigo_bodega") @db.VarChar(32)
+    nombre        String               @db.VarChar(255)
+    esExterna     Boolean              @default(false) @map("es_externa")
+    estaActiva    Boolean              @default(true) @map("esta_activa")
+    idCreador     String?              @map("id_creador") @db.Uuid
+    createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+    cuenta        Cuenta               @relation(fields: [codigoCuenta], references: [codigoCuenta])
+    asignaciones  AsignacionBodega[]
+
+    @@unique([codigoCuenta, codigoBodega], map: "uq_bodega_codigo_por_cuenta")
+    @@map("bodega")
+}
+
+model AsignacionBodega {
+    idAsignacion String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_asignacion") @db.Uuid
+    idUsuario    String   @map("id_usuario") @db.Uuid
+    idBodega     String   @map("id_bodega") @db.Uuid
+    estaActiva   Boolean  @default(true) @map("esta_activa")
+    idCreador    String?  @map("id_creador") @db.Uuid
+    createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+    usuario      Usuario  @relation("UsuarioAsignacionesBodega", fields: [idUsuario], references: [idUsuario], onDelete: Cascade)
+    bodega       Bodega   @relation(fields: [idBodega], references: [idBodega], onDelete: Cascade)
+
+    @@unique([idUsuario, idBodega], map: "uq_asignacion_bodega_usuario")
+    @@map("asignacion_bodega")
 }
