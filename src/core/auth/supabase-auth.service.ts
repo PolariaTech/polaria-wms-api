@@ -1,4 +1,10 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 
@@ -72,6 +78,42 @@ export class SupabaseAuthService {
     if (error) {
       this.logger.warn(`Error al cerrar sesión: ${error.message}`);
       throw new UnauthorizedException('No se pudo cerrar la sesión');
+    }
+  }
+
+  async createAuthUser(email: string, password: string): Promise<string> {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const { data, error } = await this.adminClient.auth.admin.createUser({
+      email: normalizedEmail,
+      password,
+      email_confirm: true,
+    });
+
+    if (error || !data.user) {
+      const message = error?.message ?? 'No se pudo crear el usuario en Auth';
+
+      if (
+        message.toLowerCase().includes('already') ||
+        message.toLowerCase().includes('registered')
+      ) {
+        throw new ConflictException('El correo ya está registrado');
+      }
+
+      this.logger.warn(`Error al crear usuario Auth: ${message}`);
+      throw new BadRequestException(message);
+    }
+
+    return data.user.id;
+  }
+
+  async deleteAuthUser(idAuth: string): Promise<void> {
+    const { error } = await this.adminClient.auth.admin.deleteUser(idAuth);
+
+    if (error) {
+      this.logger.warn(
+        `No se pudo eliminar usuario Auth ${idAuth}: ${error.message}`,
+      );
     }
   }
 
