@@ -11,10 +11,11 @@ import { TenantService } from '../src/core/tenant/tenant.service';
 import { RolNivel, WmsRol } from '../src/generated/prisma/client';
 import { AdministracionUsuariosController } from '../src/modules/configurator/controllers/administracion-usuarios.controller';
 import { AdministracionUsuariosService } from '../src/modules/configurator/services/administracion-usuarios.service';
+import { ConfiguradorUsuariosService } from '../src/modules/configurator/services/configurador-usuarios.service';
 
 describe('AdministracionUsuariosController (e2e)', () => {
   let app: INestApplication<App>;
-  let usuariosService: { create: jest.Mock };
+  let configuradorUsuariosService: { create: jest.Mock };
 
   const adminContext = {
     idUsuario: 'usr-admin',
@@ -35,12 +36,16 @@ describe('AdministracionUsuariosController (e2e)', () => {
   };
 
   beforeEach(async () => {
-    usuariosService = { create: jest.fn() };
+    configuradorUsuariosService = { create: jest.fn() };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [AdministracionUsuariosController],
       providers: [
-        { provide: AdministracionUsuariosService, useValue: usuariosService },
+        AdministracionUsuariosService,
+        {
+          provide: ConfiguradorUsuariosService,
+          useValue: configuradorUsuariosService,
+        },
         {
           provide: SupabaseAuthService,
           useValue: {
@@ -116,7 +121,7 @@ describe('AdministracionUsuariosController (e2e)', () => {
   });
 
   it('POST /administracion/usuarios responde 201 sin idRol (default operador_cuenta)', async () => {
-    usuariosService.create.mockResolvedValue({
+    configuradorUsuariosService.create.mockResolvedValue({
       idUsuario: 'usr-new',
       username: 'operador.c1',
       nombre: 'Operador',
@@ -136,16 +141,18 @@ describe('AdministracionUsuariosController (e2e)', () => {
       })
       .expect(201);
 
-    expect(usuariosService.create).toHaveBeenCalledWith(
+    expect(configuradorUsuariosService.create).toHaveBeenCalledWith(
       expect.objectContaining({
         idRol: WmsRol.operador_cuenta,
+        codigoEmpresa: 'EMP001',
+        codigoCuenta: 'CTA001',
       }),
-      adminContext,
+      adminContext.idUsuario,
     );
   });
 
-  it('POST /administracion/usuarios responde 201 para administrador_cuenta', async () => {
-    usuariosService.create.mockResolvedValue({
+  it('POST /administracion/usuarios responde 201 con idRol explícito', async () => {
+    configuradorUsuariosService.create.mockResolvedValue({
       idUsuario: 'usr-new',
       username: 'operario.b1',
       nombre: 'Operario',
@@ -171,12 +178,13 @@ describe('AdministracionUsuariosController (e2e)', () => {
         expect(res.body.codigoCuenta).toBe('CTA001');
       });
 
-    expect(usuariosService.create).toHaveBeenCalledWith(
+    expect(configuradorUsuariosService.create).toHaveBeenCalledWith(
       expect.objectContaining({
         username: 'operario.b1',
         idRol: WmsRol.operario,
+        idBodega: '550e8400-e29b-41d4-a716-446655440000',
       }),
-      adminContext,
+      adminContext.idUsuario,
     );
   });
 });
