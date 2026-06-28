@@ -1,9 +1,23 @@
-# modules/purchases
+# Módulo Purchases — SOL y OC (POL-34)
 
-Órdenes de compra.
+Gestión de **SolicitudCompra** y **OrdenCompra**.
 
-## Responsabilidad
+Documentación completa de endpoints: [API.md](./API.md)
 
-- Creación y seguimiento de órdenes de compra a proveedores.
-- Recepción de mercancía y actualización de inventario.
-- Historial de compras y relación con proveedores.
+## SOL — `/compras/solicitudes`
+
+Ver [API.md](./API.md#solicitudes-de-compra-sol).
+
+## OC — `/compras/ordenes`
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/compras/ordenes` | Crear OC (desde cero o desde SOL aprobada) |
+| GET | `/compras/ordenes` | Listar |
+| GET | `/compras/ordenes/:id` | Detalle |
+| POST | `/compras/ordenes/:id/emitir` | `borrador` → `emitida` |
+| POST | `/compras/ordenes/:id/cancelar` | → `cancelada` |
+| POST | `/compras/solicitudes/:id/convertir-oc` | SOL `aprobada` → OC |
+
+Swagger: **Compras · Órdenes (OC)** en `/api/docs`.
+
