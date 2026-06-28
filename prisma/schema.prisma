@@ -566,6 +566,7 @@ model Producto {
   mermaPct                          Decimal?               @map("merma_pct") @db.Decimal(5, 2)
   unidadVisualizacion               String                 @default("peso") @map("unidad_visualizacion") @db.VarChar(32)
   requiereLote                      Boolean                @default(false) @map("requiere_lote")
+  metadatosCatalogo                 Json?                  @map("metadatos_catalogo")
   estaActivo                        Boolean                @default(true) @map("esta_activo")
   createdAt                         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
