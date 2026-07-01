@@ -272,6 +272,7 @@ model Rol {
 model Empresa {
   codigoEmpresa         String                @id @map("codigo_empresa") @db.VarChar(32)
   razonSocial           String                @map("razon_social") @db.VarChar(255)
+  telefono              String?               @db.VarChar(32)
   estaActiva            Boolean               @default(true) @map("esta_activa")
   idCreador             String?               @map("id_creador") @db.Uuid
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -535,6 +536,7 @@ model Cliente {
   codigo                 String                   @db.VarChar(32)
   nombre                 String                   @db.VarChar(255)
   nit                    String?                  @db.VarChar(32)
+  telefono               String?                  @db.VarChar(32)
   estaActivo             Boolean                  @default(true) @map("esta_activo")
   createdAt              DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -595,6 +597,7 @@ model Comprador {
   codigo       String       @db.VarChar(32)
   nombre       String       @db.VarChar(255)
   contacto     String?      @db.VarChar(255)
+  telefono     String?      @db.VarChar(32)
   estaActivo   Boolean      @default(true) @map("esta_activo")
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
