@@ -1,0 +1,691 @@
+From 175a729b54803a92bca02f57ca05cee6809f4617 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 1 Jul 2026 20:43:08 +0000
+Subject: [PATCH] =?UTF-8?q?feat:=20tel=C3=A9fono=20en=20empresa/cliente/co?=
+ =?UTF-8?q?mprador=20y=20proveedor=20en=20solicitud=20de=20compra?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../components/ClienteCreateModal.tsx         | 25 ++++++++++
+ .../components/ClientesListView.tsx           |  7 +++
+ .../components/CompradorCreateModal.tsx       | 25 ++++++++++
+ .../components/CompradoresListView.tsx        |  7 +++
+ .../admin-panel/services/clientes.service.ts  | 23 ++++++++-
+ .../services/compradores.service.ts           | 23 ++++++++-
+ .../components/EmpresaCreateModal.tsx         | 24 ++++++++++
+ .../components/EmpresasListView.tsx           |  7 +++
+ .../services/empresas.service.test.ts         |  4 ++
+ .../configurator/services/empresas.service.ts | 24 +++++++++-
+ .../components/SolicitudCompraCreateModal.tsx | 47 ++++++++++++++++++-
+ 11 files changed, 211 insertions(+), 5 deletions(-)
+
+diff --git a/src/modules/admin-panel/components/ClienteCreateModal.tsx b/src/modules/admin-panel/components/ClienteCreateModal.tsx
+index 9d12319..5addff0 100644
+--- a/src/modules/admin-panel/components/ClienteCreateModal.tsx
++++ b/src/modules/admin-panel/components/ClienteCreateModal.tsx
+@@ -3,6 +3,8 @@
+ import { useCallback, useEffect, useState, type FormEvent } from "react";
+ import { PolariaFormInput } from "@/components/shared/PolariaFormField";
+ import { PolariaFormModal } from "@/components/shared/PolariaFormModal";
++import { PolariaPhoneInput } from "@/components/shared/PolariaPhoneInput";
++import { isValidInternationalPhone } from "@/constants/phone-countries";
+ import { DomainServiceError } from "@/lib/domain-service-error";
+ import { useCompany } from "@/providers/CompanyProvider";
+ import { createClienteAdmin } from "../services/clientes.service";
+@@ -16,6 +18,7 @@ interface ClienteCreateModalProps {
+ const INITIAL_FORM = {
+   nombre: "",
+   nit: "",
++  telefono: "",
+ };
+ 
+ export function ClienteCreateModal({
+@@ -53,10 +56,17 @@ export function ClienteCreateModal({
+     setIsSubmitting(true);
+ 
+     try {
++      if (form.telefono.trim() && !isValidInternationalPhone(form.telefono)) {
++        setError("Ingresa un número de teléfono válido.");
++        setIsSubmitting(false);
++        return;
++      }
++
+       await createClienteAdmin({
+         codigoCuenta,
+         nombre: form.nombre,
+         nit: form.nit,
++        telefono: form.telefono,
+       });
+       onCreated();
+       onClose();
+@@ -116,6 +126,21 @@ export function ClienteCreateModal({
+         disabled={isSubmitting}
+         compact
+       />
++
++      <PolariaPhoneInput
++        id="cliente-telefono"
++        label="Teléfono"
++        value={form.telefono}
++        onChange={(value) =>
++          setForm((current) => ({
++            ...current,
++            telefono: value,
++          }))
++        }
++        disabled={isSubmitting}
++        hint="Opcional. Formato internacional."
++        compact
++      />
+     </PolariaFormModal>
+   );
+ }
+diff --git a/src/modules/admin-panel/components/ClientesListView.tsx b/src/modules/admin-panel/components/ClientesListView.tsx
+index a910e05..4f615b6 100644
+--- a/src/modules/admin-panel/components/ClientesListView.tsx
++++ b/src/modules/admin-panel/components/ClientesListView.tsx
+@@ -3,6 +3,7 @@
+ import { useCallback, useMemo, useState } from "react";
+ import { PolariaDataTable } from "@/components/shared/PolariaDataTable";
+ import { PolariaTableCode } from "@/components/shared/PolariaTableCells";
++import { formatInternationalPhoneDisplay } from "@/constants/phone-countries";
+ import { useAsyncQuery } from "@/hooks/useAsyncQuery";
+ import { useCompany } from "@/providers/CompanyProvider";
+ import {
+@@ -69,6 +70,12 @@ export function ClientesListView() {
+           header: "NIT",
+           cell: (row: ClienteListRow) => row.nit,
+         },
++        {
++          id: "telefono",
++          header: "Teléfono",
++          cell: (row: ClienteListRow) =>
++            formatInternationalPhoneDisplay(row.telefono),
++        },
+       ] as const,
+     [],
+   );
+diff --git a/src/modules/admin-panel/components/CompradorCreateModal.tsx b/src/modules/admin-panel/components/CompradorCreateModal.tsx
+index 14a1c3d..9ea4fdc 100644
+--- a/src/modules/admin-panel/components/CompradorCreateModal.tsx
++++ b/src/modules/admin-panel/components/CompradorCreateModal.tsx
+@@ -3,6 +3,8 @@
+ import { useCallback, useEffect, useState, type FormEvent } from "react";
+ import { PolariaFormInput } from "@/components/shared/PolariaFormField";
+ import { PolariaFormModal } from "@/components/shared/PolariaFormModal";
++import { PolariaPhoneInput } from "@/components/shared/PolariaPhoneInput";
++import { isValidInternationalPhone } from "@/constants/phone-countries";
+ import { DomainServiceError } from "@/lib/domain-service-error";
+ import { useCompany } from "@/providers/CompanyProvider";
+ import { createCompradorAdmin } from "../services/compradores.service";
+@@ -15,6 +17,7 @@ interface CompradorCreateModalProps {
+ 
+ const INITIAL_FORM = {
+   nombre: "",
++  telefono: "",
+ };
+ 
+ export function CompradorCreateModal({
+@@ -52,9 +55,16 @@ export function CompradorCreateModal({
+     setIsSubmitting(true);
+ 
+     try {
++      if (form.telefono.trim() && !isValidInternationalPhone(form.telefono)) {
++        setError("Ingresa un número de teléfono válido.");
++        setIsSubmitting(false);
++        return;
++      }
++
+       await createCompradorAdmin({
+         codigoCuenta,
+         nombre: form.nombre,
++        telefono: form.telefono,
+       });
+       onCreated();
+       onClose();
+@@ -99,6 +109,21 @@ export function CompradorCreateModal({
+         autoFocus
+         compact
+       />
++
++      <PolariaPhoneInput
++        id="comprador-telefono"
++        label="Teléfono"
++        value={form.telefono}
++        onChange={(value) =>
++          setForm((current) => ({
++            ...current,
++            telefono: value,
++          }))
++        }
++        disabled={isSubmitting}
++        hint="Opcional. Formato internacional."
++        compact
++      />
+     </PolariaFormModal>
+   );
+ }
+diff --git a/src/modules/admin-panel/components/CompradoresListView.tsx b/src/modules/admin-panel/components/CompradoresListView.tsx
+index b2c9a86..ed5e65f 100644
+--- a/src/modules/admin-panel/components/CompradoresListView.tsx
++++ b/src/modules/admin-panel/components/CompradoresListView.tsx
+@@ -3,6 +3,7 @@
+ import { useCallback, useMemo, useState } from "react";
+ import { PolariaDataTable } from "@/components/shared/PolariaDataTable";
+ import { PolariaTableCode } from "@/components/shared/PolariaTableCells";
++import { formatInternationalPhoneDisplay } from "@/constants/phone-countries";
+ import { useAsyncQuery } from "@/hooks/useAsyncQuery";
+ import { useCompany } from "@/providers/CompanyProvider";
+ import {
+@@ -54,6 +55,12 @@ export function CompradoresListView() {
+           header: "Comprador",
+           cell: (row: CompradorListRow) => row.comprador,
+         },
++        {
++          id: "telefono",
++          header: "Teléfono",
++          cell: (row: CompradorListRow) =>
++            formatInternationalPhoneDisplay(row.telefono),
++        },
+       ] as const,
+     [],
+   );
+diff --git a/src/modules/admin-panel/services/clientes.service.ts b/src/modules/admin-panel/services/clientes.service.ts
+index e3e78a6..f0ad21a 100644
+--- a/src/modules/admin-panel/services/clientes.service.ts
++++ b/src/modules/admin-panel/services/clientes.service.ts
+@@ -9,12 +9,17 @@ import {
+   generateCodigoCuentaFromNombre,
+   normalizeCodigoCuentaInput,
+ } from "@/lib/generate-codigo-cuenta";
++import {
++  isValidInternationalPhone,
++  normalizeInternationalPhone,
++} from "@/constants/phone-countries";
+ 
+ export interface ClienteListRow {
+   idCliente: string;
+   codigo: string;
+   nombre: string;
+   nit: string;
++  telefono: string | null;
+ }
+ 
+ interface ClienteDbRow {
+@@ -22,9 +27,10 @@ interface ClienteDbRow {
+   codigo: string;
+   nombre: string;
+   nit: string;
++  telefono: string | null;
+ }
+ 
+-const CLIENTE_LIST_COLUMNS = "id_cliente,codigo,nombre,nit";
++const CLIENTE_LIST_COLUMNS = "id_cliente,codigo,nombre,nit,telefono";
+ 
+ function mapClienteRow(row: ClienteDbRow): ClienteListRow {
+   return {
+@@ -32,6 +38,7 @@ function mapClienteRow(row: ClienteDbRow): ClienteListRow {
+     codigo: row.codigo,
+     nombre: row.nombre,
+     nit: row.nit,
++    telefono: row.telefono,
+   };
+ }
+ 
+@@ -81,6 +88,7 @@ export interface CreateClienteInput {
+   codigoCuenta: string;
+   nombre: string;
+   nit: string;
++  telefono?: string | null;
+ }
+ 
+ /** Crea un cliente para la cuenta activa (scope tenant). */
+@@ -90,6 +98,7 @@ export async function createClienteAdmin(
+   const codigoCuenta = requireCodigoCuenta(input.codigoCuenta);
+   const nombre = input.nombre.trim();
+   const nit = normalizeNitInput(input.nit);
++  const telefonoRaw = input.telefono?.trim() ?? "";
+   const codigo = normalizeCodigoCuentaInput(
+     generateCodigoCuentaFromNombre(nombre),
+   );
+@@ -122,6 +131,17 @@ export async function createClienteAdmin(
+     );
+   }
+ 
++  if (telefonoRaw && !isValidInternationalPhone(telefonoRaw)) {
++    throw new DomainServiceError(
++      "El teléfono del cliente no es válido.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  const telefono = telefonoRaw
++    ? normalizeInternationalPhone(telefonoRaw)
++    : null;
++
+   const inserted = await runDomainMutation<ClienteDbRow | null>((client) => {
+     const query = client
+       .from("cliente")
+@@ -130,6 +150,7 @@ export async function createClienteAdmin(
+         codigo,
+         nombre,
+         nit,
++        telefono,
+         esta_activo: true,
+       })
+       .select(CLIENTE_LIST_COLUMNS)
+diff --git a/src/modules/admin-panel/services/compradores.service.ts b/src/modules/admin-panel/services/compradores.service.ts
+index fb1a115..d5b890c 100644
+--- a/src/modules/admin-panel/services/compradores.service.ts
++++ b/src/modules/admin-panel/services/compradores.service.ts
+@@ -9,26 +9,33 @@ import {
+   generateCodigoCuentaFromNombre,
+   normalizeCodigoCuentaInput,
+ } from "@/lib/generate-codigo-cuenta";
++import {
++  isValidInternationalPhone,
++  normalizeInternationalPhone,
++} from "@/constants/phone-countries";
+ 
+ export interface CompradorListRow {
+   idComprador: string;
+   codigo: string;
+   comprador: string;
++  telefono: string | null;
+ }
+ 
+ interface CompradorDbRow {
+   id_comprador: string;
+   codigo: string;
+   nombre: string;
++  telefono: string | null;
+ }
+ 
+-const COMPRADOR_LIST_COLUMNS = "id_comprador,codigo,nombre";
++const COMPRADOR_LIST_COLUMNS = "id_comprador,codigo,nombre,telefono";
+ 
+ function mapCompradorRow(row: CompradorDbRow): CompradorListRow {
+   return {
+     idComprador: row.id_comprador,
+     codigo: row.codigo,
+     comprador: row.nombre,
++    telefono: row.telefono,
+   };
+ }
+ 
+@@ -65,6 +72,7 @@ export async function listCompradoresAdmin(
+ export interface CreateCompradorInput {
+   codigoCuenta: string;
+   nombre: string;
++  telefono?: string | null;
+ }
+ 
+ /** Crea un comprador para la cuenta activa (scope tenant). */
+@@ -73,6 +81,7 @@ export async function createCompradorAdmin(
+ ): Promise<CompradorListRow> {
+   const codigoCuenta = requireCodigoCuenta(input.codigoCuenta);
+   const nombre = input.nombre.trim();
++  const telefonoRaw = input.telefono?.trim() ?? "";
+   const codigo = normalizeCodigoCuentaInput(
+     generateCodigoCuentaFromNombre(nombre),
+   );
+@@ -91,6 +100,17 @@ export async function createCompradorAdmin(
+     );
+   }
+ 
++  if (telefonoRaw && !isValidInternationalPhone(telefonoRaw)) {
++    throw new DomainServiceError(
++      "El teléfono del comprador no es válido.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  const telefono = telefonoRaw
++    ? normalizeInternationalPhone(telefonoRaw)
++    : null;
++
+   const inserted = await runDomainMutation<CompradorDbRow | null>((client) => {
+     const query = client
+       .from("comprador")
+@@ -98,6 +118,7 @@ export async function createCompradorAdmin(
+         codigo_cuenta: codigoCuenta,
+         codigo,
+         nombre,
++        telefono,
+         esta_activo: true,
+       })
+       .select(COMPRADOR_LIST_COLUMNS)
+diff --git a/src/modules/configurator/components/EmpresaCreateModal.tsx b/src/modules/configurator/components/EmpresaCreateModal.tsx
+index 510e13d..7e7491b 100644
+--- a/src/modules/configurator/components/EmpresaCreateModal.tsx
++++ b/src/modules/configurator/components/EmpresaCreateModal.tsx
+@@ -3,6 +3,8 @@
+ import { useCallback, useEffect, useState, type FormEvent } from "react";
+ import { PolariaFormInput } from "@/components/shared/PolariaFormField";
+ import { PolariaFormModal } from "@/components/shared/PolariaFormModal";
++import { PolariaPhoneInput } from "@/components/shared/PolariaPhoneInput";
++import { isValidInternationalPhone } from "@/constants/phone-countries";
+ import { DomainServiceError } from "@/lib/domain-service-error";
+ import {
+   generateCodigoCuentaFromNombre,
+@@ -20,6 +22,7 @@ interface EmpresaCreateModalProps {
+ const INITIAL_FORM = {
+   razonSocial: "",
+   codigoEmpresa: "",
++  telefono: "",
+ };
+ 
+ export function EmpresaCreateModal({
+@@ -71,9 +74,16 @@ export function EmpresaCreateModal({
+     setIsSubmitting(true);
+ 
+     try {
++      if (form.telefono.trim() && !isValidInternationalPhone(form.telefono)) {
++        setError("Ingresa un número de teléfono válido.");
++        setIsSubmitting(false);
++        return;
++      }
++
+       await createEmpresaConfigurator({
+         razonSocial: form.razonSocial,
+         codigoEmpresa: form.codigoEmpresa,
++        telefono: form.telefono,
+         idCreador,
+       });
+       onCreated();
+@@ -122,6 +132,20 @@ export function EmpresaCreateModal({
+         disabled={isSubmitting}
+         hint="Se genera al escribir la razón social (base 36, 5 caracteres); puedes ajustarlo si lo necesitas."
+       />
++
++      <PolariaPhoneInput
++        id="empresa-telefono"
++        label="Teléfono"
++        value={form.telefono}
++        onChange={(value) =>
++          setForm((current) => ({
++            ...current,
++            telefono: value,
++          }))
++        }
++        disabled={isSubmitting}
++        hint="Opcional. Formato internacional."
++      />
+     </PolariaFormModal>
+   );
+ }
+diff --git a/src/modules/configurator/components/EmpresasListView.tsx b/src/modules/configurator/components/EmpresasListView.tsx
+index 73e0633..84dcea5 100644
+--- a/src/modules/configurator/components/EmpresasListView.tsx
++++ b/src/modules/configurator/components/EmpresasListView.tsx
+@@ -7,6 +7,7 @@ import {
+   PolariaTableCode,
+   PolariaTableEditButton,
+ } from "@/components/shared/PolariaTableCells";
++import { formatInternationalPhoneDisplay } from "@/constants/phone-countries";
+ import { useAsyncQuery } from "@/hooks/useAsyncQuery";
+ import {
+   EMPRESAS_EMPTY_MESSAGE,
+@@ -41,6 +42,12 @@ export function EmpresasListView() {
+           header: "Razón social",
+           cell: (row: EmpresaListRow) => row.razonSocial,
+         },
++        {
++          id: "telefono",
++          header: "Teléfono",
++          cell: (row: EmpresaListRow) =>
++            formatInternationalPhoneDisplay(row.telefono),
++        },
+         {
+           id: "estado",
+           header: "Estado",
+diff --git a/src/modules/configurator/services/empresas.service.test.ts b/src/modules/configurator/services/empresas.service.test.ts
+index adcd488..fd0a71e 100644
+--- a/src/modules/configurator/services/empresas.service.test.ts
++++ b/src/modules/configurator/services/empresas.service.test.ts
+@@ -29,6 +29,7 @@ describe("empresas.service", () => {
+         {
+           codigo_empresa: "ACME0",
+           razon_social: "ACME Corp",
++          telefono: "+573001112233",
+           esta_activa: true,
+         },
+       ],
+@@ -43,6 +44,7 @@ describe("empresas.service", () => {
+       {
+         codigoEmpresa: "ACME0",
+         razonSocial: "ACME Corp",
++        telefono: "+573001112233",
+         estaActiva: true,
+       },
+     ]);
+@@ -88,12 +90,14 @@ describe("empresas.service", () => {
+     expect(insertChain.insert).toHaveBeenCalledWith({
+       codigo_empresa: "MIT00",
+       razon_social: "Mitre S.A.",
++      telefono: null,
+       id_creador: "user-1",
+       esta_activa: true,
+     });
+     expect(row).toEqual({
+       codigoEmpresa: "MIT00",
+       razonSocial: "Mitre S.A.",
++      telefono: null,
+       estaActiva: true,
+     });
+   });
+diff --git a/src/modules/configurator/services/empresas.service.ts b/src/modules/configurator/services/empresas.service.ts
+index 9ded357..7a9ce20 100644
+--- a/src/modules/configurator/services/empresas.service.ts
++++ b/src/modules/configurator/services/empresas.service.ts
+@@ -5,25 +5,32 @@ import {
+ } from "@/lib/supabase/domain-query";
+ import { DomainServiceError } from "@/lib/domain-service-error";
+ import { normalizeCodigoCuentaInput } from "@/lib/generate-codigo-cuenta";
++import {
++  isValidInternationalPhone,
++  normalizeInternationalPhone,
++} from "@/constants/phone-countries";
+ 
+ export interface EmpresaListRow {
+   codigoEmpresa: string;
+   razonSocial: string;
++  telefono: string | null;
+   estaActiva: boolean;
+ }
+ 
+ interface EmpresaDbRow {
+   codigo_empresa: string;
+   razon_social: string;
++  telefono: string | null;
+   esta_activa: boolean;
+ }
+ 
+-const EMPRESA_LIST_COLUMNS = "codigo_empresa,razon_social,esta_activa";
++const EMPRESA_LIST_COLUMNS = "codigo_empresa,razon_social,telefono,esta_activa";
+ 
+ function mapEmpresaRow(row: EmpresaDbRow): EmpresaListRow {
+   return {
+     codigoEmpresa: row.codigo_empresa,
+     razonSocial: row.razon_social,
++    telefono: row.telefono,
+     estaActiva: row.esta_activa,
+   };
+ }
+@@ -49,6 +56,7 @@ export async function listEmpresasConfigurator(): Promise<EmpresaListRow[]> {
+ export interface CreateEmpresaInput {
+   codigoEmpresa: string;
+   razonSocial: string;
++  telefono?: string | null;
+   idCreador?: string | null;
+ }
+ 
+@@ -80,6 +88,7 @@ export async function createEmpresaConfigurator(
+ ): Promise<EmpresaListRow> {
+   const razonSocial = input.razonSocial.trim();
+   const codigoEmpresa = normalizeCodigoCuentaInput(input.codigoEmpresa);
++  const telefonoRaw = input.telefono?.trim() ?? "";
+ 
+   if (!razonSocial) {
+     throw new DomainServiceError(
+@@ -95,12 +104,24 @@ export async function createEmpresaConfigurator(
+     );
+   }
+ 
++  if (telefonoRaw && !isValidInternationalPhone(telefonoRaw)) {
++    throw new DomainServiceError(
++      "El teléfono de la empresa no es válido.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  const telefono = telefonoRaw
++    ? normalizeInternationalPhone(telefonoRaw)
++    : null;
++
+   await assertCodigoEmpresaDisponible(codigoEmpresa);
+ 
+   await runDomainMutation<{ codigo_empresa: string } | null>((client) => {
+     const query = client.from("empresa").insert({
+       codigo_empresa: codigoEmpresa,
+       razon_social: razonSocial,
++      telefono,
+       id_creador: input.idCreador ?? null,
+       esta_activa: true,
+     });
+@@ -114,6 +135,7 @@ export async function createEmpresaConfigurator(
+   return {
+     codigoEmpresa,
+     razonSocial,
++    telefono,
+     estaActiva: true,
+   };
+ }
+diff --git a/src/modules/purchases/components/SolicitudCompraCreateModal.tsx b/src/modules/purchases/components/SolicitudCompraCreateModal.tsx
+index 550366e..494ae95 100644
+--- a/src/modules/purchases/components/SolicitudCompraCreateModal.tsx
++++ b/src/modules/purchases/components/SolicitudCompraCreateModal.tsx
+@@ -12,6 +12,7 @@ import { DomainServiceError } from "@/lib/domain-service-error";
+ import {
+   listBodegasInternasVinculadasAdmin,
+   listCatalogoProductosAdmin,
++  listProveedoresAdmin,
+ } from "@/modules/admin-panel";
+ import { useCompany } from "@/providers/CompanyProvider";
+ import { createSolicitudCompraApi } from "../services/purchases-api.service";
+@@ -35,6 +36,11 @@ interface ProductoOption {
+   sku?: string;
+ }
+ 
++interface ProveedorOption {
++  value: string;
++  label: string;
++}
++
+ export function SolicitudCompraCreateModal({
+   open,
+   onClose,
+@@ -44,7 +50,9 @@ export function SolicitudCompraCreateModal({
+   const [lines, setLines] = useState<DraftLine[]>([]);
+   const [pickProductId, setPickProductId] = useState("");
+   const [pickPesoKg, setPickPesoKg] = useState("");
++  const [idProveedor, setIdProveedor] = useState("");
+   const [productos, setProductos] = useState<ProductoOption[]>([]);
++  const [proveedores, setProveedores] = useState<ProveedorOption[]>([]);
+   const [resolvedBodegaId, setResolvedBodegaId] = useState<string | null>(null);
+   const [error, setError] = useState<string | null>(null);
+   const [isSubmitting, setIsSubmitting] = useState(false);
+@@ -58,6 +66,7 @@ export function SolicitudCompraCreateModal({
+     setLines([]);
+     setPickProductId("");
+     setPickPesoKg("");
++    setIdProveedor("");
+     setError(null);
+     setIsSubmitting(false);
+     setResolvedBodegaId(activeBodegaId);
+@@ -70,11 +79,12 @@ export function SolicitudCompraCreateModal({
+ 
+     void Promise.all([
+       listCatalogoProductosAdmin({ codigoCuenta }),
++      listProveedoresAdmin({ codigoCuenta }),
+       activeBodegaId
+         ? Promise.resolve(null)
+         : listBodegasInternasVinculadasAdmin({ codigoCuenta }),
+     ])
+-      .then(([productoRows, bodegaRows]) => {
++      .then(([productoRows, proveedorRows, bodegaRows]) => {
+         setProductos(
+           productoRows.map((row) => ({
+             value: row.idProducto,
+@@ -83,12 +93,21 @@ export function SolicitudCompraCreateModal({
+           })),
+         );
+ 
++        setProveedores(
++          proveedorRows.map((row) => ({
++            value: row.idProveedor,
++            label: row.nombre
++              ? `${row.proveedor} — ${row.nombre}`
++              : row.proveedor,
++          })),
++        );
++
+         if (!activeBodegaId && bodegaRows?.length) {
+           setResolvedBodegaId(bodegaRows[0]?.idBodega ?? null);
+         }
+       })
+       .catch(() => {
+-        setError("No se pudieron cargar los productos del catálogo.");
++        setError("No se pudieron cargar productos o proveedores.");
+       })
+       .finally(() => {
+         setIsLoadingOptions(false);
+@@ -155,12 +174,18 @@ export function SolicitudCompraCreateModal({
+       return;
+     }
+ 
++    if (!idProveedor) {
++      setError("Selecciona un proveedor para la solicitud.");
++      return;
++    }
++
+     setIsSubmitting(true);
+ 
+     try {
+       await createSolicitudCompraApi({
+         codigoCuenta,
+         idBodega: resolvedBodegaId,
++        idProveedor,
+         lineas: lines.map((linea) => ({
+           idProducto: linea.idProducto,
+           cantidad: linea.pesoKg,
+@@ -201,6 +226,24 @@ export function SolicitudCompraCreateModal({
+         Peso kg por ítem.
+       </p>
+ 
++      <PolariaFormSelect
++        id="sol-proveedor"
++        label="Proveedor"
++        value={idProveedor}
++        onChange={(event) => setIdProveedor(event.target.value)}
++        disabled={disabled || proveedores.length === 0}
++        placeholder="Elegí proveedor…"
++        options={proveedores}
++        compact
++      />
++
++      {proveedores.length === 0 && !isLoadingOptions ? (
++        <p className="rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-4 py-3 polaria-text-body-sm text-polaria-w-50">
++          Tu administrador de cuenta debe registrar proveedores antes de crear
++          solicitudes de compra.
++        </p>
++      ) : null}
++
+       {productos.length === 0 && !isLoadingOptions ? (
+         <p className="rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-4 py-3 polaria-text-body-sm text-polaria-w-50">
+           Tu administrador de cuenta debe registrar productos en el catálogo
+-- 
+2.43.0
+
