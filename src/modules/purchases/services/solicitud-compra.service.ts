@@ -30,15 +30,26 @@ export class SolicitudCompraService {
     dto: CreateSolicitudCompraDto,
     ctx: TenantContext,
   ): Promise<SolicitudCompraResponse> {
-    await this.validateOperationalScope(dto.codigoCuenta, dto.idBodega, ctx);
-    await this.validateProveedor(dto.idProveedor, dto.codigoCuenta);
-    await this.validateLineas(dto.lineas, dto.codigoCuenta);
+    const codigoCuenta = (dto.codigoCuenta ?? ctx.codigoCuenta ?? '').trim();
+
+    if (!codigoCuenta) {
+      throw new BadRequestException('No se encontró la cuenta activa');
+    }
+
+    await this.validateOperationalScope(codigoCuenta, dto.idBodega, ctx);
+
+    const idProveedor = await this.resolveProveedorId(
+      dto.idProveedor,
+      codigoCuenta,
+    );
+
+    await this.validateLineas(dto.lineas, codigoCuenta);
 
     const solicitud = await this.repository.create(
       {
-        codigoCuenta: dto.codigoCuenta.trim(),
+        codigoCuenta,
         idBodega: dto.idBodega,
-        idProveedor: dto.idProveedor,
+        idProveedor,
         observaciones: dto.observaciones,
         lineas: dto.lineas,
       },
@@ -239,14 +250,30 @@ export class SolicitudCompraService {
     }
   }
 
-  private async validateProveedor(
+  private async resolveProveedorId(
     idProveedor: string | undefined,
     codigoCuenta: string,
-  ): Promise<void> {
-    if (!idProveedor) {
-      return;
+  ): Promise<string> {
+    if (idProveedor?.trim()) {
+      await this.validateProveedor(idProveedor.trim(), codigoCuenta);
+      return idProveedor.trim();
     }
 
+    const proveedor = await this.repository.findDefaultProveedor(codigoCuenta);
+
+    if (!proveedor) {
+      throw new BadRequestException(
+        'No hay proveedor activo configurado para esta cuenta',
+      );
+    }
+
+    return proveedor.idProveedor;
+  }
+
+  private async validateProveedor(
+    idProveedor: string,
+    codigoCuenta: string,
+  ): Promise<void> {
     const proveedor = await this.repository.findProveedor(idProveedor);
 
     if (!proveedor) {

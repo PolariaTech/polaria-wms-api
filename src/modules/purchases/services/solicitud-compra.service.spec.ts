@@ -95,6 +95,7 @@ describe('SolicitudCompraService', () => {
           useValue: {
             findBodega: jest.fn(),
             findProveedor: jest.fn(),
+            findDefaultProveedor: jest.fn(),
             findProductos: jest.fn(),
             create: jest.fn(),
             findById: jest.fn(),
@@ -116,6 +117,11 @@ describe('SolicitudCompraService', () => {
       estaActiva: true,
     });
     repository.findProveedor.mockResolvedValue({
+      idProveedor,
+      codigoCuenta: 'CTA001',
+      estaActivo: true,
+    });
+    repository.findDefaultProveedor.mockResolvedValue({
       idProveedor,
       codigoCuenta: 'CTA001',
       estaActivo: true,
@@ -159,7 +165,26 @@ describe('SolicitudCompraService', () => {
       expect.objectContaining({
         codigoCuenta: 'CTA001',
         idBodega,
+        idProveedor,
       }),
+      operadorContext.idUsuario,
+    );
+  });
+
+  it('resuelve proveedor por defecto si no se envía idProveedor', async () => {
+    repository.create.mockResolvedValue(solicitudRecord as never);
+
+    await service.create(
+      {
+        idBodega,
+        lineas: [{ idProducto, cantidad: 10 }],
+      },
+      operadorContext,
+    );
+
+    expect(repository.findDefaultProveedor).toHaveBeenCalledWith('CTA001');
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ idProveedor }),
       operadorContext.idUsuario,
     );
   });

@@ -24,10 +24,15 @@ export class SolicitudCompraLineaDto {
 }
 
 export class CreateSolicitudCompraDto {
-  @ApiProperty({ example: 'CTA001' })
+  @ApiPropertyOptional({
+    example: 'CTA001',
+    description:
+      'Opcional: si se omite, se toma del contexto tenant del usuario autenticado',
+  })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  codigoCuenta!: string;
+  codigoCuenta?: string;
 
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
   @IsUUID()

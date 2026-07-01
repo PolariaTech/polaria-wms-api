@@ -52,6 +52,21 @@ export class SolicitudCompraRepository {
     });
   }
 
+  findDefaultProveedor(codigoCuenta: string) {
+    return this.prisma.proveedor.findFirst({
+      where: {
+        codigoCuenta,
+        estaActivo: true,
+      },
+      orderBy: { codigo: 'asc' },
+      select: {
+        idProveedor: true,
+        codigoCuenta: true,
+        estaActivo: true,
+      },
+    });
+  }
+
   findProductos(ids: string[]) {
     return this.prisma.producto.findMany({
       where: { idProducto: { in: ids } },
