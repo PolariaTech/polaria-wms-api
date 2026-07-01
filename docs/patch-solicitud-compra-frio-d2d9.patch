@@ -1,0 +1,1714 @@
+From 71f51676e75d589e6b412a9fb79d23f58248da39 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 1 Jul 2026 00:19:38 +0000
+Subject: [PATCH] feat(compras): alinear solicitudes de compra con frio
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Tabla operador: Solicitud, Productos y Peso (kg) con filas clickeables
+- Modal crear: solo catálogo + peso kg por línea (estilo frio)
+- Modal detalle con líneas y acciones de flujo
+- Lectura Supabase incluye líneas y producto para snapshots de UI
+- Utilidades decimal-es y ordenación SOL descendente
+---
+ package-lock.json                             | 132 --------
+ src/components/shared/PolariaDataTable.tsx    |  35 +-
+ src/lib/decimal-es.test.ts                    |  13 +
+ src/lib/decimal-es.ts                         |  26 ++
+ .../components/ComprasPageContent.tsx         | 184 ++++++-----
+ .../components/SolicitudCompraCreateModal.tsx | 301 ++++++++++--------
+ .../SolicitudCompraDetalleModal.tsx           |  84 +++++
+ src/modules/purchases/index.ts                |   1 +
+ .../services/purchases-api.service.test.ts    |   6 +-
+ .../services/purchases-api.service.ts         |  10 +-
+ .../purchases/services/purchases.service.ts   |  62 +++-
+ .../purchases/types/purchases-api.types.ts    |   3 +-
+ .../purchases/types/purchases.types.ts        |  13 +
+ .../utils/solicitud-compra-display.test.ts    |  51 +++
+ .../utils/solicitud-compra-display.ts         |  62 ++++
+ 15 files changed, 621 insertions(+), 362 deletions(-)
+ create mode 100644 src/lib/decimal-es.test.ts
+ create mode 100644 src/lib/decimal-es.ts
+ create mode 100644 src/modules/purchases/components/SolicitudCompraDetalleModal.tsx
+ create mode 100644 src/modules/purchases/utils/solicitud-compra-display.test.ts
+ create mode 100644 src/modules/purchases/utils/solicitud-compra-display.ts
+
+diff --git a/package-lock.json b/package-lock.json
+index 2f95065..6d78643 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -866,9 +866,6 @@
+       "cpu": [
+         "arm"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -885,9 +882,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -904,9 +898,6 @@
+       "cpu": [
+         "ppc64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -923,9 +914,6 @@
+       "cpu": [
+         "riscv64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -942,9 +930,6 @@
+       "cpu": [
+         "s390x"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -961,9 +946,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -980,9 +962,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -999,9 +978,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1018,9 +994,6 @@
+       "cpu": [
+         "arm"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1043,9 +1016,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1068,9 +1038,6 @@
+       "cpu": [
+         "ppc64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1093,9 +1060,6 @@
+       "cpu": [
+         "riscv64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1118,9 +1082,6 @@
+       "cpu": [
+         "s390x"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1143,9 +1104,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1168,9 +1126,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1193,9 +1148,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1411,9 +1363,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1430,9 +1379,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1449,9 +1395,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1468,9 +1411,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1663,9 +1603,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1683,9 +1620,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1703,9 +1637,6 @@
+         "ppc64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1723,9 +1654,6 @@
+         "s390x"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1743,9 +1671,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1763,9 +1688,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2115,9 +2037,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2135,9 +2054,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2155,9 +2071,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2175,9 +2088,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2855,9 +2765,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2872,9 +2779,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2889,9 +2793,6 @@
+         "loong64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2906,9 +2807,6 @@
+         "loong64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2923,9 +2821,6 @@
+         "ppc64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2940,9 +2835,6 @@
+         "riscv64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2957,9 +2849,6 @@
+         "riscv64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2974,9 +2863,6 @@
+         "s390x"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2991,9 +2877,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3008,9 +2891,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -6140,9 +6020,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -6164,9 +6041,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -6188,9 +6062,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -6212,9 +6083,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+diff --git a/src/components/shared/PolariaDataTable.tsx b/src/components/shared/PolariaDataTable.tsx
+index af57e69..6f5b224 100644
+--- a/src/components/shared/PolariaDataTable.tsx
++++ b/src/components/shared/PolariaDataTable.tsx
+@@ -40,6 +40,9 @@ export interface PolariaDataTableProps<T> {
+     placeholder?: string;
+   };
+   className?: string;
++  /** Fila clickeable (p. ej. abrir detalle). */
++  onRowClick?: (row: T) => void;
++  getRowAriaLabel?: (row: T) => string;
+ }
+ 
+ export function PolariaDataTable<T>({
+@@ -57,6 +60,8 @@ export function PolariaDataTable<T>({
+   additionalActions,
+   search,
+   className,
++  onRowClick,
++  getRowAriaLabel,
+ }: PolariaDataTableProps<T>) {
+   const showTable = !isLoading && !error;
+ 
+@@ -203,7 +208,35 @@ export function PolariaDataTable<T>({
+                 rows.map((row) => (
+                   <tr
+                     key={getRowKey(row)}
+-                    className="border-t border-polaria-w-08 text-polaria-w"
++                    className={cn(
++                      "border-t border-polaria-w-08 text-polaria-w",
++                      onRowClick &&
++                        "cursor-pointer transition-colors hover:bg-polaria-t-08 focus-visible:bg-polaria-t-08 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-polaria-teal",
++                    )}
++                    onClick={
++                      onRowClick
++                        ? () => {
++                            onRowClick(row);
++                          }
++                        : undefined
++                    }
++                    onKeyDown={
++                      onRowClick
++                        ? (event) => {
++                            if (event.key === "Enter" || event.key === " ") {
++                              event.preventDefault();
++                              onRowClick(row);
++                            }
++                          }
++                        : undefined
++                    }
++                    tabIndex={onRowClick ? 0 : undefined}
++                    role={onRowClick ? "button" : undefined}
++                    aria-label={
++                      onRowClick && getRowAriaLabel
++                        ? getRowAriaLabel(row)
++                        : undefined
++                    }
+                   >
+                     {columns.map((column) => (
+                       <td
+diff --git a/src/lib/decimal-es.test.ts b/src/lib/decimal-es.test.ts
+new file mode 100644
+index 0000000..2f5ea1b
+--- /dev/null
++++ b/src/lib/decimal-es.test.ts
+@@ -0,0 +1,13 @@
++import { describe, expect, it } from "vitest";
++import { formatKgEs, parseDecimalEs } from "@/lib/decimal-es";
++
++describe("decimal-es", () => {
++  it("parseDecimalEs acepta coma decimal", () => {
++    expect(parseDecimalEs("15,6")).toBe(15.6);
++    expect(parseDecimalEs("15.6")).toBe(15.6);
++  });
++
++  it("formatKgEs formatea peso", () => {
++    expect(formatKgEs(1500)).toContain("1");
++  });
++});
+diff --git a/src/lib/decimal-es.ts b/src/lib/decimal-es.ts
+new file mode 100644
+index 0000000..50a6d2a
+--- /dev/null
++++ b/src/lib/decimal-es.ts
+@@ -0,0 +1,26 @@
++/** Parsea entrada numérica con coma o punto (p. ej. "15,6" o "15.6"). */
++export function parseDecimalEs(raw: string): number | null {
++  const normalized = String(raw)
++    .trim()
++    .replace(/\s/g, "")
++    .replace(",", ".");
++
++  if (
++    normalized === "" ||
++    normalized === "." ||
++    normalized === "-" ||
++    normalized === "-."
++  ) {
++    return null;
++  }
++
++  const value = Number(normalized);
++  return Number.isFinite(value) ? value : null;
++}
++
++export function formatKgEs(value: number): string {
++  return value.toLocaleString("es-CL", {
++    minimumFractionDigits: 0,
++    maximumFractionDigits: 4,
++  });
++}
+diff --git a/src/modules/purchases/components/ComprasPageContent.tsx b/src/modules/purchases/components/ComprasPageContent.tsx
+index bcde991..3f0e329 100644
+--- a/src/modules/purchases/components/ComprasPageContent.tsx
++++ b/src/modules/purchases/components/ComprasPageContent.tsx
+@@ -7,7 +7,9 @@ import {
+   PolariaTableCode,
+ } from "@/components/shared/PolariaTableCells";
+ import { formatDateTime } from "@/components/shared/formatters";
++import { WmsRol } from "@/constants/roles";
+ import { useAsyncQuery } from "@/hooks/useAsyncQuery";
++import { usePermissions } from "@/hooks/usePermissions";
+ import { DomainServiceError } from "@/lib/domain-service-error";
+ import { cn } from "@/lib/cn";
+ import { useCompany } from "@/providers/CompanyProvider";
+@@ -31,14 +33,16 @@ import {
+   listSolicitudesCompra,
+ } from "../services/purchases.service";
+ import type { OrdenCompraRow, SolicitudCompraRow } from "../types/purchases.types";
++import {
++  compareSolicitudCompraByCodigoDesc,
++  nombresProductosSolicitud,
++  pesosProductosSolicitud,
++} from "../utils/solicitud-compra-display";
+ import { SolicitudCompraCreateModal } from "./SolicitudCompraCreateModal";
++import { SolicitudCompraDetalleModal } from "./SolicitudCompraDetalleModal";
+ 
+ type ComprasTab = "solicitudes" | "ordenes";
+ 
+-function formatEstadoSolicitud(estado: SolicitudCompraRow["estado"]): string {
+-  return ESTADO_SOLICITUD_LABELS[estado] ?? estado;
+-}
+-
+ function formatEstadoOrden(estado: OrdenCompraRow["estado"]): string {
+   return ESTADO_ORDEN_LABELS[estado] ?? estado;
+ }
+@@ -61,8 +65,11 @@ function formatObservacionesOrden(
+ 
+ export function ComprasPageContent() {
+   const { codigoCuenta, activeBodegaId } = useCompany();
++  const { idRol } = usePermissions();
+   const [activeTab, setActiveTab] = useState<ComprasTab>("solicitudes");
+   const [isCreateOpen, setIsCreateOpen] = useState(false);
++  const [solicitudDetalle, setSolicitudDetalle] =
++    useState<SolicitudCompraRow | null>(null);
+   const [actionError, setActionError] = useState<string | null>(null);
+   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+@@ -70,6 +77,9 @@ export function ComprasPageContent() {
+     () => new Set(),
+   );
+ 
++  const puedeAprobarSolicitud =
++    idRol === WmsRol.administrador_cuenta || idRol === WmsRol.configurador;
++
+   const fetchSolicitudes = useCallback(() => {
+     if (!codigoCuenta) {
+       return Promise.resolve([]);
+@@ -95,6 +105,12 @@ export function ComprasPageContent() {
+   const solicitudes = useAsyncQuery(fetchSolicitudes, Boolean(codigoCuenta));
+   const ordenes = useAsyncQuery(fetchOrdenes, Boolean(codigoCuenta));
+ 
++  const solicitudesOrdenadas = useMemo(
++    () =>
++      [...(solicitudes.data ?? [])].sort(compareSolicitudCompraByCodigoDesc),
++    [solicitudes.data],
++  );
++
+   const runAction = useCallback(
+     async (actionId: string, action: () => Promise<unknown>) => {
+       setActionError(null);
+@@ -104,6 +120,7 @@ export function ComprasPageContent() {
+       try {
+         await action();
+         await Promise.all([solicitudes.reload(), ordenes.reload()]);
++        setSolicitudDetalle(null);
+       } catch (err: unknown) {
+         setActionError(
+           err instanceof DomainServiceError
+@@ -158,92 +175,91 @@ export function ComprasPageContent() {
+       [
+         {
+           id: "codigo",
+-          header: "Código",
++          header: "Solicitud",
+           cell: (row: SolicitudCompraRow) => (
+             <PolariaTableCode>{row.codigo}</PolariaTableCode>
+           ),
+         },
+         {
+-          id: "estado",
+-          header: "Estado",
++          id: "productos",
++          header: "Productos",
+           cell: (row: SolicitudCompraRow) => (
+-            <PolariaTableBadge variant="neutral">
+-              {formatEstadoSolicitud(row.estado)}
+-            </PolariaTableBadge>
++            <span
++              className="line-clamp-2 font-medium"
++              title={nombresProductosSolicitud(row)}
++            >
++              {nombresProductosSolicitud(row)}
++            </span>
+           ),
+         },
+         {
+-          id: "proveedor",
+-          header: "Proveedor",
+-          cell: (row: SolicitudCompraRow) => row.id_proveedor ?? "—",
+-          cellClassName: "font-mono text-xs text-polaria-w-50",
+-        },
+-        {
+-          id: "bodega",
+-          header: "Bodega",
+-          cell: (row: SolicitudCompraRow) => row.id_bodega,
+-          cellClassName: "font-mono text-xs text-polaria-w-50",
+-        },
+-        {
+-          id: "created",
+-          header: "Creada",
+-          cell: (row: SolicitudCompraRow) => formatDateTime(row.created_at),
+-          cellClassName: "text-polaria-w-50",
++          id: "peso",
++          header: "Peso",
++          cell: (row: SolicitudCompraRow) => (
++            <span
++              className="tabular-nums text-polaria-w-50"
++              title={pesosProductosSolicitud(row)}
++            >
++              {pesosProductosSolicitud(row)}
++            </span>
++          ),
++          cellClassName: "whitespace-nowrap",
+         },
+-        {
+-          id: "acciones",
+-          header: "Acciones",
+-          cell: (row: SolicitudCompraRow) => {
+-            const isPending = pendingActionId?.startsWith(row.id_solicitud_compra);
++      ] as const,
++    [],
++  );
+ 
+-            if (row.estado === "borrador") {
+-              return (
+-                <ActionButton
+-                  label="Enviar aprobación"
+-                  disabled={Boolean(isPending)}
+-                  onClick={() => {
+-                    void runAction(`${row.id_solicitud_compra}:enviar`, () =>
+-                      enviarSolicitudCompraAprobacionApi(row.id_solicitud_compra),
+-                    );
+-                  }}
+-                />
+-              );
+-            }
++  const renderSolicitudActions = (row: SolicitudCompraRow): ReactNode => {
++    const isPending = pendingActionId?.startsWith(row.id_solicitud_compra);
++
++    if (row.estado === "borrador") {
++      return (
++        <ActionButton
++          label="Enviar aprobación"
++          disabled={Boolean(isPending)}
++          onClick={() => {
++            void runAction(`${row.id_solicitud_compra}:enviar`, () =>
++              enviarSolicitudCompraAprobacionApi(row.id_solicitud_compra),
++            );
++          }}
++        />
++      );
++    }
+ 
+-            if (row.estado === "pendiente_aprobacion") {
+-              return (
+-                <ActionButton
+-                  label="Aprobar"
+-                  disabled={Boolean(isPending)}
+-                  onClick={() => {
+-                    void runAction(`${row.id_solicitud_compra}:aprobar`, () =>
+-                      aprobarSolicitudCompraApi(row.id_solicitud_compra),
+-                    );
+-                  }}
+-                />
+-              );
+-            }
++    if (row.estado === "pendiente_aprobacion" && puedeAprobarSolicitud) {
++      return (
++        <ActionButton
++          label="Aprobar"
++          disabled={Boolean(isPending)}
++          onClick={() => {
++            void runAction(`${row.id_solicitud_compra}:aprobar`, () =>
++              aprobarSolicitudCompraApi(row.id_solicitud_compra),
++            );
++          }}
++        />
++      );
++    }
+ 
+-            if (row.estado === "aprobada") {
+-              return (
+-                <ActionButton
+-                  label="Convertir a OC"
+-                  disabled={Boolean(isPending)}
+-                  onClick={() => {
+-                    void runAction(`${row.id_solicitud_compra}:convertir`, () =>
+-                      convertirSolicitudCompraAOrdenApi(row.id_solicitud_compra),
+-                    );
+-                  }}
+-                />
+-              );
+-            }
++    if (row.estado === "aprobada") {
++      return (
++        <ActionButton
++          label="Convertir a OC"
++          disabled={Boolean(isPending)}
++          onClick={() => {
++            void runAction(`${row.id_solicitud_compra}:convertir`, () =>
++              convertirSolicitudCompraAOrdenApi(row.id_solicitud_compra),
++            );
++          }}
++        />
++      );
++    }
+ 
+-            return "—";
+-          },
+-        },
+-      ] as const,
+-    [pendingActionId, runAction],
+-  );
++    return (
++      <PolariaTableBadge variant="neutral">
++        {ESTADO_SOLICITUD_LABELS[row.estado] ?? row.estado}
++      </PolariaTableBadge>
++    );
++  };
+ 
+   const ordenColumns = useMemo(
+     () =>
+@@ -376,17 +392,19 @@ export function ComprasPageContent() {
+       {activeTab === "solicitudes" ? (
+         <PolariaDataTable
+           title="Solicitudes de compra"
+-          subtitle="Flujo de aprobación y conversión a orden."
++          subtitle="Solicitud · productos · peso kg"
+           isLoading={solicitudes.isLoading}
+           error={solicitudes.error ?? tenantError}
+-          rows={solicitudes.data ?? []}
++          rows={solicitudesOrdenadas}
+           columns={solicitudColumns}
+           getRowKey={(row) => row.id_solicitud_compra}
+-          emptyMessage="Sin solicitudes de compra registradas."
++          emptyMessage="No hay solicitudes. Usá «Nueva solicitud» para crear la primera."
+           onRefresh={() => {
+             void solicitudes.reload();
+           }}
+           isRefreshing={solicitudes.isRefreshing}
++          onRowClick={(row) => setSolicitudDetalle(row)}
++          getRowAriaLabel={(row) => `Ver detalle de solicitud ${row.codigo}`}
+           primaryAction={{
+             label: "Nueva solicitud",
+             onClick: () => setIsCreateOpen(true),
+@@ -416,6 +434,14 @@ export function ComprasPageContent() {
+           void solicitudes.reload();
+         }}
+       />
++
++      {solicitudDetalle ? (
++        <SolicitudCompraDetalleModal
++          solicitud={solicitudDetalle}
++          onClose={() => setSolicitudDetalle(null)}
++          actions={renderSolicitudActions(solicitudDetalle)}
++        />
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/src/modules/purchases/components/SolicitudCompraCreateModal.tsx b/src/modules/purchases/components/SolicitudCompraCreateModal.tsx
+index 7ea7823..550366e 100644
+--- a/src/modules/purchases/components/SolicitudCompraCreateModal.tsx
++++ b/src/modules/purchases/components/SolicitudCompraCreateModal.tsx
+@@ -7,10 +7,11 @@ import {
+   PolariaFormSelect,
+ } from "@/components/shared/PolariaFormField";
+ import { PolariaFormModal } from "@/components/shared/PolariaFormModal";
++import { formatKgEs, parseDecimalEs } from "@/lib/decimal-es";
+ import { DomainServiceError } from "@/lib/domain-service-error";
+ import {
++  listBodegasInternasVinculadasAdmin,
+   listCatalogoProductosAdmin,
+-  listProveedoresAdmin,
+ } from "@/modules/admin-panel";
+ import { useCompany } from "@/providers/CompanyProvider";
+ import { createSolicitudCompraApi } from "../services/purchases-api.service";
+@@ -21,80 +22,120 @@ interface SolicitudCompraCreateModalProps {
+   onCreated: () => void;
+ }
+ 
+-interface LineaForm {
++interface DraftLine {
+   idProducto: string;
+-  cantidad: string;
++  pesoKg: number;
++  titleSnapshot: string;
++  skuSnapshot?: string;
+ }
+ 
+-interface Option {
++interface ProductoOption {
+   value: string;
+   label: string;
++  sku?: string;
+ }
+ 
+-const INITIAL_LINEA: LineaForm = {
+-  idProducto: "",
+-  cantidad: "",
+-};
+-
+ export function SolicitudCompraCreateModal({
+   open,
+   onClose,
+   onCreated,
+ }: SolicitudCompraCreateModalProps) {
+   const { codigoCuenta, activeBodegaId } = useCompany();
+-  const [idProveedor, setIdProveedor] = useState("");
+-  const [observaciones, setObservaciones] = useState("");
+-  const [lineas, setLineas] = useState<LineaForm[]>([{ ...INITIAL_LINEA }]);
+-  const [proveedores, setProveedores] = useState<Option[]>([]);
+-  const [productos, setProductos] = useState<Option[]>([]);
++  const [lines, setLines] = useState<DraftLine[]>([]);
++  const [pickProductId, setPickProductId] = useState("");
++  const [pickPesoKg, setPickPesoKg] = useState("");
++  const [productos, setProductos] = useState<ProductoOption[]>([]);
++  const [resolvedBodegaId, setResolvedBodegaId] = useState<string | null>(null);
+   const [error, setError] = useState<string | null>(null);
+   const [isSubmitting, setIsSubmitting] = useState(false);
+   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+ 
+   useEffect(() => {
+-    if (!open) return;
++    if (!open) {
++      return;
++    }
+ 
+-    setIdProveedor("");
+-    setObservaciones("");
+-    setLineas([{ ...INITIAL_LINEA }]);
++    setLines([]);
++    setPickProductId("");
++    setPickPesoKg("");
+     setError(null);
+     setIsSubmitting(false);
++    setResolvedBodegaId(activeBodegaId);
+ 
+-    if (!codigoCuenta) return;
++    if (!codigoCuenta) {
++      return;
++    }
+ 
+     setIsLoadingOptions(true);
+ 
+     void Promise.all([
+-      listProveedoresAdmin({ codigoCuenta }),
+       listCatalogoProductosAdmin({ codigoCuenta }),
++      activeBodegaId
++        ? Promise.resolve(null)
++        : listBodegasInternasVinculadasAdmin({ codigoCuenta }),
+     ])
+-      .then(([proveedorRows, productoRows]) => {
+-        setProveedores(
+-          proveedorRows.map((row) => ({
+-            value: row.idProveedor,
+-            label: `${row.codigo} — ${row.proveedor}`,
+-          })),
+-        );
++      .then(([productoRows, bodegaRows]) => {
+         setProductos(
+           productoRows.map((row) => ({
+             value: row.idProducto,
+-            label: `${row.codigo} — ${row.titulo}`,
++            label: row.sku ? `${row.titulo} · SKU ${row.sku}` : row.titulo,
++            sku: row.sku !== "—" ? row.sku : undefined,
+           })),
+         );
++
++        if (!activeBodegaId && bodegaRows?.length) {
++          setResolvedBodegaId(bodegaRows[0]?.idBodega ?? null);
++        }
+       })
+       .catch(() => {
+-        setError("No se pudieron cargar proveedores o productos.");
++        setError("No se pudieron cargar los productos del catálogo.");
+       })
+       .finally(() => {
+         setIsLoadingOptions(false);
+       });
+-  }, [codigoCuenta, open]);
++  }, [activeBodegaId, codigoCuenta, open]);
+ 
+   const handleClose = useCallback(() => {
+-    if (isSubmitting) return;
++    if (isSubmitting) {
++      return;
++    }
+     onClose();
+   }, [isSubmitting, onClose]);
+ 
++  const addLine = () => {
++    setError(null);
++
++    const producto = productos.find((item) => item.value === pickProductId);
++    if (!producto?.value) {
++      setError("Selecciona un producto del catálogo.");
++      return;
++    }
++
++    const pesoNum = parseDecimalEs(pickPesoKg);
++    if (pesoNum == null || pesoNum <= 0) {
++      setError("Ingresa un peso en kg mayor a 0 (podés usar coma: 15,6).");
++      return;
++    }
++
++    const [titleSnapshot] = producto.label.split(" · SKU ");
++
++    setLines((current) => [
++      ...current,
++      {
++        idProducto: producto.value,
++        pesoKg: pesoNum,
++        titleSnapshot: titleSnapshot || producto.label,
++        ...(producto.sku ? { skuSnapshot: producto.sku } : {}),
++      },
++    ]);
++    setPickProductId("");
++    setPickPesoKg("");
++  };
++
++  const removeLine = (index: number) => {
++    setLines((current) => current.filter((_, itemIndex) => itemIndex !== index));
++  };
++
+   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
+     setError(null);
+@@ -104,8 +145,13 @@ export function SolicitudCompraCreateModal({
+       return;
+     }
+ 
+-    if (!activeBodegaId) {
+-      setError("Selecciona una bodega activa.");
++    if (!resolvedBodegaId) {
++      setError("No hay bodega interna disponible para registrar la solicitud.");
++      return;
++    }
++
++    if (lines.length === 0) {
++      setError("Agrega al menos una línea con productos del catálogo.");
+       return;
+     }
+ 
+@@ -113,12 +159,11 @@ export function SolicitudCompraCreateModal({
+ 
+     try {
+       await createSolicitudCompraApi({
+-        idProveedor,
+-        idBodega: activeBodegaId,
+-        observaciones,
+-        lineas: lineas.map((linea) => ({
++        codigoCuenta,
++        idBodega: resolvedBodegaId,
++        lineas: lines.map((linea) => ({
+           idProducto: linea.idProducto,
+-          cantidad: Number(linea.cantidad),
++          cantidad: linea.pesoKg,
+         })),
+       });
+       onCreated();
+@@ -127,7 +172,7 @@ export function SolicitudCompraCreateModal({
+       setError(
+         err instanceof DomainServiceError
+           ? err.message
+-          : "No se pudo crear la solicitud de compra.",
++          : "No se pudo guardar la solicitud.",
+       );
+     } finally {
+       setIsSubmitting(false);
+@@ -141,124 +186,102 @@ export function SolicitudCompraCreateModal({
+       open={open}
+       onClose={handleClose}
+       sectionLabel="Nueva solicitud"
+-      title="Crear solicitud de compra"
+-      description="Define proveedor, bodega activa y líneas de producto."
++      title="Nueva solicitud"
++      description="Solicitud · peso/kg"
+       onSubmit={(event) => {
+         void handleSubmit(event);
+       }}
+       error={error}
+       isSubmitting={isSubmitting}
+-      submitLabel="Crear solicitud"
++      submitLabel="Guardar solicitud"
+       compact
+-      className="max-w-3xl"
++      className="max-w-lg"
+     >
+-      <PolariaFormSelect
+-        id="solicitud-proveedor"
+-        label="Proveedor"
+-        value={idProveedor}
+-        onChange={(event) => setIdProveedor(event.target.value)}
+-        disabled={disabled}
+-        placeholder="Selecciona un proveedor"
+-        options={proveedores}
+-        compact
+-      />
+-
+-      <PolariaFormInput
+-        id="solicitud-bodega"
+-        label="Bodega activa"
+-        value={activeBodegaId ?? ""}
+-        readOnly
+-        disabled
+-        compact
+-      />
+-
+-      <PolariaFormInput
+-        id="solicitud-observaciones"
+-        label="Observaciones"
+-        value={observaciones}
+-        placeholder="Notas opcionales"
+-        onChange={(event) => setObservaciones(event.target.value)}
+-        disabled={disabled}
+-        compact
+-      />
+-
+-      <div className="flex flex-col gap-3">
+-        <div className="flex items-center justify-between gap-3">
+-          <span className="polaria-text-label text-polaria-w-50">Líneas</span>
+-          <button
+-            type="button"
+-            disabled={disabled}
+-            onClick={() =>
+-              setLineas((current) => [...current, { ...INITIAL_LINEA }])
+-            }
+-            className="inline-flex items-center gap-1.5 rounded-lg border border-polaria-t-20 px-3 py-1.5 text-sm text-polaria-teal transition hover:bg-polaria-t-08 disabled:opacity-50"
+-          >
+-            <Plus className="h-3.5 w-3.5" aria-hidden />
+-            Agregar línea
+-          </button>
+-        </div>
++      <p className="polaria-text-body-sm text-polaria-w-50">
++        Peso kg por ítem.
++      </p>
+ 
+-        {lineas.map((linea, index) => (
+-          <div
+-            key={`linea-${index}`}
+-            className="grid grid-cols-1 gap-3 rounded-xl border border-polaria-w-08 p-3 md:grid-cols-[1fr_140px_auto]"
+-          >
++      {productos.length === 0 && !isLoadingOptions ? (
++        <p className="rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-4 py-3 polaria-text-body-sm text-polaria-w-50">
++          Tu administrador de cuenta debe registrar productos en el catálogo
++          para poder armar solicitudes.
++        </p>
++      ) : null}
++
++      <div className="rounded-xl border border-dashed border-polaria-t-20 bg-polaria-t-08 p-3">
++        <p className="polaria-text-label mb-2 text-polaria-w-50">Líneas cat.</p>
++
++        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
++          <div className="min-w-0 flex-1 sm:min-w-[200px]">
+             <PolariaFormSelect
+-              id={`solicitud-producto-${index}`}
+-              label={`Producto ${index + 1}`}
+-              value={linea.idProducto}
+-              onChange={(event) =>
+-                setLineas((current) =>
+-                  current.map((item, itemIndex) =>
+-                    itemIndex === index
+-                      ? { ...item, idProducto: event.target.value }
+-                      : item,
+-                  ),
+-                )
+-              }
+-              disabled={disabled}
+-              placeholder="Selecciona producto"
++              id="sol-catalogo"
++              label="Producto"
++              value={pickProductId}
++              onChange={(event) => setPickProductId(event.target.value)}
++              disabled={disabled || productos.length === 0}
++              placeholder="Elegí producto…"
+               options={productos}
+               compact
+             />
++          </div>
+ 
++          <div className="w-full sm:w-32">
+             <PolariaFormInput
+-              id={`solicitud-cantidad-${index}`}
+-              label="Cantidad"
+-              type="number"
+-              min="0"
+-              step="0.01"
+-              value={linea.cantidad}
+-              onChange={(event) =>
+-                setLineas((current) =>
+-                  current.map((item, itemIndex) =>
+-                    itemIndex === index
+-                      ? { ...item, cantidad: event.target.value }
+-                      : item,
+-                  ),
+-                )
+-              }
+-              disabled={disabled}
++              id="sol-peso-kg"
++              label="Peso (kg)"
++              type="text"
++              inputMode="decimal"
++              value={pickPesoKg}
++              onChange={(event) => setPickPesoKg(event.target.value)}
++              placeholder="Ej. 15,6"
++              disabled={disabled || productos.length === 0}
+               compact
+             />
++          </div>
+ 
+-            <div className="flex items-end">
+-              <button
+-                type="button"
+-                disabled={disabled || lineas.length === 1}
+-                onClick={() =>
+-                  setLineas((current) =>
+-                    current.filter((_, itemIndex) => itemIndex !== index),
+-                  )
+-                }
+-                className="inline-flex h-10 items-center justify-center rounded-lg border border-polaria-w-08 px-3 text-polaria-w-50 transition hover:bg-polaria-w-08 disabled:opacity-40"
+-                aria-label={`Eliminar línea ${index + 1}`}
++          <button
++            type="button"
++            onClick={addLine}
++            disabled={disabled || productos.length === 0}
++            className="inline-flex items-center justify-center gap-1 rounded-xl bg-polaria-teal px-4 py-2.5 polaria-text-body-sm font-semibold text-polaria-bg transition hover:opacity-90 disabled:opacity-50"
++          >
++            <Plus className="h-4 w-4" aria-hidden />
++            Agregar
++          </button>
++        </div>
++
++        {lines.length === 0 ? (
++          <p className="mt-3 text-center polaria-text-caption text-polaria-w-50">
++            Sin líneas.
++          </p>
++        ) : (
++          <ul className="mt-3 space-y-2">
++            {lines.map((linea, index) => (
++              <li
++                key={`${linea.idProducto}-${index}`}
++                className="flex items-center justify-between gap-2 rounded-lg border border-polaria-w-08 bg-polaria-bg px-3 py-2"
+               >
+-                <Trash2 className="h-4 w-4" aria-hidden />
+-              </button>
+-            </div>
+-          </div>
+-        ))}
++                <div className="min-w-0">
++                  <p className="truncate font-medium text-polaria-w">
++                    {linea.titleSnapshot}
++                  </p>
++                  <p className="polaria-text-caption text-polaria-w-50">
++                    {linea.skuSnapshot ? `SKU ${linea.skuSnapshot} · ` : null}
++                    {formatKgEs(linea.pesoKg)} kg
++                  </p>
++                </div>
++                <button
++                  type="button"
++                  onClick={() => removeLine(index)}
++                  className="shrink-0 rounded-lg p-2 text-polaria-w-50 transition hover:bg-polaria-w-08"
++                  aria-label="Quitar línea"
++                >
++                  <Trash2 className="h-4 w-4" aria-hidden />
++                </button>
++              </li>
++            ))}
++          </ul>
++        )}
+       </div>
+     </PolariaFormModal>
+   );
+diff --git a/src/modules/purchases/components/SolicitudCompraDetalleModal.tsx b/src/modules/purchases/components/SolicitudCompraDetalleModal.tsx
+new file mode 100644
+index 0000000..db78046
+--- /dev/null
++++ b/src/modules/purchases/components/SolicitudCompraDetalleModal.tsx
+@@ -0,0 +1,84 @@
++"use client";
++
++import type { ReactNode } from "react";
++import { PolariaFormModal } from "@/components/shared/PolariaFormModal";
++import { formatKgEs } from "@/lib/decimal-es";
++import type { SolicitudCompraRow } from "../types/purchases.types";
++import {
++  nombresProductosSolicitud,
++  resolveLineaTitulo,
++} from "../utils/solicitud-compra-display";
++
++interface SolicitudCompraDetalleModalProps {
++  solicitud: SolicitudCompraRow | null;
++  onClose: () => void;
++  actions?: ReactNode;
++}
++
++export function SolicitudCompraDetalleModal({
++  solicitud,
++  onClose,
++  actions,
++}: SolicitudCompraDetalleModalProps) {
++  if (!solicitud) {
++    return null;
++  }
++
++  const lineItems = solicitud.lineas ?? [];
++
++  return (
++    <PolariaFormModal
++      open
++      onClose={onClose}
++      sectionLabel="Detalle de solicitud"
++      title={solicitud.codigo}
++      description={nombresProductosSolicitud(solicitud)}
++      submitLabel="Cerrar"
++      isSubmitting={false}
++      onSubmit={(event) => {
++        event.preventDefault();
++        onClose();
++      }}
++      compact
++      className="max-w-lg"
++    >
++      <p className="polaria-text-label text-polaria-w-50">Productos y peso</p>
++
++      {lineItems.length === 0 ? (
++        <p className="polaria-text-body-sm text-polaria-w-50">
++          Esta solicitud no tiene líneas registradas.
++        </p>
++      ) : (
++        <ul className="space-y-3">
++          {lineItems.map((linea) => (
++            <li
++              key={linea.id_linea_solicitud_compra}
++              className="rounded-xl border border-polaria-t-20 bg-polaria-t-08 px-4 py-3"
++            >
++              <p className="font-medium text-polaria-w">
++                {resolveLineaTitulo(linea)}
++              </p>
++              <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 polaria-text-body-sm text-polaria-w-50">
++                <span>
++                  <span className="text-polaria-w-20">Peso:</span>{" "}
++                  <span className="font-semibold tabular-nums text-polaria-w">
++                    {formatKgEs(Number(linea.cantidad))} kg
++                  </span>
++                </span>
++                {linea.producto?.sku ? (
++                  <span>SKU {linea.producto.sku}</span>
++                ) : null}
++              </div>
++            </li>
++          ))}
++        </ul>
++      )}
++
++      {actions ? (
++        <div className="flex flex-wrap justify-end gap-2 border-t border-polaria-w-08 pt-4">
++          {actions}
++        </div>
++      ) : null}
++    </PolariaFormModal>
++  );
++}
+diff --git a/src/modules/purchases/index.ts b/src/modules/purchases/index.ts
+index 5fd1d94..2327ca7 100644
+--- a/src/modules/purchases/index.ts
++++ b/src/modules/purchases/index.ts
+@@ -43,3 +43,4 @@ export {
+ export { ComprasPageContent } from "./components/ComprasPageContent";
+ export { IngresoPageContent } from "./components/IngresoPageContent";
+ export { SolicitudCompraCreateModal } from "./components/SolicitudCompraCreateModal";
++export { SolicitudCompraDetalleModal } from "./components/SolicitudCompraDetalleModal";
+diff --git a/src/modules/purchases/services/purchases-api.service.test.ts b/src/modules/purchases/services/purchases-api.service.test.ts
+index 744ffe2..499b6a7 100644
+--- a/src/modules/purchases/services/purchases-api.service.test.ts
++++ b/src/modules/purchases/services/purchases-api.service.test.ts
+@@ -39,7 +39,7 @@ describe("purchases-api.service", () => {
+     });
+ 
+     const row = await createSolicitudCompraApi({
+-      idProveedor: "prov-1",
++      codigoCuenta: "CUENTA-01",
+       idBodega: "bod-1",
+       lineas: [{ idProducto: "prod-1", cantidad: 10 }],
+     });
+@@ -48,7 +48,7 @@ describe("purchases-api.service", () => {
+       method: "POST",
+       auth: true,
+       body: {
+-        idProveedor: "prov-1",
++        codigoCuenta: "CUENTA-01",
+         idBodega: "bod-1",
+         observaciones: null,
+         lineas: [{ idProducto: "prod-1", cantidad: 10 }],
+@@ -60,7 +60,7 @@ describe("purchases-api.service", () => {
+   it("createSolicitudCompraApi valida líneas", async () => {
+     await expect(
+       createSolicitudCompraApi({
+-        idProveedor: "prov-1",
++        codigoCuenta: "CUENTA-01",
+         idBodega: "bod-1",
+         lineas: [],
+       }),
+diff --git a/src/modules/purchases/services/purchases-api.service.ts b/src/modules/purchases/services/purchases-api.service.ts
+index 6c98fb8..6e80a25 100644
+--- a/src/modules/purchases/services/purchases-api.service.ts
++++ b/src/modules/purchases/services/purchases-api.service.ts
+@@ -25,13 +25,14 @@ async function postComprasApi<T>(path: string, body?: unknown): Promise<T> {
+ export async function createSolicitudCompraApi(
+   input: CreateSolicitudCompraApiInput,
+ ): Promise<SolicitudCompraApiRow> {
+-  const idProveedor = input.idProveedor.trim();
++  const codigoCuenta = input.codigoCuenta.trim();
+   const idBodega = input.idBodega.trim();
+   const observaciones = input.observaciones?.trim() ?? "";
++  const idProveedor = input.idProveedor?.trim() ?? "";
+ 
+-  if (!idProveedor) {
++  if (!codigoCuenta) {
+     throw new DomainServiceError(
+-      "Selecciona un proveedor.",
++      "No se encontró la cuenta activa.",
+       "INVALID_ARGUMENT",
+     );
+   }
+@@ -72,8 +73,9 @@ export async function createSolicitudCompraApi(
+   });
+ 
+   return postComprasApi<SolicitudCompraApiRow>("/compras/solicitudes", {
+-    idProveedor,
++    codigoCuenta,
+     idBodega,
++    ...(idProveedor ? { idProveedor } : {}),
+     observaciones: observaciones || null,
+     lineas,
+   });
+diff --git a/src/modules/purchases/services/purchases.service.ts b/src/modules/purchases/services/purchases.service.ts
+index 956481a..6591e99 100644
+--- a/src/modules/purchases/services/purchases.service.ts
++++ b/src/modules/purchases/services/purchases.service.ts
+@@ -8,11 +8,13 @@ import { DomainServiceError } from "@/lib/domain-service-error";
+ import type {
+   OrdenCompraRow,
+   RecepcionCompraRow,
++  SolicitudCompraLineaRow,
+   SolicitudCompraRow,
+ } from "../types/purchases.types";
+ 
+ const SOLICITUD_COLUMNS =
+-  "id_solicitud_compra,codigo_cuenta,id_bodega,id_proveedor,id_orden_compra,codigo,estado,id_solicitante,observaciones,created_at,updated_at";
++  "id_solicitud_compra,codigo_cuenta,id_bodega,id_proveedor,id_orden_compra,codigo,estado,id_solicitante,observaciones,created_at,updated_at," +
++  "solicitud_compra_linea(id_linea_solicitud_compra,id_producto,cantidad,producto(sku,descripcion,codigo_almacen,metadatos_catalogo))";
+ 
+ const ORDEN_COLUMNS =
+   "id_orden_compra,codigo_cuenta,id_bodega,id_proveedor,id_solicitud_compra,id_creador,codigo,estado,fecha_emision,fecha_entrega_estimada,destino_tipo,observaciones,created_at,updated_at";
+@@ -56,6 +58,60 @@ function mapOrdenCompraLineaRow(row: OrdenCompraLineaDbRow): OrdenCompraLineaRow
+   return { sku, cantidad, unidad };
+ }
+ 
++interface SolicitudCompraLineaDbRow {
++  id_linea_solicitud_compra: string;
++  id_producto: string;
++  cantidad: string | number;
++  producto:
++    | {
++        sku: string | null;
++        descripcion: string | null;
++        codigo_almacen: string | null;
++        metadatos_catalogo: unknown;
++      }
++    | {
++        sku: string | null;
++        descripcion: string | null;
++        codigo_almacen: string | null;
++        metadatos_catalogo: unknown;
++      }[]
++    | null;
++}
++
++interface SolicitudCompraDbRow extends Omit<SolicitudCompraRow, "lineas"> {
++  solicitud_compra_linea: SolicitudCompraLineaDbRow[] | null;
++}
++
++function resolveLineaProducto(
++  producto: SolicitudCompraLineaDbRow["producto"],
++): SolicitudCompraLineaRow["producto"] {
++  if (!producto) {
++    return null;
++  }
++
++  return Array.isArray(producto) ? (producto[0] ?? null) : producto;
++}
++
++function mapSolicitudCompraLineaRow(
++  row: SolicitudCompraLineaDbRow,
++): SolicitudCompraLineaRow {
++  return {
++    id_linea_solicitud_compra: row.id_linea_solicitud_compra,
++    id_producto: row.id_producto,
++    cantidad: Number(row.cantidad),
++    producto: resolveLineaProducto(row.producto),
++  };
++}
++
++function mapSolicitudCompraRow(row: SolicitudCompraDbRow): SolicitudCompraRow {
++  const { solicitud_compra_linea, ...solicitud } = row;
++
++  return {
++    ...solicitud,
++    lineas: (solicitud_compra_linea ?? []).map(mapSolicitudCompraLineaRow),
++  };
++}
++
+ // TODO POL-5+: crear/aprobar solicitudes y órdenes vía apiRequest al API Nest.
+ 
+ export async function listSolicitudesCompra(
+@@ -72,10 +128,10 @@ export async function listSolicitudesCompra(
+       .limit(limit);
+ 
+     return query as unknown as Promise<{
+-      data: SolicitudCompraRow[] | null;
++      data: SolicitudCompraDbRow[] | null;
+       error: { message: string } | null;
+     }>;
+-  });
++  }).then((rows) => rows.map(mapSolicitudCompraRow));
+ }
+ 
+ export async function listOrdenesCompra(
+diff --git a/src/modules/purchases/types/purchases-api.types.ts b/src/modules/purchases/types/purchases-api.types.ts
+index c2ded16..73b60f5 100644
+--- a/src/modules/purchases/types/purchases-api.types.ts
++++ b/src/modules/purchases/types/purchases-api.types.ts
+@@ -6,8 +6,9 @@ export interface SolicitudCompraLineaInput {
+ }
+ 
+ export interface CreateSolicitudCompraApiInput {
+-  idProveedor: string;
++  codigoCuenta: string;
+   idBodega: string;
++  idProveedor?: string | null;
+   observaciones?: string | null;
+   lineas: SolicitudCompraLineaInput[];
+ }
+diff --git a/src/modules/purchases/types/purchases.types.ts b/src/modules/purchases/types/purchases.types.ts
+index c427a1c..1b73a51 100644
+--- a/src/modules/purchases/types/purchases.types.ts
++++ b/src/modules/purchases/types/purchases.types.ts
+@@ -14,6 +14,18 @@ export type EstadoOrdenCompra =
+   | "cerrada"
+   | "cancelada";
+ 
++export interface SolicitudCompraLineaRow {
++  id_linea_solicitud_compra: string;
++  id_producto: string;
++  cantidad: number;
++  producto?: {
++    sku: string | null;
++    descripcion: string | null;
++    codigo_almacen: string | null;
++    metadatos_catalogo: unknown;
++  } | null;
++}
++
+ export interface SolicitudCompraRow {
+   id_solicitud_compra: string;
+   codigo_cuenta: string;
+@@ -26,6 +38,7 @@ export interface SolicitudCompraRow {
+   observaciones: string | null;
+   created_at: string;
+   updated_at: string;
++  lineas?: SolicitudCompraLineaRow[];
+ }
+ 
+ export interface OrdenCompraRow {
+diff --git a/src/modules/purchases/utils/solicitud-compra-display.test.ts b/src/modules/purchases/utils/solicitud-compra-display.test.ts
+new file mode 100644
+index 0000000..f88ee74
+--- /dev/null
++++ b/src/modules/purchases/utils/solicitud-compra-display.test.ts
+@@ -0,0 +1,51 @@
++import { describe, expect, it } from "vitest";
++import type { SolicitudCompraRow } from "../types/purchases.types";
++import {
++  compareSolicitudCompraByCodigoDesc,
++  nombresProductosSolicitud,
++  pesosProductosSolicitud,
++} from "./solicitud-compra-display";
++
++const baseSolicitud: SolicitudCompraRow = {
++  id_solicitud_compra: "sol-1",
++  codigo_cuenta: "165V7",
++  id_bodega: "bod-1",
++  id_proveedor: "prov-1",
++  id_orden_compra: null,
++  codigo: "SOL-0002",
++  estado: "borrador",
++  id_solicitante: "usr-1",
++  observaciones: null,
++  created_at: "2026-06-28T12:00:00.000Z",
++  updated_at: "2026-06-28T12:00:00.000Z",
++  lineas: [
++    {
++      id_linea_solicitud_compra: "line-1",
++      id_producto: "prod-1",
++      cantidad: 15.5,
++      producto: {
++        sku: "DEMO-PRI",
++        descripcion: "Salmón demo",
++        codigo_almacen: "PRI-01",
++        metadatos_catalogo: { titulo: "Salmón entero demo" },
++      },
++    },
++  ],
++};
++
++describe("solicitud-compra-display", () => {
++  it("resume nombres y pesos de líneas", () => {
++    expect(nombresProductosSolicitud(baseSolicitud)).toBe("Salmón entero demo");
++    expect(pesosProductosSolicitud(baseSolicitud)).toContain("kg");
++  });
++
++  it("ordena por código SOL descendente", () => {
++    const rows = [
++      { ...baseSolicitud, codigo: "SOL-0001" },
++      { ...baseSolicitud, codigo: "SOL-0010" },
++    ];
++
++    rows.sort(compareSolicitudCompraByCodigoDesc);
++    expect(rows[0]?.codigo).toBe("SOL-0010");
++  });
++});
+diff --git a/src/modules/purchases/utils/solicitud-compra-display.ts b/src/modules/purchases/utils/solicitud-compra-display.ts
+new file mode 100644
+index 0000000..df6ca4e
+--- /dev/null
++++ b/src/modules/purchases/utils/solicitud-compra-display.ts
+@@ -0,0 +1,62 @@
++import { formatKgEs } from "@/lib/decimal-es";
++import { parseCatalogoMetadatos } from "@/modules/admin-panel/constants/catalogo-producto";
++import type {
++  SolicitudCompraLineaRow,
++  SolicitudCompraRow,
++} from "../types/purchases.types";
++
++export function resolveLineaTitulo(linea: SolicitudCompraLineaRow): string {
++  const producto = linea.producto;
++  if (!producto) {
++    return "Sin título";
++  }
++
++  const meta = parseCatalogoMetadatos(producto.metadatos_catalogo);
++  return (
++    meta.titulo?.trim() ||
++    producto.descripcion?.trim() ||
++    producto.sku?.trim() ||
++    "Sin título"
++  );
++}
++
++export function nombresProductosSolicitud(solicitud: SolicitudCompraRow): string {
++  const names = (solicitud.lineas ?? [])
++    .map((linea) => resolveLineaTitulo(linea))
++    .filter(Boolean);
++
++  return names.length ? names.join(" · ") : "—";
++}
++
++export function pesosProductosSolicitud(solicitud: SolicitudCompraRow): string {
++  const items = solicitud.lineas ?? [];
++  if (!items.length) {
++    return "—";
++  }
++
++  return items
++    .map((linea) => `${formatKgEs(Number(linea.cantidad))} kg`)
++    .join(" · ");
++}
++
++function parseSolicitudCodigoNumero(codigo: string): number {
++  const match = /(\d+)\s*$/.exec(codigo.trim());
++  return match ? Number(match[1]) : 0;
++}
++
++/** Código SOL-XXXX: mayor primero; empate → más reciente primero. */
++export function compareSolicitudCompraByCodigoDesc(
++  a: Pick<SolicitudCompraRow, "codigo" | "created_at">,
++  b: Pick<SolicitudCompraRow, "codigo" | "created_at">,
++): number {
++  const diff =
++    parseSolicitudCodigoNumero(b.codigo) - parseSolicitudCodigoNumero(a.codigo);
++
++  if (diff !== 0) {
++    return diff;
++  }
++
++  return (
++    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
++  );
++}
+-- 
+2.43.0
+
