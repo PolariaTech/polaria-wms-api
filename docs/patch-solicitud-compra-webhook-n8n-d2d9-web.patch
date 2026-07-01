@@ -1,0 +1,783 @@
+From b40abeb9f08d60b1a5258c016fa89baa01cf52b0 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 1 Jul 2026 21:02:21 +0000
+Subject: [PATCH] feat: webhook n8n al crear solicitud de compra
+
+---
+ .env.example                                  |   5 +
+ next.config.ts                                |   4 +-
+ src/app/api/solicitud-compra/route.test.ts    | 120 +++++++++++++++++
+ src/app/api/solicitud-compra/route.ts         | 108 +++++++++++++++
+ .../solicitud-compra-n8n.schema.test.ts       |  39 ++++++
+ .../solicitud-compra-n8n.schema.ts            |  48 +++++++
+ .../components/SolicitudCompraCreateModal.tsx |  72 +++++++++-
+ ...olicitud-compra-n8n-client.service.test.ts | 103 ++++++++++++++
+ .../solicitud-compra-n8n-client.service.ts    | 126 ++++++++++++++++++
+ 9 files changed, 620 insertions(+), 5 deletions(-)
+ create mode 100644 src/app/api/solicitud-compra/route.test.ts
+ create mode 100644 src/app/api/solicitud-compra/route.ts
+ create mode 100644 src/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema.test.ts
+ create mode 100644 src/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema.ts
+ create mode 100644 src/modules/purchases/services/solicitud-compra-n8n-client.service.test.ts
+ create mode 100644 src/modules/purchases/services/solicitud-compra-n8n-client.service.ts
+
+diff --git a/.env.example b/.env.example
+index 688575f..3073e00 100644
+--- a/.env.example
++++ b/.env.example
+@@ -18,3 +18,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+ PEDIDO_PROVEEDOR_WEBHOOK_URL=https://n8n.polaria.tech/webhook/polaria-wms-pedido-proveedor
+ # ID de plantilla/documento que consume el flujo n8n (campo documentId del payload).
+ PEDIDO_PROVEEDOR_DOCUMENT_ID=polaria-oc-proveedor-v1
++
++# Integración n8n — solicitud de compra (solo servidor; no usar NEXT_PUBLIC_).
++# Route handler: POST /api/solicitud-compra (no se proxya a Nest; ver next.config.ts).
++# Se dispara automáticamente al crear una solicitud desde la app.
++SOLICITUD_COMPRA_WEBHOOK_URL=https://polariatech.app.n8n.cloud/webhook-test/solicitudcompra
+diff --git a/next.config.ts b/next.config.ts
+index 1792db4..65593e0 100644
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -13,9 +13,9 @@ const apiBaseUrl = normalizeApiBaseUrl(
+     "https://polaria-wms-api.onrender.com",
+ );
+ 
+-/** Excluye el route handler local de n8n; el resto de /api/* se proxya a Nest. */
++/** Excluye route handlers locales de n8n; el resto de /api/* se proxya a Nest. */
+ export const NEST_API_REWRITE_SOURCE =
+-  "/api/:path((?!pedido-proveedor$).*)";
++  "/api/:path((?!pedido-proveedor$)(?!solicitud-compra$).*)";
+ 
+ const nextConfig: NextConfig = {
+   // Evita que Turbopack use C:\Users\Daniel\Videos como root (hay package-lock.json padre).
+diff --git a/src/app/api/solicitud-compra/route.test.ts b/src/app/api/solicitud-compra/route.test.ts
+new file mode 100644
+index 0000000..ded94eb
+--- /dev/null
++++ b/src/app/api/solicitud-compra/route.test.ts
+@@ -0,0 +1,120 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { GET, POST } from "./route";
++
++const VALID_BODY = {
++  codigo_cuenta: "49M04",
++  telefono: "+573017447947",
++  id_proveedor: "88522d67-4de0-428e-8bec-bf2581916df0",
++  razon_social: "Pat-lafrieda",
++  codigo: "60ERA",
++  estado: "Iniciado",
++  solicitud_compra_linea: [
++    {
++      id_producto: "5dbb31df-e070-407e-bb05-d7714afd0a98",
++      sku: "OH2WF",
++      descripcion: "Frozen-Lamb Racks",
++      cantidad: 300,
++    },
++  ],
++  mensaje_final: "Hola, solicito cotización de los productos detallados.",
++};
++
++describe("POST /api/solicitud-compra", () => {
++  beforeEach(() => {
++    vi.stubEnv(
++      "SOLICITUD_COMPRA_WEBHOOK_URL",
++      "https://polariatech.app.n8n.cloud/webhook-test/solicitudcompra",
++    );
++    vi.stubGlobal(
++      "fetch",
++      vi.fn().mockResolvedValue({
++        ok: true,
++        status: 200,
++      }),
++    );
++  });
++
++  afterEach(() => {
++    vi.unstubAllEnvs();
++    vi.clearAllMocks();
++  });
++
++  it("responde 503 si falta la URL del webhook", async () => {
++    vi.stubEnv("SOLICITUD_COMPRA_WEBHOOK_URL", "");
++
++    const response = await POST(
++      new Request("http://localhost/api/solicitud-compra", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(VALID_BODY),
++      }),
++    );
++
++    expect(response.status).toBe(503);
++    await expect(response.json()).resolves.toEqual({
++      ok: false,
++      error: "Integración de solicitud de compra no configurada.",
++    });
++    expect(fetch).not.toHaveBeenCalled();
++  });
++
++  it("reenvía el payload al webhook n8n", async () => {
++    const response = await POST(
++      new Request("http://localhost/api/solicitud-compra", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(VALID_BODY),
++      }),
++    );
++
++    expect(response.status).toBe(200);
++    expect(fetch).toHaveBeenCalledWith(
++      "https://polariatech.app.n8n.cloud/webhook-test/solicitudcompra",
++      expect.objectContaining({
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: expect.stringContaining('"codigo_cuenta":"49M04"'),
++      }),
++    );
++
++    const json = await response.json();
++    expect(json).toMatchObject({
++      ok: true,
++      n8nStatus: 200,
++    });
++    expect(json.correlationId).toEqual(expect.any(String));
++  });
++
++  it("responde 502 si n8n devuelve error HTTP", async () => {
++    vi.mocked(fetch).mockResolvedValue({
++      ok: false,
++      status: 500,
++    } as Response);
++
++    const response = await POST(
++      new Request("http://localhost/api/solicitud-compra", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(VALID_BODY),
++      }),
++    );
++
++    expect(response.status).toBe(502);
++    await expect(response.json()).resolves.toMatchObject({
++      ok: false,
++      n8nStatus: 500,
++    });
++  });
++});
++
++describe("GET /api/solicitud-compra", () => {
++  it("responde 405", async () => {
++    const response = GET();
++
++    expect(response.status).toBe(405);
++    await expect(response.json()).resolves.toEqual({
++      ok: false,
++      error: "Method not allowed.",
++    });
++  });
++});
+diff --git a/src/app/api/solicitud-compra/route.ts b/src/app/api/solicitud-compra/route.ts
+new file mode 100644
+index 0000000..909ade5
+--- /dev/null
++++ b/src/app/api/solicitud-compra/route.ts
+@@ -0,0 +1,108 @@
++import { randomUUID } from "node:crypto";
++import { NextResponse } from "next/server";
++import {
++  formatSolicitudCompraN8nValidationError,
++  parseSolicitudCompraN8nBody,
++  type SolicitudCompraN8nBody,
++} from "@/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema";
++
++export interface SolicitudCompraRouteResponse {
++  ok: boolean;
++  n8nStatus?: number;
++  correlationId?: string;
++  error?: string;
++}
++
++function getSolicitudCompraWebhookUrl(): string | null {
++  return process.env.SOLICITUD_COMPRA_WEBHOOK_URL?.trim() ?? null;
++}
++
++export async function POST(request: Request): Promise<NextResponse> {
++  const webhookUrl = getSolicitudCompraWebhookUrl();
++
++  if (!webhookUrl) {
++    return NextResponse.json(
++      {
++        ok: false,
++        error: "Integración de solicitud de compra no configurada.",
++      } satisfies SolicitudCompraRouteResponse,
++      { status: 503 },
++    );
++  }
++
++  let body: unknown;
++
++  try {
++    body = await request.json();
++  } catch {
++    return NextResponse.json(
++      {
++        ok: false,
++        error: "Body JSON inválido.",
++      } satisfies SolicitudCompraRouteResponse,
++      { status: 400 },
++    );
++  }
++
++  const parsed = parseSolicitudCompraN8nBody(body);
++
++  if (!parsed.success) {
++    return NextResponse.json(
++      {
++        ok: false,
++        error: formatSolicitudCompraN8nValidationError(parsed.error),
++      } satisfies SolicitudCompraRouteResponse,
++      { status: 400 },
++    );
++  }
++
++  const correlationId = randomUUID();
++  const payload: SolicitudCompraN8nBody & {
++    correlationId: string;
++    sentAt: string;
++  } = {
++    ...parsed.data,
++    correlationId,
++    sentAt: new Date().toISOString(),
++  };
++
++  try {
++    const response = await fetch(webhookUrl, {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/json",
++      },
++      body: JSON.stringify(payload),
++    });
++
++    const result: SolicitudCompraRouteResponse = {
++      ok: response.ok,
++      n8nStatus: response.status,
++      correlationId,
++    };
++
++    return NextResponse.json(result, {
++      status: response.ok ? 200 : 502,
++    });
++  } catch {
++    return NextResponse.json(
++      {
++        ok: false,
++        n8nStatus: 0,
++        correlationId,
++        error: "No se pudo contactar el webhook de n8n.",
++      } satisfies SolicitudCompraRouteResponse,
++      { status: 502 },
++    );
++  }
++}
++
++export function GET(): NextResponse {
++  return NextResponse.json(
++    {
++      ok: false,
++      error: "Method not allowed.",
++    } satisfies SolicitudCompraRouteResponse,
++    { status: 405 },
++  );
++}
+diff --git a/src/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema.test.ts b/src/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema.test.ts
+new file mode 100644
+index 0000000..29183f5
+--- /dev/null
++++ b/src/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema.test.ts
+@@ -0,0 +1,39 @@
++import { describe, expect, it } from "vitest";
++import {
++  mapSolicitudCompraEstadoN8n,
++  parseSolicitudCompraN8nBody,
++} from "./solicitud-compra-n8n.schema";
++
++const VALID_BODY = {
++  codigo_cuenta: "49M04",
++  telefono: "+573017447947",
++  id_proveedor: "88522d67-4de0-428e-8bec-bf2581916df0",
++  razon_social: "Pat-lafrieda",
++  codigo: "60ERA",
++  estado: "Iniciado",
++  solicitud_compra_linea: [
++    {
++      id_producto: "5dbb31df-e070-407e-bb05-d7714afd0a98",
++      sku: "OH2WF",
++      descripcion: "Frozen-Lamb Racks",
++      cantidad: 300,
++    },
++  ],
++  mensaje_final: "Hola, solicito cotización de los productos detallados.",
++};
++
++describe("solicitud-compra-n8n.schema", () => {
++  it("parseSolicitudCompraN8nBody acepta payload de ejemplo n8n", () => {
++    const parsed = parseSolicitudCompraN8nBody(VALID_BODY);
++
++    expect(parsed.success).toBe(true);
++    if (parsed.success) {
++      expect(parsed.data).toEqual(VALID_BODY);
++    }
++  });
++
++  it("mapSolicitudCompraEstadoN8n traduce borrador a Iniciado", () => {
++    expect(mapSolicitudCompraEstadoN8n("borrador")).toBe("Iniciado");
++    expect(mapSolicitudCompraEstadoN8n("aprobada")).toBe("aprobada");
++  });
++});
+diff --git a/src/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema.ts b/src/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema.ts
+new file mode 100644
+index 0000000..5283f39
+--- /dev/null
++++ b/src/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema.ts
+@@ -0,0 +1,48 @@
++import { z } from "zod";
++
++export const solicitudCompraN8nLineaSchema = z.object({
++  id_producto: z.string().trim().uuid("id_producto debe ser un UUID válido."),
++  sku: z.string().trim().min(1, "El SKU es obligatorio."),
++  descripcion: z.string().trim().min(1, "La descripción es obligatoria."),
++  cantidad: z.number().finite().positive("La cantidad debe ser mayor a cero."),
++});
++
++export const solicitudCompraN8nBodySchema = z.object({
++  codigo_cuenta: z.string().trim().min(1, "codigo_cuenta es obligatorio."),
++  telefono: z.string().trim().min(1, "telefono es obligatorio."),
++  id_proveedor: z.string().trim().uuid("id_proveedor debe ser un UUID válido."),
++  razon_social: z.string().trim().min(1, "razon_social es obligatoria."),
++  codigo: z.string().trim().min(1, "codigo es obligatorio."),
++  estado: z.string().trim().min(1, "estado es obligatorio."),
++  solicitud_compra_linea: z
++    .array(solicitudCompraN8nLineaSchema)
++    .min(1, "Debe incluir al menos una línea."),
++  mensaje_final: z.string().trim().min(1, "mensaje_final es obligatorio."),
++});
++
++export type SolicitudCompraN8nLinea = z.infer<
++  typeof solicitudCompraN8nLineaSchema
++>;
++export type SolicitudCompraN8nBody = z.infer<typeof solicitudCompraN8nBodySchema>;
++
++export const SOLICITUD_COMPRA_N8N_MENSAJE_DEFAULT =
++  "Hola, solicito cotización de los productos detallados.";
++
++export function parseSolicitudCompraN8nBody(input: unknown) {
++  return solicitudCompraN8nBodySchema.safeParse(input);
++}
++
++export function formatSolicitudCompraN8nValidationError(
++  error: z.ZodError,
++): string {
++  return error.issues.map((issue) => issue.message).join(" ");
++}
++
++/** Etiqueta de negocio para n8n al crear la solicitud (estado borrador en BD). */
++export function mapSolicitudCompraEstadoN8n(estadoDb: string): string {
++  if (estadoDb === "borrador") {
++    return "Iniciado";
++  }
++
++  return estadoDb;
++}
+diff --git a/src/modules/purchases/components/SolicitudCompraCreateModal.tsx b/src/modules/purchases/components/SolicitudCompraCreateModal.tsx
+index 719940d..07b4549 100644
+--- a/src/modules/purchases/components/SolicitudCompraCreateModal.tsx
++++ b/src/modules/purchases/components/SolicitudCompraCreateModal.tsx
+@@ -12,9 +12,15 @@ import { DomainServiceError } from "@/lib/domain-service-error";
+ import {
+   listBodegasInternasVinculadasAdmin,
+   listCatalogoProductosAdmin,
++  listProveedoresAdmin,
++  type ProveedorListRow,
+ } from "@/modules/admin-panel";
+ import { useCompany } from "@/providers/CompanyProvider";
+ import { createSolicitudCompraApi } from "../services/purchases-api.service";
++import {
++  buildSolicitudCompraN8nBody,
++  notifySolicitudCompraN8n,
++} from "../services/solicitud-compra-n8n-client.service";
+ 
+ interface SolicitudCompraCreateModalProps {
+   open: boolean;
+@@ -44,7 +50,9 @@ export function SolicitudCompraCreateModal({
+   const [lines, setLines] = useState<DraftLine[]>([]);
+   const [pickProductId, setPickProductId] = useState("");
+   const [pickPesoKg, setPickPesoKg] = useState("");
++  const [idProveedor, setIdProveedor] = useState("");
+   const [productos, setProductos] = useState<ProductoOption[]>([]);
++  const [proveedores, setProveedores] = useState<ProveedorListRow[]>([]);
+   const [resolvedBodegaId, setResolvedBodegaId] = useState<string | null>(null);
+   const [error, setError] = useState<string | null>(null);
+   const [isSubmitting, setIsSubmitting] = useState(false);
+@@ -58,6 +66,7 @@ export function SolicitudCompraCreateModal({
+     setLines([]);
+     setPickProductId("");
+     setPickPesoKg("");
++    setIdProveedor("");
+     setError(null);
+     setIsSubmitting(false);
+     setResolvedBodegaId(activeBodegaId);
+@@ -70,11 +79,12 @@ export function SolicitudCompraCreateModal({
+ 
+     void Promise.all([
+       listCatalogoProductosAdmin({ codigoCuenta }),
++      listProveedoresAdmin({ codigoCuenta }),
+       activeBodegaId
+         ? Promise.resolve(null)
+         : listBodegasInternasVinculadasAdmin({ codigoCuenta }),
+     ])
+-      .then(([productoRows, bodegaRows]) => {
++      .then(([productoRows, proveedorRows, bodegaRows]) => {
+         setProductos(
+           productoRows.map((row) => ({
+             value: row.idProducto,
+@@ -83,12 +93,14 @@ export function SolicitudCompraCreateModal({
+           })),
+         );
+ 
++        setProveedores(proveedorRows);
++
+         if (!activeBodegaId && bodegaRows?.length) {
+           setResolvedBodegaId(bodegaRows[0]?.idBodega ?? null);
+         }
+       })
+       .catch(() => {
+-        setError("No se pudieron cargar los productos del catálogo.");
++        setError("No se pudieron cargar productos o proveedores.");
+       })
+       .finally(() => {
+         setIsLoadingOptions(false);
+@@ -155,17 +167,48 @@ export function SolicitudCompraCreateModal({
+       return;
+     }
+ 
++    if (!idProveedor) {
++      setError("Selecciona un proveedor para la solicitud.");
++      return;
++    }
++
+     setIsSubmitting(true);
+ 
+     try {
+-      await createSolicitudCompraApi({
++      const created = await createSolicitudCompraApi({
+         codigoCuenta,
+         idBodega: resolvedBodegaId,
++        idProveedor,
+         lineas: lines.map((linea) => ({
+           idProducto: linea.idProducto,
+           cantidad: linea.pesoKg,
+         })),
+       });
++
++      const proveedor =
++        proveedores.find((row) => row.idProveedor === created.idProveedor) ??
++        proveedores.find((row) => row.idProveedor === idProveedor);
++
++      if (proveedor?.telefono) {
++        try {
++          await notifySolicitudCompraN8n(
++            buildSolicitudCompraN8nBody({
++              codigoCuenta,
++              solicitud: created,
++              proveedor,
++              lineas: lines.map((linea) => ({
++                idProducto: linea.idProducto,
++                sku: linea.skuSnapshot,
++                descripcion: linea.titleSnapshot,
++                cantidad: linea.pesoKg,
++              })),
++            }),
++          );
++        } catch {
++          // La solicitud ya quedó guardada; la notificación a n8n es best-effort.
++        }
++      }
++
+       onCreated();
+       onClose();
+     } catch (err: unknown) {
+@@ -201,6 +244,29 @@ export function SolicitudCompraCreateModal({
+         Peso kg por ítem.
+       </p>
+ 
++      <PolariaFormSelect
++        id="sol-proveedor"
++        label="Proveedor"
++        value={idProveedor}
++        onChange={(event) => setIdProveedor(event.target.value)}
++        disabled={disabled || proveedores.length === 0}
++        placeholder="Elegí proveedor…"
++        options={proveedores.map((row) => ({
++          value: row.idProveedor,
++          label: row.nombre
++            ? `${row.proveedor} — ${row.nombre}`
++            : row.proveedor,
++        }))}
++        compact
++      />
++
++      {proveedores.length === 0 && !isLoadingOptions ? (
++        <p className="rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-4 py-3 polaria-text-body-sm text-polaria-w-50">
++          Tu administrador de cuenta debe registrar proveedores antes de crear
++          solicitudes de compra.
++        </p>
++      ) : null}
++
+       {productos.length === 0 && !isLoadingOptions ? (
+         <p className="rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-4 py-3 polaria-text-body-sm text-polaria-w-50">
+           Tu administrador de cuenta debe registrar productos en el catálogo
+diff --git a/src/modules/purchases/services/solicitud-compra-n8n-client.service.test.ts b/src/modules/purchases/services/solicitud-compra-n8n-client.service.test.ts
+new file mode 100644
+index 0000000..5bfb876
+--- /dev/null
++++ b/src/modules/purchases/services/solicitud-compra-n8n-client.service.test.ts
+@@ -0,0 +1,103 @@
++import { describe, expect, it, vi } from "vitest";
++import {
++  buildSolicitudCompraN8nBody,
++  notifySolicitudCompraN8n,
++} from "./solicitud-compra-n8n-client.service";
++
++describe("solicitud-compra-n8n-client.service", () => {
++  it("buildSolicitudCompraN8nBody arma payload snake_case para n8n", () => {
++    expect(
++      buildSolicitudCompraN8nBody({
++        codigoCuenta: "49M04",
++        solicitud: {
++          idSolicitudCompra: "sol-1",
++          codigo: "60ERA",
++          estado: "borrador",
++          idProveedor: "88522d67-4de0-428e-8bec-bf2581916df0",
++          idBodega: "bod-1",
++          idOrdenCompra: null,
++        },
++        proveedor: {
++          idProveedor: "88522d67-4de0-428e-8bec-bf2581916df0",
++          proveedor: "Pat-lafrieda",
++          nombre: "Pat-lafrieda",
++          telefono: "+573017447947",
++        },
++        lineas: [
++          {
++            idProducto: "5dbb31df-e070-407e-bb05-d7714afd0a98",
++            sku: "OH2WF",
++            descripcion: "Frozen-Lamb Racks",
++            cantidad: 300,
++          },
++        ],
++      }),
++    ).toEqual({
++      codigo_cuenta: "49M04",
++      telefono: "+573017447947",
++      id_proveedor: "88522d67-4de0-428e-8bec-bf2581916df0",
++      razon_social: "Pat-lafrieda",
++      codigo: "60ERA",
++      estado: "Iniciado",
++      solicitud_compra_linea: [
++        {
++          id_producto: "5dbb31df-e070-407e-bb05-d7714afd0a98",
++          sku: "OH2WF",
++          descripcion: "Frozen-Lamb Racks",
++          cantidad: 300,
++        },
++      ],
++      mensaje_final: "Hola, solicito cotización de los productos detallados.",
++    });
++  });
++
++  it("notifySolicitudCompraN8n llama POST /api/solicitud-compra", async () => {
++    vi.stubGlobal(
++      "fetch",
++      vi.fn().mockResolvedValue({
++        ok: true,
++        status: 200,
++        json: async () => ({
++          ok: true,
++          n8nStatus: 200,
++          correlationId: "corr-1",
++        }),
++      }),
++    );
++
++    const body = buildSolicitudCompraN8nBody({
++      codigoCuenta: "49M04",
++      solicitud: {
++        idSolicitudCompra: "sol-1",
++        codigo: "60ERA",
++        estado: "borrador",
++        idProveedor: "88522d67-4de0-428e-8bec-bf2581916df0",
++        idBodega: "bod-1",
++        idOrdenCompra: null,
++      },
++      proveedor: {
++        idProveedor: "88522d67-4de0-428e-8bec-bf2581916df0",
++        proveedor: "Pat-lafrieda",
++        nombre: "Pat-lafrieda",
++        telefono: "+573017447947",
++      },
++      lineas: [
++        {
++          idProducto: "5dbb31df-e070-407e-bb05-d7714afd0a98",
++          sku: "OH2WF",
++          descripcion: "Frozen-Lamb Racks",
++          cantidad: 300,
++        },
++      ],
++    });
++
++    const result = await notifySolicitudCompraN8n(body);
++
++    expect(fetch).toHaveBeenCalledWith("/api/solicitud-compra", {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify(body),
++    });
++    expect(result.correlationId).toBe("corr-1");
++  });
++});
+diff --git a/src/modules/purchases/services/solicitud-compra-n8n-client.service.ts b/src/modules/purchases/services/solicitud-compra-n8n-client.service.ts
+new file mode 100644
+index 0000000..cae8e5a
+--- /dev/null
++++ b/src/modules/purchases/services/solicitud-compra-n8n-client.service.ts
+@@ -0,0 +1,126 @@
++import { DomainServiceError } from "@/lib/domain-service-error";
++import {
++  mapSolicitudCompraEstadoN8n,
++  SOLICITUD_COMPRA_N8N_MENSAJE_DEFAULT,
++  type SolicitudCompraN8nBody,
++} from "@/lib/solicitud-compra-n8n/solicitud-compra-n8n.schema";
++import type { ProveedorListRow } from "@/modules/admin-panel/services/proveedores.service";
++import type { SolicitudCompraApiRow } from "../types/purchases-api.types";
++
++export interface SolicitudCompraN8nLineaInput {
++  idProducto: string;
++  sku?: string;
++  descripcion: string;
++  cantidad: number;
++}
++
++export interface SolicitudCompraRouteResponse {
++  ok: boolean;
++  n8nStatus?: number;
++  correlationId?: string;
++  error?: string;
++}
++
++export interface BuildSolicitudCompraN8nInput {
++  codigoCuenta: string;
++  solicitud: SolicitudCompraApiRow;
++  proveedor: Pick<
++    ProveedorListRow,
++    "idProveedor" | "proveedor" | "nombre" | "telefono"
++  >;
++  lineas: SolicitudCompraN8nLineaInput[];
++  mensajeFinal?: string;
++}
++
++export function resolveProveedorRazonSocialN8n(
++  proveedor: Pick<ProveedorListRow, "proveedor" | "nombre">,
++): string {
++  return proveedor.proveedor.trim() || proveedor.nombre.trim();
++}
++
++export function buildSolicitudCompraN8nBody(
++  input: BuildSolicitudCompraN8nInput,
++): SolicitudCompraN8nBody {
++  const telefono = input.proveedor.telefono?.trim() ?? "";
++  const razonSocial = resolveProveedorRazonSocialN8n(input.proveedor);
++
++  if (!input.solicitud.idProveedor) {
++    throw new DomainServiceError(
++      "La solicitud no tiene proveedor asignado.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  if (!telefono) {
++    throw new DomainServiceError(
++      "El proveedor no tiene teléfono registrado.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  if (!razonSocial) {
++    throw new DomainServiceError(
++      "El proveedor no tiene razón social registrada.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  return {
++    codigo_cuenta: input.codigoCuenta.trim(),
++    telefono,
++    id_proveedor: input.solicitud.idProveedor,
++    razon_social: razonSocial,
++    codigo: input.solicitud.codigo,
++    estado: mapSolicitudCompraEstadoN8n(input.solicitud.estado),
++    solicitud_compra_linea: input.lineas.map((linea) => ({
++      id_producto: linea.idProducto,
++      sku: linea.sku?.trim() || "—",
++      descripcion: linea.descripcion.trim(),
++      cantidad: linea.cantidad,
++    })),
++    mensaje_final:
++      input.mensajeFinal?.trim() || SOLICITUD_COMPRA_N8N_MENSAJE_DEFAULT,
++  };
++}
++
++/** Notifica la solicitud de compra a n8n vía route handler interno. */
++export async function notifySolicitudCompraN8n(
++  body: SolicitudCompraN8nBody,
++): Promise<SolicitudCompraRouteResponse> {
++  let response: Response;
++
++  try {
++    response = await fetch("/api/solicitud-compra", {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/json",
++      },
++      body: JSON.stringify(body),
++    });
++  } catch {
++    throw new DomainServiceError(
++      "No se pudo contactar el servicio de notificación.",
++      "MUTATION_FAILED",
++    );
++  }
++
++  let data: SolicitudCompraRouteResponse;
++
++  try {
++    data = (await response.json()) as SolicitudCompraRouteResponse;
++  } catch {
++    throw new DomainServiceError(
++      "Respuesta inválida del servicio de notificación.",
++      "MUTATION_FAILED",
++    );
++  }
++
++  if (!response.ok || !data.ok) {
++    throw new DomainServiceError(
++      data.error ?? "No se pudo notificar la solicitud de compra.",
++      "MUTATION_FAILED",
++    );
++  }
++
++  return data;
++}
+-- 
+2.43.0
+
