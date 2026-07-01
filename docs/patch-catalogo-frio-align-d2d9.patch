@@ -1,0 +1,1353 @@
+From 88477a739902066489c1de38f3f24d6fe2a36451 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 1 Jul 2026 01:32:47 +0000
+Subject: [PATCH] feat(catalogo): alinear tabla, import Excel y formularios con
+ frio
+
+- Tabla con columnas del reporte frio y acciones editar/eliminar
+- Import Excel: headers EN/ES y campos obligatorios (title, description,
+  provider, category, productType, status, precio)
+- Modal crear/editar con tipo editable y validaciones frio
+- Servicio: update, getById, deactivate y contador skipped en import
+---
+ src/components/shared/PolariaTableCells.tsx   |  31 +-
+ .../components/CatalogoListView.tsx           |  91 +++-
+ .../ProductoCatalogoCreateModal.tsx           |  52 ++-
+ .../components/ProductoCatalogoEditModal.tsx  | 393 ++++++++++++++++++
+ .../constants/catalogo-producto.ts            |   5 +
+ src/modules/admin-panel/index.ts              |   5 +
+ .../productos-catalogo.service.test.ts        |  73 ++++
+ .../services/productos-catalogo.service.ts    | 130 +++++-
+ .../utils/catalogo-excel-import.test.ts       |  57 ++-
+ .../utils/catalogo-excel-import.ts            | 126 ++++--
+ 10 files changed, 895 insertions(+), 68 deletions(-)
+ create mode 100644 src/modules/admin-panel/components/ProductoCatalogoEditModal.tsx
+
+diff --git a/src/components/shared/PolariaTableCells.tsx b/src/components/shared/PolariaTableCells.tsx
+index cd3d296..d0adb03 100644
+--- a/src/components/shared/PolariaTableCells.tsx
++++ b/src/components/shared/PolariaTableCells.tsx
+@@ -1,5 +1,5 @@
+ import type { ReactNode } from "react";
+-import { Pencil } from "lucide-react";
++import { Pencil, Trash2 } from "lucide-react";
+ import { cn } from "@/lib/cn";
+ 
+ export function PolariaTableCode({ children }: { children: ReactNode }) {
+@@ -57,3 +57,32 @@ export function PolariaTableEditButton({
+     </button>
+   );
+ }
++
++interface PolariaTableDeleteButtonProps {
++  label?: string;
++  onClick?: () => void;
++  disabled?: boolean;
++}
++
++export function PolariaTableDeleteButton({
++  label = "Eliminar",
++  onClick,
++  disabled = false,
++}: PolariaTableDeleteButtonProps) {
++  return (
++    <button
++      type="button"
++      onClick={onClick}
++      disabled={disabled}
++      className={cn(
++        "inline-flex items-center gap-1.5 rounded-lg border border-polaria-warning-border px-3 py-1.5",
++        "polaria-text-body-sm text-polaria-warning transition hover:bg-polaria-warning-bg",
++        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-polaria-warning focus-visible:ring-offset-2 focus-visible:ring-offset-polaria-bg",
++        disabled && "cursor-not-allowed opacity-50",
++      )}
++    >
++      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
++      {label}
++    </button>
++  );
++}
+diff --git a/src/modules/admin-panel/components/CatalogoListView.tsx b/src/modules/admin-panel/components/CatalogoListView.tsx
+index a53b6d8..a0e2712 100644
+--- a/src/modules/admin-panel/components/CatalogoListView.tsx
++++ b/src/modules/admin-panel/components/CatalogoListView.tsx
+@@ -2,7 +2,11 @@
+ 
+ import { useCallback, useMemo, useRef, useState } from "react";
+ import { PolariaDataTable } from "@/components/shared/PolariaDataTable";
+-import { PolariaTableCode } from "@/components/shared/PolariaTableCells";
++import {
++  PolariaTableCode,
++  PolariaTableDeleteButton,
++  PolariaTableEditButton,
++} from "@/components/shared/PolariaTableCells";
+ import { useAsyncQuery } from "@/hooks/useAsyncQuery";
+ import { cn } from "@/lib/cn";
+ import { useCompany } from "@/providers/CompanyProvider";
+@@ -15,12 +19,14 @@ import {
+   CATALOGO_TABLE_TITLE,
+ } from "../constants/admin-catalog-list";
+ import {
++  deactivateCatalogoProducto,
+   importCatalogoProductosFromFile,
+   listCatalogoProductosAdmin,
+   type CatalogoProductoListRow,
+ } from "../services/productos-catalogo.service";
+ import { AdminCatalogListShell } from "./AdminCatalogListShell";
+ import { ProductoCatalogoCreateModal } from "./ProductoCatalogoCreateModal";
++import { ProductoCatalogoEditModal } from "./ProductoCatalogoEditModal";
+ import { ProductoSecundarioCreateModal } from "./ProductoSecundarioCreateModal";
+ 
+ export function CatalogoListView() {
+@@ -32,6 +38,8 @@ export function CatalogoListView() {
+   const [isImporting, setIsImporting] = useState(false);
+   const [isCreateOpen, setIsCreateOpen] = useState(false);
+   const [isSecundarioOpen, setIsSecundarioOpen] = useState(false);
++  const [editingProductId, setEditingProductId] = useState<string | null>(null);
++  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+ 
+   const fetchProductos = useCallback(() => {
+     if (!codigoCuenta) {
+@@ -48,6 +56,29 @@ export function CatalogoListView() {
+ 
+   const rows = data ?? [];
+ 
++  const handleDelete = useCallback(
++    async (row: CatalogoProductoListRow) => {
++      if (!codigoCuenta || deletingProductId) return;
++
++      const confirmed = window.confirm(
++        `¿Eliminar el producto "${row.titulo}" (${row.sku})?`,
++      );
++      if (!confirmed) return;
++
++      setDeletingProductId(row.idProducto);
++
++      try {
++        await deactivateCatalogoProducto(codigoCuenta, row.idProducto);
++        await reload();
++      } catch {
++        window.alert("No se pudo eliminar el producto.");
++      } finally {
++        setDeletingProductId(null);
++      }
++    },
++    [codigoCuenta, deletingProductId, reload],
++  );
++
+   const handleImportExcel = () => {
+     if (!codigoCuenta || isImporting) return;
+     setImportMessage(null);
+@@ -67,12 +98,25 @@ export function CatalogoListView() {
+ 
+       if (result.imported > 0) {
+         await reload();
+-        setImportMessage(
+-          result.errors.length
+-            ? `Se importaron ${result.imported} producto(s). ${result.errors.length} fila(s) con error.`
+-            : `Se importaron ${result.imported} producto(s) desde ${file.name}.`,
+-        );
+-      } else {
++      }
++
++      const parts: string[] = [];
++
++      if (result.imported > 0) {
++        parts.push(`Se importaron ${result.imported} producto(s) desde ${file.name}.`);
++      }
++
++      if (result.skipped > 0) {
++        parts.push(`${result.skipped} fila(s) omitida(s) por datos incompletos.`);
++      }
++
++      if (result.errors.length) {
++        parts.push(`${result.errors.length} fila(s) con error.`);
++      }
++
++      if (parts.length) {
++        setImportMessage(parts.join(" "));
++      } else if (result.imported === 0) {
+         setImportError("No se importó ningún producto.");
+       }
+ 
+@@ -93,11 +137,6 @@ export function CatalogoListView() {
+   const columns = useMemo(
+     () =>
+       [
+-        {
+-          id: "id-num",
+-          header: "ID Num",
+-          cell: (row: CatalogoProductoListRow) => row.idNum,
+-        },
+         {
+           id: "codigo",
+           header: "Código",
+@@ -167,8 +206,25 @@ export function CatalogoListView() {
+           cell: (row: CatalogoProductoListRow) => row.trackerInventario,
+         },
+         { id: "stock", header: "Stock", cell: (row: CatalogoProductoListRow) => row.stock },
++        {
++          id: "acciones",
++          header: "Acciones",
++          cell: (row: CatalogoProductoListRow) => (
++            <div className="flex flex-wrap items-center gap-2">
++              <PolariaTableEditButton
++                onClick={() => setEditingProductId(row.idProducto)}
++              />
++              <PolariaTableDeleteButton
++                disabled={deletingProductId === row.idProducto}
++                onClick={() => {
++                  void handleDelete(row);
++                }}
++              />
++            </div>
++          ),
++        },
+       ] as const,
+-    [],
++    [deletingProductId, handleDelete],
+   );
+ 
+   return (
+@@ -259,6 +315,15 @@ export function CatalogoListView() {
+         }}
+       />
+ 
++      <ProductoCatalogoEditModal
++        open={Boolean(editingProductId)}
++        idProducto={editingProductId}
++        onClose={() => setEditingProductId(null)}
++        onUpdated={() => {
++          void reload();
++        }}
++      />
++
+       <ProductoSecundarioCreateModal
+         open={isSecundarioOpen}
+         onClose={() => setIsSecundarioOpen(false)}
+diff --git a/src/modules/admin-panel/components/ProductoCatalogoCreateModal.tsx b/src/modules/admin-panel/components/ProductoCatalogoCreateModal.tsx
+index 9c09d0e..3e73a88 100644
+--- a/src/modules/admin-panel/components/ProductoCatalogoCreateModal.tsx
++++ b/src/modules/admin-panel/components/ProductoCatalogoCreateModal.tsx
+@@ -11,13 +11,16 @@ import { generateCodigoCuentaFromNombre } from "@/lib/generate-codigo-cuenta";
+ import { useCompany } from "@/providers/CompanyProvider";
+ import {
+   CATALOGO_ESTADO_DEFAULT,
++  CATALOGO_TIPO_OPTIONS,
+   CATALOGO_TIPO_PRIMARIO,
++  CATALOGO_TIPO_SECUNDARIO,
+   CATALOGO_UNIDAD_VISUALIZACION_OPTIONS,
+   createEmptyCatalogoMetadatos,
+   type CatalogoProductoMetadatos,
+ } from "../constants/catalogo-producto";
+ import {
+   createCatalogoProductoPrimario,
++  createCatalogoProductoSecundario,
+   listProductosPrimariosCatalogo,
+   type ProductoPrimarioOption,
+ } from "../services/productos-catalogo.service";
+@@ -113,6 +116,25 @@ export function ProductoCatalogoCreateModal({
+       setError("La categoría es obligatoria.");
+       return;
+     }
++    const tipo = form.tipo?.trim() || CATALOGO_TIPO_PRIMARIO;
++    if (!tipo) {
++      setError("El tipo es obligatorio.");
++      return;
++    }
++    if (!form.estado?.trim()) {
++      setError("El estado es obligatorio.");
++      return;
++    }
++    if (!form.precio?.trim()) {
++      setError("El precio es obligatorio.");
++      return;
++    }
++
++    const esSecundario = tipo.toLowerCase().includes("secund");
++    if (esSecundario && !form.incluidoPrimarioId) {
++      setError("Selecciona el producto primario incluido.");
++      return;
++    }
+ 
+     const primarioLabel =
+       primarios.find((item) => item.idProducto === form.incluidoPrimarioId)
+@@ -122,8 +144,7 @@ export function ProductoCatalogoCreateModal({
+ 
+     try {
+       const { titulo: _t, sku: _s, unidadVisualizacion, ...metadatos } = form;
+-
+-      await createCatalogoProductoPrimario({
++      const payload = {
+         codigoCuenta,
+         sku,
+         titulo,
+@@ -132,10 +153,21 @@ export function ProductoCatalogoCreateModal({
+         metadatos: {
+           ...metadatos,
+           titulo,
+-          tipo: CATALOGO_TIPO_PRIMARIO,
++          tipo: esSecundario ? CATALOGO_TIPO_SECUNDARIO : CATALOGO_TIPO_PRIMARIO,
+           incluidoPrimarioLabel: primarioLabel ?? undefined,
+         },
+-      });
++      };
++
++      if (esSecundario) {
++        await createCatalogoProductoSecundario({
++          ...payload,
++          idProductoPrimario: form.incluidoPrimarioId,
++          esPrimario: false,
++          esSecundario: true,
++        });
++      } else {
++        await createCatalogoProductoPrimario(payload);
++      }
+       onCreated();
+       onClose();
+     } catch (err: unknown) {
+@@ -212,12 +244,16 @@ export function ProductoCatalogoCreateModal({
+           disabled={isSubmitting}
+           compact
+         />
+-        <PolariaFormInput
++        <PolariaFormSelect
+           id="producto-tipo"
+           label="Tipo *"
+           value={form.tipo ?? CATALOGO_TIPO_PRIMARIO}
+-          readOnly
+-          disabled
++          onChange={(event) => patch({ tipo: event.target.value })}
++          disabled={isSubmitting}
++          options={CATALOGO_TIPO_OPTIONS.map((option) => ({
++            value: option.value,
++            label: option.label,
++          }))}
+           compact
+         />
+ 
+@@ -295,7 +331,7 @@ export function ProductoCatalogoCreateModal({
+         />
+         <PolariaFormInput
+           id="producto-precio"
+-          label="Precio"
++          label="Precio *"
+           value={form.precio ?? ""}
+           placeholder="Ingresá precio"
+           onChange={(event) => patch({ precio: event.target.value })}
+diff --git a/src/modules/admin-panel/components/ProductoCatalogoEditModal.tsx b/src/modules/admin-panel/components/ProductoCatalogoEditModal.tsx
+new file mode 100644
+index 0000000..dfc1814
+--- /dev/null
++++ b/src/modules/admin-panel/components/ProductoCatalogoEditModal.tsx
+@@ -0,0 +1,393 @@
++"use client";
++
++import { useCallback, useEffect, useState, type FormEvent } from "react";
++import {
++  PolariaFormInput,
++  PolariaFormSelect,
++} from "@/components/shared/PolariaFormField";
++import { PolariaFormModal } from "@/components/shared/PolariaFormModal";
++import { DomainServiceError } from "@/lib/domain-service-error";
++import { generateCodigoCuentaFromNombre } from "@/lib/generate-codigo-cuenta";
++import { useCompany } from "@/providers/CompanyProvider";
++import {
++  CATALOGO_ESTADO_DEFAULT,
++  CATALOGO_TIPO_OPTIONS,
++  CATALOGO_TIPO_PRIMARIO,
++  CATALOGO_TIPO_SECUNDARIO,
++  CATALOGO_UNIDAD_VISUALIZACION_OPTIONS,
++  createEmptyCatalogoMetadatos,
++  parseCatalogoMetadatos,
++  type CatalogoProductoMetadatos,
++} from "../constants/catalogo-producto";
++import {
++  getCatalogoProductoById,
++  listProductosPrimariosCatalogo,
++  updateCatalogoProducto,
++  type ProductoPrimarioOption,
++} from "../services/productos-catalogo.service";
++import {
++  CatalogoFormCheckbox,
++  CatalogoFormTextarea,
++} from "./CatalogoFormFields";
++
++interface ProductoCatalogoEditModalProps {
++  open: boolean;
++  idProducto: string | null;
++  onClose: () => void;
++  onUpdated: () => void;
++}
++
++type ProductoCatalogoForm = CatalogoProductoMetadatos & {
++  titulo: string;
++  sku: string;
++  unidadVisualizacion: string;
++};
++
++function createInitialForm(): ProductoCatalogoForm {
++  return {
++    titulo: "",
++    sku: "",
++    unidadVisualizacion: "cantidad",
++    ...createEmptyCatalogoMetadatos(),
++    tipo: CATALOGO_TIPO_PRIMARIO,
++    estado: CATALOGO_ESTADO_DEFAULT,
++  };
++}
++
++export function ProductoCatalogoEditModal({
++  open,
++  idProducto,
++  onClose,
++  onUpdated,
++}: ProductoCatalogoEditModalProps) {
++  const { codigoCuenta } = useCompany();
++  const [form, setForm] = useState<ProductoCatalogoForm>(createInitialForm);
++  const [primarios, setPrimarios] = useState<ProductoPrimarioOption[]>([]);
++  const [error, setError] = useState<string | null>(null);
++  const [isSubmitting, setIsSubmitting] = useState(false);
++  const [isLoading, setIsLoading] = useState(false);
++
++  useEffect(() => {
++    if (!open || !idProducto || !codigoCuenta) return;
++
++    setError(null);
++    setIsSubmitting(false);
++    setIsLoading(true);
++    setForm(createInitialForm());
++
++    void Promise.all([
++      getCatalogoProductoById(codigoCuenta, idProducto),
++      listProductosPrimariosCatalogo(codigoCuenta),
++    ])
++      .then(([row, primarioOptions]) => {
++        setPrimarios(primarioOptions);
++
++        if (!row) {
++          setError("No se encontró el producto.");
++          return;
++        }
++
++        const meta = parseCatalogoMetadatos(row.metadatos_catalogo);
++        const tipo = meta.tipo?.trim()
++          ? meta.tipo
++          : row.es_secundario
++            ? CATALOGO_TIPO_SECUNDARIO
++            : CATALOGO_TIPO_PRIMARIO;
++
++        setForm({
++          titulo: meta.titulo?.trim() || row.descripcion.trim(),
++          sku: row.sku,
++          unidadVisualizacion: row.unidad_visualizacion || "cantidad",
++          ...createEmptyCatalogoMetadatos(),
++          ...meta,
++          tipo,
++          estado: meta.estado ?? CATALOGO_ESTADO_DEFAULT,
++        });
++      })
++      .catch(() => {
++        setError("No se pudo cargar el producto.");
++      })
++      .finally(() => {
++        setIsLoading(false);
++      });
++  }, [codigoCuenta, idProducto, open]);
++
++  const handleClose = useCallback(() => {
++    if (isSubmitting) return;
++    onClose();
++  }, [isSubmitting, onClose]);
++
++  const patch = (partial: Partial<ProductoCatalogoForm>) => {
++    setForm((current) => ({ ...current, ...partial }));
++  };
++
++  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
++    event.preventDefault();
++    setError(null);
++
++    if (!codigoCuenta || !idProducto) {
++      setError("No se encontró la cuenta o el producto.");
++      return;
++    }
++
++    const titulo = form.titulo.trim();
++    const sku = form.sku.trim() || generateCodigoCuentaFromNombre(titulo);
++    const tipo = form.tipo?.trim() || CATALOGO_TIPO_PRIMARIO;
++    const esSecundario = tipo.toLowerCase().includes("secund");
++
++    if (!titulo) {
++      setError("El título es obligatorio.");
++      return;
++    }
++    if (!form.descripcion?.trim()) {
++      setError("La descripción es obligatoria.");
++      return;
++    }
++    if (!form.proveedor?.trim()) {
++      setError("El proveedor es obligatorio.");
++      return;
++    }
++    if (!form.categoria?.trim()) {
++      setError("La categoría es obligatoria.");
++      return;
++    }
++    if (!tipo) {
++      setError("El tipo es obligatorio.");
++      return;
++    }
++    if (!form.estado?.trim()) {
++      setError("El estado es obligatorio.");
++      return;
++    }
++    if (!form.precio?.trim()) {
++      setError("El precio es obligatorio.");
++      return;
++    }
++    if (esSecundario && !form.incluidoPrimarioId) {
++      setError("Selecciona el producto primario incluido.");
++      return;
++    }
++
++    const primarioLabel =
++      primarios.find((item) => item.idProducto === form.incluidoPrimarioId)
++        ?.label ?? null;
++
++    setIsSubmitting(true);
++
++    try {
++      const { titulo: _t, sku: _s, unidadVisualizacion, ...metadatos } = form;
++
++      await updateCatalogoProducto({
++        codigoCuenta,
++        idProducto,
++        sku,
++        titulo,
++        unidadMedida: unidadVisualizacion === "peso" ? "g" : "und",
++        unidadVisualizacion,
++        esPrimario: !esSecundario,
++        esSecundario,
++        metadatos: {
++          ...metadatos,
++          titulo,
++          tipo,
++          incluidoPrimarioLabel: primarioLabel ?? undefined,
++        },
++      });
++      onUpdated();
++      onClose();
++    } catch (err: unknown) {
++      setError(
++        err instanceof DomainServiceError
++          ? err.message
++          : "No se pudo actualizar el producto.",
++      );
++    } finally {
++      setIsSubmitting(false);
++    }
++  };
++
++  return (
++    <PolariaFormModal
++      open={open}
++      onClose={handleClose}
++      sectionLabel="Edición catálogo"
++      title="Editar producto"
++      compact
++      className="max-w-6xl"
++      onSubmit={(event) => {
++        void handleSubmit(event);
++      }}
++      error={error}
++      isSubmitting={isSubmitting || isLoading}
++      submitLabel="Guardar cambios"
++    >
++      {isLoading ? (
++        <p className="polaria-text-body-sm text-polaria-w-50">Cargando producto…</p>
++      ) : (
++        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
++          <PolariaFormInput
++            id="edit-producto-titulo"
++            label="Título *"
++            value={form.titulo}
++            onChange={(event) => patch({ titulo: event.target.value })}
++            disabled={isSubmitting}
++            autoFocus
++            compact
++          />
++          <PolariaFormInput
++            id="edit-producto-slug"
++            label="Identificador URL"
++            value={form.slug ?? ""}
++            onChange={(event) => patch({ slug: event.target.value })}
++            disabled={isSubmitting}
++            compact
++          />
++
++          <CatalogoFormTextarea
++            id="edit-producto-descripcion"
++            label="Descripción *"
++            value={form.descripcion ?? ""}
++            onChange={(event) => patch({ descripcion: event.target.value })}
++            disabled={isSubmitting}
++            fieldClassName="sm:col-span-2 lg:col-span-3"
++          />
++
++          <PolariaFormInput
++            id="edit-producto-proveedor"
++            label="Proveedor *"
++            value={form.proveedor ?? ""}
++            onChange={(event) => patch({ proveedor: event.target.value })}
++            disabled={isSubmitting}
++            compact
++          />
++          <PolariaFormInput
++            id="edit-producto-categoria"
++            label="Categoría producto *"
++            value={form.categoria ?? ""}
++            onChange={(event) => patch({ categoria: event.target.value })}
++            disabled={isSubmitting}
++            compact
++          />
++          <PolariaFormSelect
++            id="edit-producto-tipo"
++            label="Tipo *"
++            value={form.tipo ?? CATALOGO_TIPO_PRIMARIO}
++            onChange={(event) => patch({ tipo: event.target.value })}
++            disabled={isSubmitting}
++            options={CATALOGO_TIPO_OPTIONS.map((option) => ({
++              value: option.value,
++              label: option.label,
++            }))}
++            compact
++          />
++
++          <PolariaFormInput
++            id="edit-producto-etiquetas"
++            label="Etiquetas"
++            value={form.etiquetas ?? ""}
++            onChange={(event) => patch({ etiquetas: event.target.value })}
++            disabled={isSubmitting}
++            compact
++          />
++          <CatalogoFormCheckbox
++            id="edit-producto-publicado"
++            label="Publicado en tienda online"
++            checked={Boolean(form.publicadoTienda)}
++            onChange={(checked) => patch({ publicadoTienda: checked })}
++            disabled={isSubmitting}
++          />
++          <PolariaFormInput
++            id="edit-producto-estado"
++            label="Estado *"
++            value={form.estado ?? CATALOGO_ESTADO_DEFAULT}
++            onChange={(event) => patch({ estado: event.target.value })}
++            disabled={isSubmitting}
++            compact
++          />
++
++          <PolariaFormInput
++            id="edit-producto-sku"
++            label="SKU"
++            value={form.sku}
++            onChange={(event) => patch({ sku: event.target.value })}
++            disabled={isSubmitting}
++            compact
++          />
++          <PolariaFormInput
++            id="edit-producto-codigo-barras"
++            label="Código de barras"
++            value={form.codigoBarras ?? ""}
++            onChange={(event) => patch({ codigoBarras: event.target.value })}
++            disabled={isSubmitting}
++            compact
++          />
++          <PolariaFormInput
++            id="edit-producto-precio"
++            label="Precio *"
++            value={form.precio ?? ""}
++            onChange={(event) => patch({ precio: event.target.value })}
++            disabled={isSubmitting}
++            compact
++          />
++
++          <CatalogoFormCheckbox
++            id="edit-producto-impuesto"
++            label="Cobrar impuesto"
++            checked={Boolean(form.cobrarImpuesto)}
++            onChange={(checked) => patch({ cobrarImpuesto: checked })}
++            disabled={isSubmitting}
++          />
++          <PolariaFormInput
++            id="edit-producto-rastreador"
++            label="Rastreador inventario"
++            value={form.rastreadorInventario ?? ""}
++            onChange={(event) =>
++              patch({ rastreadorInventario: event.target.value })
++            }
++            disabled={isSubmitting}
++            compact
++          />
++          <PolariaFormInput
++            id="edit-producto-stock"
++            label="Cantidad inventario"
++            value={form.cantidadInventario ?? ""}
++            onChange={(event) =>
++              patch({ cantidadInventario: event.target.value })
++            }
++            disabled={isSubmitting}
++            compact
++          />
++
++          <PolariaFormSelect
++            id="edit-producto-unidad-visualizacion"
++            label="Unidad de visualización *"
++            value={form.unidadVisualizacion}
++            onChange={(event) =>
++              patch({ unidadVisualizacion: event.target.value })
++            }
++            disabled={isSubmitting}
++            options={CATALOGO_UNIDAD_VISUALIZACION_OPTIONS}
++            compact
++          />
++
++          <PolariaFormSelect
++            id="edit-producto-incluido-primario"
++            label="Incluido primario"
++            hint="Requerido si el tipo es Secundario."
++            value={form.incluidoPrimarioId ?? ""}
++            onChange={(event) =>
++              patch({ incluidoPrimarioId: event.target.value || undefined })
++            }
++            disabled={isSubmitting}
++            placeholder="— Sin vínculo —"
++            options={primarios.map((item) => ({
++              value: item.idProducto,
++              label: item.label,
++            }))}
++            compact
++          />
++        </div>
++      )}
++    </PolariaFormModal>
++  );
++}
+diff --git a/src/modules/admin-panel/constants/catalogo-producto.ts b/src/modules/admin-panel/constants/catalogo-producto.ts
+index d10d85f..61dd2fd 100644
+--- a/src/modules/admin-panel/constants/catalogo-producto.ts
++++ b/src/modules/admin-panel/constants/catalogo-producto.ts
+@@ -48,6 +48,11 @@ export const CATALOGO_UNIDAD_VISUALIZACION_OPTIONS = [
+ export const CATALOGO_TIPO_PRIMARIO = "Primario" as const;
+ export const CATALOGO_TIPO_SECUNDARIO = "Secundario" as const;
+ 
++export const CATALOGO_TIPO_OPTIONS = [
++  { value: CATALOGO_TIPO_PRIMARIO, label: CATALOGO_TIPO_PRIMARIO },
++  { value: CATALOGO_TIPO_SECUNDARIO, label: CATALOGO_TIPO_SECUNDARIO },
++] as const;
++
+ export function createEmptyCatalogoMetadatos(): CatalogoProductoMetadatos {
+   return {
+     estado: CATALOGO_ESTADO_DEFAULT,
+diff --git a/src/modules/admin-panel/index.ts b/src/modules/admin-panel/index.ts
+index dcbec4c..4e7d8cc 100644
+--- a/src/modules/admin-panel/index.ts
++++ b/src/modules/admin-panel/index.ts
+@@ -62,6 +62,7 @@ export { BodegaExternaAdminView } from "./components/BodegaExternaAdminView";
+ export { VincularBodegaExternaModal } from "./components/VincularBodegaExternaModal";
+ export { CatalogoListView } from "./components/CatalogoListView";
+ export { ProductoCatalogoCreateModal } from "./components/ProductoCatalogoCreateModal";
++export { ProductoCatalogoEditModal } from "./components/ProductoCatalogoEditModal";
+ export { ProductoSecundarioCreateModal } from "./components/ProductoSecundarioCreateModal";
+ export { InventarioMercanciaReportView } from "./components/InventarioMercanciaReportView";
+ export { InventarioMercanciaFlow } from "./components/InventarioMercanciaFlow";
+@@ -143,8 +144,12 @@ export type {
+ export {
+   createCatalogoProductoPrimario,
+   createCatalogoProductoSecundario,
++  deactivateCatalogoProducto,
++  getCatalogoProductoById,
++  importCatalogoProductosFromFile,
+   listCatalogoProductosAdmin,
+   listProductosPrimariosCatalogo,
++  updateCatalogoProducto,
+ } from "./services/productos-catalogo.service";
+ 
+ export type {
+diff --git a/src/modules/admin-panel/services/productos-catalogo.service.test.ts b/src/modules/admin-panel/services/productos-catalogo.service.test.ts
+index b867add..feaa08d 100644
+--- a/src/modules/admin-panel/services/productos-catalogo.service.test.ts
++++ b/src/modules/admin-panel/services/productos-catalogo.service.test.ts
+@@ -103,4 +103,77 @@ describe("productos-catalogo.service", () => {
+     );
+     expect(rows[0]?.titulo).toBe("Solo descripcion");
+   });
++
++  it("updateCatalogoProducto actualiza producto activo", async () => {
++    const updateChain = {
++      update: vi.fn(),
++      eq: vi.fn(),
++      select: vi.fn(),
++      single: vi.fn(),
++    };
++    updateChain.update.mockReturnValue(updateChain);
++    updateChain.eq.mockReturnValue(updateChain);
++    updateChain.select.mockReturnValue(updateChain);
++    updateChain.single.mockResolvedValue({
++      data: {
++        id_producto: "prod-1",
++        sku: "SKU01",
++        descripcion: "Producto editado",
++        codigo_almacen: "PROD01",
++        es_primario: true,
++        es_secundario: false,
++        unidad_visualizacion: "cantidad",
++        id_producto_primario: null,
++        metadatos_catalogo: { titulo: "Producto editado", precio: "2000" },
++      },
++      error: null,
++    });
++
++    const from = vi.fn(() => updateChain);
++    setSupabaseClientForTests({ from } as never);
++
++    const { updateCatalogoProducto } = await import("./productos-catalogo.service");
++
++    const row = await updateCatalogoProducto({
++      codigoCuenta: "MIT00",
++      idProducto: "prod-1",
++      sku: "SKU01",
++      titulo: "Producto editado",
++      unidadMedida: "und",
++      unidadVisualizacion: "cantidad",
++      esPrimario: true,
++      esSecundario: false,
++      metadatos: { titulo: "Producto editado", precio: "2000" },
++    });
++
++    expect(from).toHaveBeenCalledWith("producto");
++    expect(updateChain.eq).toHaveBeenCalledWith("codigo_cuenta", "MIT00");
++    expect(updateChain.eq).toHaveBeenCalledWith("id_producto", "prod-1");
++    expect(row.titulo).toBe("Producto editado");
++    expect(row.precio).toBe("2000");
++  });
++
++  it("deactivateCatalogoProducto marca esta_activo en false", async () => {
++    const updateChain = {
++      update: vi.fn(),
++      eq: vi.fn(),
++      then: (resolve: (value: { data: null; error: null }) => void) =>
++        resolve({ data: null, error: null }),
++    };
++    updateChain.update.mockReturnValue(updateChain);
++    updateChain.eq.mockReturnValue(updateChain);
++
++    const from = vi.fn(() => updateChain);
++    setSupabaseClientForTests({ from } as never);
++
++    const { deactivateCatalogoProducto } = await import(
++      "./productos-catalogo.service"
++    );
++
++    await deactivateCatalogoProducto("MIT00", "prod-1");
++
++    expect(updateChain.update).toHaveBeenCalledWith({ esta_activo: false });
++    expect(updateChain.eq).toHaveBeenCalledWith("codigo_cuenta", "MIT00");
++    expect(updateChain.eq).toHaveBeenCalledWith("id_producto", "prod-1");
++  });
+ });
+diff --git a/src/modules/admin-panel/services/productos-catalogo.service.ts b/src/modules/admin-panel/services/productos-catalogo.service.ts
+index 43a8e75..af40e01 100644
+--- a/src/modules/admin-panel/services/productos-catalogo.service.ts
++++ b/src/modules/admin-panel/services/productos-catalogo.service.ts
+@@ -332,6 +332,126 @@ async function insertCatalogoProducto(
+   return mapProductoRow(inserted, 0);
+ }
+ 
++export interface UpdateCatalogoProductoInput {
++  codigoCuenta: string;
++  idProducto: string;
++  sku: string;
++  titulo: string;
++  unidadMedida: string;
++  unidadVisualizacion: string;
++  esPrimario: boolean;
++  esSecundario: boolean;
++  metadatos: CatalogoProductoMetadatos;
++}
++
++/** Obtiene un producto del catálogo para edición. */
++export async function getCatalogoProductoById(
++  codigoCuenta: string,
++  idProducto: string,
++): Promise<ProductoDbRow | null> {
++  const cuenta = requireCodigoCuenta(codigoCuenta);
++  const id = idProducto.trim();
++
++  if (!id) {
++    throw new DomainServiceError("Producto no válido.", "INVALID_ARGUMENT");
++  }
++
++  const rows = await queryProductosCatalogo((selectColumns) =>
++    runDomainQuery<ProductoDbRow[]>((client) => {
++      const query = client
++        .from("producto")
++        .select(selectColumns)
++        .eq("codigo_cuenta", cuenta)
++        .eq("id_producto", id)
++        .eq("esta_activo", true)
++        .limit(1);
++
++      return query as unknown as Promise<{
++        data: ProductoDbRow[] | null;
++        error: { message: string } | null;
++      }>;
++    }),
++  );
++
++  return rows[0] ?? null;
++}
++
++/** Actualiza metadatos y campos base de un producto del catálogo. */
++export async function updateCatalogoProducto(
++  input: UpdateCatalogoProductoInput,
++): Promise<CatalogoProductoListRow> {
++  const codigoCuenta = requireCodigoCuenta(input.codigoCuenta);
++  const idProducto = input.idProducto.trim();
++  const sku = input.sku.trim();
++  const titulo = input.titulo.trim();
++
++  if (!idProducto) {
++    throw new DomainServiceError("Producto no válido.", "INVALID_ARGUMENT");
++  }
++  if (!sku) {
++    throw new DomainServiceError("El SKU es obligatorio.", "INVALID_ARGUMENT");
++  }
++  if (!titulo) {
++    throw new DomainServiceError("El título es obligatorio.", "INVALID_ARGUMENT");
++  }
++
++  const codigo = generateCodigoCuentaFromNombre(titulo) || sku;
++
++  const updated = await runDomainMutation<ProductoDbRow>((client) => {
++    const body: Record<string, unknown> = {
++      sku,
++      descripcion: titulo,
++      codigo_almacen: codigo,
++      unidad_medida: input.unidadMedida,
++      unidad_visualizacion: input.unidadVisualizacion,
++      es_primario: input.esPrimario,
++      es_secundario: input.esSecundario,
++      metadatos_catalogo: input.metadatos,
++    };
++
++    const query = client
++      .from("producto")
++      .update(body)
++      .eq("codigo_cuenta", codigoCuenta)
++      .eq("id_producto", idProducto)
++      .select(`${PRODUCTO_LIST_COLUMNS},metadatos_catalogo`)
++      .single();
++
++    return query as unknown as Promise<{
++      data: ProductoDbRow | null;
++      error: { message: string } | null;
++    }>;
++  });
++
++  return mapProductoRow(updated, 0);
++}
++
++/** Desactiva un producto del catálogo (baja lógica). */
++export async function deactivateCatalogoProducto(
++  codigoCuenta: string,
++  idProducto: string,
++): Promise<void> {
++  const cuenta = requireCodigoCuenta(codigoCuenta);
++  const id = idProducto.trim();
++
++  if (!id) {
++    throw new DomainServiceError("Producto no válido.", "INVALID_ARGUMENT");
++  }
++
++  await runDomainMutation((client) => {
++    const query = client
++      .from("producto")
++      .update({ esta_activo: false })
++      .eq("codigo_cuenta", cuenta)
++      .eq("id_producto", id);
++
++    return query as unknown as Promise<{
++      data: unknown;
++      error: { message: string } | null;
++    }>;
++  });
++}
++
+ /** Crea un producto primario del catálogo. */
+ export async function createCatalogoProductoPrimario(
+   input: Omit<CreateCatalogoProductoInput, "esPrimario" | "esSecundario">,
+@@ -365,6 +485,7 @@ export async function createCatalogoProductoSecundario(
+ export interface CatalogoImportResult {
+   imported: number;
+   errors: string[];
++  skipped: number;
+ }
+ 
+ async function createImportRow(
+@@ -401,6 +522,8 @@ async function createImportRow(
+     unidadMedida,
+     unidadVisualizacion: row.unidadVisualizacion,
+     idProductoPrimario,
++    esPrimario: false,
++    esSecundario: true,
+     metadatos: row.metadatos,
+   });
+ }
+@@ -411,10 +534,11 @@ export async function importCatalogoProductosFromFile(
+   file: File,
+ ): Promise<CatalogoImportResult> {
+   const cuenta = requireCodigoCuenta(codigoCuenta);
+-  const { rows, errors: parseErrors } = await parseCatalogoSpreadsheetFile(file);
++  const { rows, errors: parseErrors, skipped } =
++    await parseCatalogoSpreadsheetFile(file);
+ 
+   if (!rows.length) {
+-    return { imported: 0, errors: parseErrors };
++    return { imported: 0, errors: parseErrors, skipped };
+   }
+ 
+   const primarios = rows.filter((row) => row.tipo === "primario");
+@@ -470,5 +594,5 @@ export async function importCatalogoProductosFromFile(
+     }
+   }
+ 
+-  return { imported, errors };
++  return { imported, errors, skipped };
+ }
+diff --git a/src/modules/admin-panel/utils/catalogo-excel-import.test.ts b/src/modules/admin-panel/utils/catalogo-excel-import.test.ts
+index 423d010..7d8718b 100644
+--- a/src/modules/admin-panel/utils/catalogo-excel-import.test.ts
++++ b/src/modules/admin-panel/utils/catalogo-excel-import.test.ts
+@@ -6,33 +6,72 @@ function csvFile(content: string, name = "catalogo.csv"): File {
+ }
+ 
+ describe("catalogo-excel-import", () => {
+-  it("parsea filas con SKU y Título", async () => {
++  it("parsea filas con headers estilo frio (inglés)", async () => {
+     const file = csvFile(
+       [
+-        "SKU,Titulo,Tipo,Proveedor,Precio,Vinculado",
+-        "SKU-001,Salmon entero,Primario,Mar Azul,12000,",
+-        "SKU-002,Filete 500g,Secundario,Mar Azul,8000,SKU-001",
++        "title,description,provider,category,productType,status,precio,sku",
++        "Salmon entero,Salmon fresco,Mar Azul,Pescado,Primario,draft,12000,SKU-001",
+       ].join("\n"),
+     );
+ 
+     const result = await parseCatalogoSpreadsheetFile(file);
+ 
+     expect(result.errors).toEqual([]);
+-    expect(result.rows).toHaveLength(2);
++    expect(result.rows).toHaveLength(1);
+     expect(result.rows[0]).toMatchObject({
+       sku: "SKU-001",
+       titulo: "Salmon entero",
+       tipo: "primario",
++      metadatos: {
++        proveedor: "Mar Azul",
++        categoria: "Pescado",
++        precio: "12000",
++        estado: "draft",
++      },
+     });
+-    expect(result.rows[1]?.tipo).toBe("secundario");
+   });
+ 
+-  it("reporta error si falta SKU", async () => {
+-    const file = csvFile(["SKU,Titulo", ",Sin SKU"].join("\n"));
++  it("omite filas sin campos obligatorios", async () => {
++    const file = csvFile(
++      [
++        "title,description,provider,category,productType,status,precio",
++        "Solo titulo,,Mar Azul,Pescado,Primario,draft,100",
++      ].join("\n"),
++    );
++
++    const result = await parseCatalogoSpreadsheetFile(file);
++
++    expect(result.rows).toEqual([]);
++    expect(result.skipped).toBe(1);
++    expect(result.errors[0]).toContain("description");
++  });
++
++  it("genera SKU si falta en fila primaria válida", async () => {
++    const file = csvFile(
++      [
++        "title,description,provider,category,productType,status,precio",
++        "Filete premium,Desc,Proveedor A,Categoria A,Primario,active,8000",
++      ].join("\n"),
++    );
++
++    const result = await parseCatalogoSpreadsheetFile(file);
++
++    expect(result.errors).toEqual([]);
++    expect(result.rows[0]?.sku).toBeTruthy();
++    expect(result.rows[0]?.titulo).toBe("Filete premium");
++  });
++
++  it("exige vinculado para secundario sin SKU primario", async () => {
++    const file = csvFile(
++      [
++        "title,description,provider,category,productType,status,precio",
++        "Filete premium,Desc,Proveedor A,Categoria A,Secundario,active,8000",
++      ].join("\n"),
++    );
+ 
+     const result = await parseCatalogoSpreadsheetFile(file);
+ 
+     expect(result.rows).toEqual([]);
+-    expect(result.errors[0]).toContain("falta SKU");
++    expect(result.errors[0]).toContain("Vinculado");
+   });
+ });
+diff --git a/src/modules/admin-panel/utils/catalogo-excel-import.ts b/src/modules/admin-panel/utils/catalogo-excel-import.ts
+index ca23991..87ad2f4 100644
+--- a/src/modules/admin-panel/utils/catalogo-excel-import.ts
++++ b/src/modules/admin-panel/utils/catalogo-excel-import.ts
+@@ -1,4 +1,5 @@
+ import * as XLSX from "xlsx";
++import { generateCodigoCuentaFromNombre } from "@/lib/generate-codigo-cuenta";
+ import {
+   CATALOGO_ESTADO_DEFAULT,
+   CATALOGO_TIPO_PRIMARIO,
+@@ -19,6 +20,7 @@ export interface CatalogoExcelImportRow {
+ export interface CatalogoExcelParseResult {
+   rows: CatalogoExcelImportRow[];
+   errors: string[];
++  skipped: number;
+ }
+ 
+ function normalizeHeader(value: string): string {
+@@ -44,7 +46,7 @@ function parseSiNo(value: string): boolean | undefined {
+   return undefined;
+ }
+ 
+-function resolveTipo(value: string): "primario" | "secundario" {
++function resolveTipoRegistro(value: string): "primario" | "secundario" {
+   const normalized = value.trim().toLowerCase();
+   if (normalized.includes("secund")) return "secundario";
+   return "primario";
+@@ -53,28 +55,40 @@ function resolveTipo(value: string): "primario" | "secundario" {
+ function resolveHeaderKey(header: string): string | null {
+   const key = normalizeHeader(header);
+ 
+-  if (["sku"].includes(key)) return "sku";
++  if (key === "sku") return "sku";
+   if (["titulo", "title"].includes(key)) return "titulo";
+-  if (["slug"].includes(key)) return "slug";
++  if (key === "slug") return "slug";
+   if (["descripcion", "description"].includes(key)) return "descripcion";
+-  if (["proveedor", "vendor"].includes(key)) return "proveedor";
++  if (["proveedor", "provider", "vendor"].includes(key)) return "proveedor";
+   if (["categoria", "category"].includes(key)) return "categoria";
+-  if (["tipo", "type"].includes(key)) return "tipo";
++  if (["tipo", "type", "producttype", "product type"].includes(key)) {
++    return "tipo";
++  }
+   if (["etiquetas", "tags"].includes(key)) return "etiquetas";
+-  if (["publicado", "published"].includes(key)) return "publicado";
++  if (["publicado", "published", "publishedonline"].includes(key)) {
++    return "publicado";
++  }
+   if (["estado", "status"].includes(key)) return "estado";
+   if (["codigo", "code"].includes(key)) return "codigo";
+   if (["cod barras", "codigo barras", "barcode"].includes(key)) {
+     return "codigoBarras";
+   }
++  if (["nombre op 1", "nombre opcion 1", "optionname1", "option name 1"].includes(key)) {
++    return "nombreOpcion1";
++  }
++  if (["valor op 1", "valor opcion 1", "optionvalue1", "option value 1"].includes(key)) {
++    return "valorOpcion1";
++  }
++  if (["vinculado", "linkedoption1", "sku primario", "primario", "incluido primario"].includes(key)) {
++    return "skuPrimario";
++  }
+   if (["precio", "price"].includes(key)) return "precio";
+-  if (["impuesto", "tax"].includes(key)) return "impuesto";
+-  if (["tracker inv", "tracker inventario", "inventory tracker"].includes(key)) {
++  if (["impuesto", "tax", "chargetax"].includes(key)) return "impuesto";
++  if (["tracker inv", "tracker inventario", "inventory tracker", "inventorytracker"].includes(key)) {
+     return "rastreadorInventario";
+   }
+-  if (["stock", "cantidad inventario"].includes(key)) return "cantidadInventario";
+-  if (["vinculado", "sku primario", "primario", "incluido primario"].includes(key)) {
+-    return "skuPrimario";
++  if (["stock", "cantidad inventario", "inventoryqty", "inventory qty"].includes(key)) {
++    return "cantidadInventario";
+   }
+   if (["unidad visualizacion", "unidad"].includes(key)) {
+     return "unidadVisualizacion";
+@@ -83,10 +97,7 @@ function resolveHeaderKey(header: string): string | null {
+   return null;
+ }
+ 
+-function mapRecordToRow(
+-  record: Record<string, unknown>,
+-  lineNumber: number,
+-): { row?: CatalogoExcelImportRow; error?: string } {
++function mapRawRecord(record: Record<string, unknown>): Record<string, string> {
+   const mapped: Record<string, string> = {};
+ 
+   for (const [header, value] of Object.entries(record)) {
+@@ -95,23 +106,58 @@ function mapRecordToRow(
+     mapped[field] = cellValue(value);
+   }
+ 
+-  const sku = mapped.sku ?? "";
+-  const titulo = mapped.titulo || mapped.descripcion || "";
+-  const tipo = resolveTipo(mapped.tipo ?? "");
++  return mapped;
++}
+ 
+-  if (!sku && !titulo) {
+-    return {};
++function isRowEmpty(mapped: Record<string, string>): boolean {
++  return Object.values(mapped).every((value) => !value.trim());
++}
++
++function validateRequiredFrioFields(
++  mapped: Record<string, string>,
++  lineNumber: number,
++): string | null {
++  const missing: string[] = [];
++
++  if (!mapped.titulo?.trim()) missing.push("title");
++  if (!mapped.descripcion?.trim()) missing.push("description");
++  if (!mapped.proveedor?.trim()) missing.push("provider");
++  if (!mapped.categoria?.trim()) missing.push("category");
++  if (!mapped.tipo?.trim()) missing.push("productType");
++  if (!mapped.estado?.trim()) missing.push("status");
++  if (!mapped.precio?.trim()) missing.push("precio");
++
++  if (!missing.length) {
++    return null;
+   }
+ 
+-  if (!sku) {
+-    return { error: `Fila ${lineNumber}: falta SKU.` };
++  return `Fila ${lineNumber}: faltan campos obligatorios (${missing.join(", ")}).`;
++}
++
++function mapRecordToRow(
++  record: Record<string, unknown>,
++  lineNumber: number,
++): { row?: CatalogoExcelImportRow; error?: string; skip?: boolean } {
++  const mapped = mapRawRecord(record);
++
++  if (isRowEmpty(mapped)) {
++    return { skip: true };
+   }
+ 
+-  if (!titulo) {
+-    return { error: `Fila ${lineNumber}: falta Título.` };
++  const requiredError = validateRequiredFrioFields(mapped, lineNumber);
++  if (requiredError) {
++    return { error: requiredError };
+   }
+ 
+-  if (tipo === "secundario" && !mapped.skuPrimario) {
++  const titulo = mapped.titulo.trim();
++  const descripcion = mapped.descripcion.trim();
++  const tipo = resolveTipoRegistro(mapped.tipo);
++  const sku =
++    mapped.sku?.trim() ||
++    generateCodigoCuentaFromNombre(titulo) ||
++    `SKU-${lineNumber}`;
++
++  if (tipo === "secundario" && !mapped.skuPrimario?.trim()) {
+     return {
+       error: `Fila ${lineNumber}: el secundario "${sku}" requiere SKU primario en columna Vinculado.`,
+     };
+@@ -126,17 +172,19 @@ function mapRecordToRow(
+     ...createEmptyCatalogoMetadatos(),
+     titulo,
+     slug: mapped.slug || undefined,
+-    descripcion: mapped.descripcion || titulo,
+-    proveedor: mapped.proveedor || undefined,
+-    categoria: mapped.categoria || undefined,
++    descripcion,
++    proveedor: mapped.proveedor,
++    categoria: mapped.categoria,
+     tipo: tipo === "secundario" ? CATALOGO_TIPO_SECUNDARIO : CATALOGO_TIPO_PRIMARIO,
+     etiquetas: mapped.etiquetas || undefined,
+     estado: mapped.estado || CATALOGO_ESTADO_DEFAULT,
+     codigoBarras: mapped.codigoBarras || undefined,
+-    precio: mapped.precio || undefined,
++    nombreOpcion1: mapped.nombreOpcion1 || undefined,
++    valorOpcion1: mapped.valorOpcion1 || undefined,
++    vinculadoOpcion1: mapped.skuPrimario || undefined,
++    precio: mapped.precio,
+     rastreadorInventario: mapped.rastreadorInventario || undefined,
+     cantidadInventario: mapped.cantidadInventario || undefined,
+-    vinculadoOpcion1: mapped.skuPrimario || undefined,
+     ...(publicado !== undefined ? { publicadoTienda: publicado } : {}),
+     ...(impuesto !== undefined ? { cobrarImpuesto: impuesto } : {}),
+   };
+@@ -153,7 +201,7 @@ function mapRecordToRow(
+   };
+ }
+ 
+-/** Parsea la primera hoja de un Excel/CSV exportado del catálogo. */
++/** Parsea la primera hoja de un Excel/CSV alineado al reporte frio. */
+ export async function parseCatalogoSpreadsheetFile(
+   file: File,
+ ): Promise<CatalogoExcelParseResult> {
+@@ -162,7 +210,7 @@ export async function parseCatalogoSpreadsheetFile(
+   const sheetName = workbook.SheetNames[0];
+ 
+   if (!sheetName) {
+-    return { rows: [], errors: ["El archivo no tiene hojas."] };
++    return { rows: [], errors: ["El archivo no tiene hojas."], skipped: 0 };
+   }
+ 
+   const sheet = workbook.Sheets[sheetName];
+@@ -173,21 +221,31 @@ export async function parseCatalogoSpreadsheetFile(
+ 
+   const rows: CatalogoExcelImportRow[] = [];
+   const errors: string[] = [];
++  let skipped = 0;
+ 
+   rawRows.forEach((record, index) => {
+     const result = mapRecordToRow(record, index + 2);
++
++    if (result.skip) {
++      return;
++    }
++
+     if (result.error) {
+       errors.push(result.error);
++      skipped += 1;
+       return;
+     }
++
+     if (result.row) {
+       rows.push(result.row);
+     }
+   });
+ 
+   if (!rows.length && !errors.length) {
+-    errors.push("No se encontraron filas con SKU y Título.");
++    errors.push(
++      "No se encontraron filas válidas. Campos obligatorios: title, description, provider, category, productType, status, precio.",
++    );
+   }
+ 
+-  return { rows, errors };
++  return { rows, errors, skipped };
+ }
+-- 
+2.43.0
+
