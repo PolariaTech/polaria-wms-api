@@ -19,14 +19,31 @@ El web insertaba directo en Supabase. El API Nest escribe con Prisma (bypass RLS
 Desde `polaria-wms-web`:
 
 ```powershell
-cd C:\Users\...\Videos\polaria-wms-web
+cd C:\Users\Daniel\Videos\polaria-wms-web
 
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/PolariaTech/polaria-wms-api/cursor/bodega-api-create-d2d9/docs/patch-bodega-api-create-d2d9-web.patch" -OutFile "bodega-api.patch"
 
 git apply --3way bodega-api.patch
 ```
 
-Si `git apply` falla, edita manualmente los 2 archivos (ver sección abajo).
+Si `git apply` falla, usa **opción B** (copiar archivos completos) abajo.
+
+### Opción B — copiar archivos completos (más fácil)
+
+Descarga y reemplaza estos 2 archivos en tu repo web:
+
+| Descargar | Pegar en tu repo |
+|-----------|------------------|
+| [bodegas-internas.service.ts](https://raw.githubusercontent.com/PolariaTech/polaria-wms-api/cursor/bodega-api-create-d2d9/docs/web-bodega-api-files/bodegas-internas.service.ts) | `src/modules/configurator/services/bodegas-internas.service.ts` |
+| [bodegas-externas.service.ts](https://raw.githubusercontent.com/PolariaTech/polaria-wms-api/cursor/bodega-api-create-d2d9/docs/web-bodega-api-files/bodegas-externas.service.ts) | `src/modules/configurator/services/bodegas-externas.service.ts` |
+
+PowerShell:
+
+```powershell
+$base = "https://raw.githubusercontent.com/PolariaTech/polaria-wms-api/cursor/bodega-api-create-d2d9/docs/web-bodega-api-files"
+Invoke-WebRequest -Uri "$base/bodegas-internas.service.ts" -OutFile "src/modules/configurator/services/bodegas-internas.service.ts"
+Invoke-WebRequest -Uri "$base/bodegas-externas.service.ts" -OutFile "src/modules/configurator/services/bodegas-externas.service.ts"
+```
 
 ---
 

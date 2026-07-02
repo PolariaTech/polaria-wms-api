@@ -1,17 +1,5 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Polaria Agent <agent@polaria.tech>
-Date: Mon, 22 Jun 2026 12:00:00 +0000
-Subject: [PATCH] web: crear bodegas vía API Nest (fix RLS configurador)
-
----
- .../services/bodegas-externas.service.ts            | 32 ++++++++++----------
- .../services/bodegas-internas.service.ts           | 34 ++++++++++------------
- 2 files changed, 30 insertions(+), 36 deletions(-)
-
-diff --git a/src/modules/configurator/services/bodegas-externas.service.ts b/src/modules/configurator/services/bodegas-externas.service.ts
-index 1111111..2222222 100644
---- a/src/modules/configurator/services/bodegas-externas.service.ts
-+++ b/src/modules/configurator/services/bodegas-externas.service.ts
+--- b/src/modules/configurator/services/bodegas-externas.service.ts	2026-07-02 00:26:44.576771795 +0000
++++ a/src/modules/configurator/services/bodegas-externas.service.ts	2026-07-02 00:26:54.228950839 +0000
 @@ -1,10 +1,11 @@
  import {
    DEFAULT_LIST_LIMIT,
@@ -25,7 +13,7 @@ index 1111111..2222222 100644
  
  export interface BodegaExternaListRow {
    idBodega: string;
-@@ -147,26 +148,25 @@ export async function createBodegaExternaConfigurator(
+@@ -149,29 +150,26 @@
      input.codigoCuenta,
    );
  
@@ -34,6 +22,20 @@ index 1111111..2222222 100644
 -      .from("bodega")
 -      .insert({
 -        codigo_cuenta: codigoCuenta,
+-        codigo,
+-        nombre,
+-        tipo: "externa",
+-        capacidad_slots: Math.trunc(input.capacidad),
+-        id_creador: input.idCreador ?? null,
+-        esta_activa: true,
+-      })
+-      .select("id_bodega")
+-      .single();
+-
+-    return query as unknown as Promise<{
+-      data: { id_bodega: string } | null;
+-      error: { message: string } | null;
+-    }>;
 +  const created = await apiRequest<{
 +    idBodega: string;
 +    capacidadSlots: number | null;
@@ -50,44 +52,24 @@ index 1111111..2222222 100644
 +      tipo: "externa",
 +      capacidadSlots: Math.trunc(input.capacidad),
 +    },
-+  });
-+
-+  return {
-+    idBodega: created.idBodega,
--        codigo,
--        nombre,
--        tipo: "externa",
--        capacidad_slots: Math.trunc(input.capacidad),
--        id_creador: input.idCreador ?? null,
--        esta_activa: true,
--      })
--      .select("id_bodega")
--      .single();
--
--    return query as unknown as Promise<{
--      data: { id_bodega: string } | null;
--      error: { message: string } | null;
--    }>;
--  });
--
--  return {
+   });
+ 
+   return {
 -    idBodega: inserted.id_bodega,
++    idBodega: created.idBodega,
      nombre,
      capacidad: Math.trunc(input.capacidad),
      bodegaAsignada: nombreComercial,
-diff --git a/src/modules/configurator/services/bodegas-internas.service.ts b/src/modules/configurator/services/bodegas-internas.service.ts
-index 3333333..4444444 100644
---- a/src/modules/configurator/services/bodegas-internas.service.ts
-+++ b/src/modules/configurator/services/bodegas-internas.service.ts
-@@ -1,7 +1,6 @@
+--- b/src/modules/configurator/services/bodegas-internas.service.ts	2026-07-02 00:26:44.512770589 +0000
++++ a/src/modules/configurator/services/bodegas-internas.service.ts	2026-07-02 00:26:54.740960178 +0000
+@@ -1,6 +1,5 @@
  import {
    DEFAULT_LIST_LIMIT,
 -  runDomainMutation,
    runDomainQuery,
  } from "@/lib/supabase/domain-query";
  import { DomainServiceError } from "@/lib/domain-service-error";
- import { generateCodigoCuentaFromNombre } from "@/lib/generate-codigo-cuenta";
-@@ -175,26 +174,25 @@ export async function createBodegaInternaConfigurator(
+@@ -189,28 +188,26 @@
    const { codigoCuenta, codigoEmpresa, nombreComercial } =
      await resolveCuentaAsignada(input.codigoCuenta);
  
@@ -134,5 +116,3 @@ index 3333333..4444444 100644
  
    await bootstrapBodegaLayout({
      idBodega,
--- 
-2.43.0
