@@ -15,15 +15,13 @@ import {
 } from '../constants/warehouse-layout.constants';
 
 export class CreateBodegaDto {
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: 'CTA001',
-    description:
-      'Obligatorio para configurador. Para administrador_cuenta se toma del contexto JWT si se omite.',
+    description: 'Cuenta destino de la bodega',
   })
-  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  codigoCuenta?: string;
+  codigoCuenta!: string;
 
   @ApiProperty({
     example: 'BOD-CENTRAL',

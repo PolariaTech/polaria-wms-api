@@ -27,15 +27,6 @@ describe('BodegaService', () => {
     idBodegas: [],
   };
 
-  const adminContext = {
-    idUsuario: 'usr-admin',
-    idRol: WmsRol.administrador_cuenta,
-    nivelRol: RolNivel.cuenta,
-    codigoEmpresa: 'EMP001',
-    codigoCuenta: 'CTA001',
-    idBodegas: [],
-  };
-
   const cuentaActiva = {
     codigoCuenta: 'CTA001',
     codigoEmpresa: 'EMP001',
@@ -96,29 +87,22 @@ describe('BodegaService', () => {
     });
   });
 
-  it('crea bodega externa para administrador_cuenta usando contexto', async () => {
+  it('crea bodega externa', async () => {
     await expect(
       service.create(
         {
+          codigoCuenta: 'CTA001',
           codigo: 'BOD-EXT',
           nombre: 'Bodega Externa',
           tipo: BodegaTipo.externa,
           capacidadSlots: 10,
         },
-        adminContext,
+        configuradorContext,
       ),
     ).resolves.toEqual(bodegaCreada);
-
-    expect(repository.createBodega).toHaveBeenCalledWith(
-      expect.objectContaining({
-        codigoCuenta: 'CTA001',
-        tipo: BodegaTipo.externa,
-        idCreador: 'usr-admin',
-      }),
-    );
   });
 
-  it('rechaza configurador sin codigoCuenta', async () => {
+  it('rechaza sin codigoCuenta', async () => {
     await expect(
       service.create(
         {
@@ -163,17 +147,22 @@ describe('BodegaService', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('rechaza admin de otra cuenta', async () => {
+  it('rechaza cuenta inactiva', async () => {
+    repository.findCuenta.mockResolvedValue({
+      ...cuentaActiva,
+      estaActiva: false,
+    });
+
     await expect(
       service.create(
         {
-          codigoCuenta: 'CTA999',
+          codigoCuenta: 'CTA001',
           codigo: 'BOD-CENTRAL',
           nombre: 'Bodega Central',
           tipo: BodegaTipo.externa,
           capacidadSlots: 10,
         },
-        adminContext,
+        configuradorContext,
       ),
     ).rejects.toThrow(ForbiddenException);
   });

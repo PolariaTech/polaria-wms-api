@@ -5,9 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { BodegaTipo, Prisma, WmsRol } from '../../../generated/prisma/client';
+import { BodegaTipo, Prisma } from '../../../generated/prisma/client';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
-import { ROL_PLATAFORMA } from '../../../shared/constants/roles';
 import { resolveCapacidadSlots } from '../constants/warehouse-layout.constants';
 import { CreateBodegaDto } from '../dto/create-bodega.dto';
 import { BodegaRepository } from '../infrastructure/bodega.repository';
@@ -23,7 +22,11 @@ export class BodegaService {
   ): Promise<CreateBodegaResult> {
     const codigo = dto.codigo.trim();
     const nombre = dto.nombre.trim();
-    const codigoCuenta = this.resolveCodigoCuenta(dto.codigoCuenta, ctx);
+    const codigoCuenta = dto.codigoCuenta?.trim();
+
+    if (!codigoCuenta) {
+      throw new BadRequestException('codigoCuenta es obligatorio');
+    }
 
     if (!codigo) {
       throw new BadRequestException('El código de la bodega es obligatorio');
@@ -36,7 +39,6 @@ export class BodegaService {
     const capacidadSlots = this.resolveCapacidadSlots(dto.tipo, dto.capacidadSlots);
 
     await this.assertCuentaActiva(codigoCuenta);
-    this.assertTenantAccess(codigoCuenta, ctx);
 
     try {
       return await this.bodegaRepository.createBodega({
@@ -58,40 +60,6 @@ export class BodegaService {
       }
       throw error;
     }
-  }
-
-  private resolveCodigoCuenta(
-    codigoCuentaDto: string | undefined,
-    ctx: TenantContext,
-  ): string {
-    const codigoCuentaBody = codigoCuentaDto?.trim() || null;
-
-    if (ctx.idRol === ROL_PLATAFORMA) {
-      if (!codigoCuentaBody) {
-        throw new BadRequestException(
-          'codigoCuenta es obligatorio para el configurador',
-        );
-      }
-      return codigoCuentaBody;
-    }
-
-    if (ctx.idRol === WmsRol.administrador_cuenta) {
-      if (!ctx.codigoCuenta) {
-        throw new ForbiddenException(
-          'El administrador no tiene cuenta activa en el contexto',
-        );
-      }
-
-      if (codigoCuentaBody && codigoCuentaBody !== ctx.codigoCuenta) {
-        throw new ForbiddenException(
-          'No puede crear bodegas para otra cuenta',
-        );
-      }
-
-      return ctx.codigoCuenta;
-    }
-
-    throw new ForbiddenException('No tiene permisos para crear bodegas');
   }
 
   private resolveCapacidadSlots(
@@ -128,25 +96,5 @@ export class BodegaService {
     if (!cuenta.estaActiva) {
       throw new ForbiddenException('La cuenta está inactiva');
     }
-  }
-
-  private assertTenantAccess(
-    codigoCuentaBodega: string,
-    ctx: TenantContext,
-  ): void {
-    if (ctx.idRol === ROL_PLATAFORMA) {
-      return;
-    }
-
-    if (ctx.idRol === WmsRol.administrador_cuenta) {
-      if (!ctx.codigoCuenta || ctx.codigoCuenta !== codigoCuentaBodega) {
-        throw new ForbiddenException(
-          'La bodega no pertenece a la cuenta del administrador',
-        );
-      }
-      return;
-    }
-
-    throw new ForbiddenException('No tiene permisos para esta operación');
   }
 }

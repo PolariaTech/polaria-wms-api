@@ -32,7 +32,7 @@ import { BodegaService } from '../services/bodega.service';
 @ApiTags(SWAGGER_TAGS.CONFIGURACION_BODEGAS)
 @Controller('configuracion/bodegas')
 @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
-@Roles(WmsRol.configurador, WmsRol.administrador_cuenta)
+@Roles(WmsRol.configurador)
 @ApiBearerAuth('access-token')
 export class BodegaController {
   constructor(private readonly bodegaService: BodegaService) {}
@@ -42,9 +42,8 @@ export class BodegaController {
   @ApiOperation({
     summary: 'Crear bodega interna o externa',
     description:
-      'Persiste la bodega vía backend (bypass RLS). Roles: configurador (cualquier cuenta) ' +
-      'o administrador_cuenta (solo su cuenta). Para bodegas internas, llamar después ' +
-      'POST /configuracion/bodegas/:idBodega/bootstrap-layout.',
+      'Persiste la bodega vía backend (bypass RLS). Solo configurador. ' +
+      'Para bodegas internas, llamar después POST /configuracion/bodegas/:idBodega/bootstrap-layout.',
   })
   @ApiCreatedResponse({ type: CreateBodegaResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
