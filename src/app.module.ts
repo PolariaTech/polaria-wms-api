@@ -10,6 +10,7 @@ import { ConfiguratorModule } from './modules/configurator/configurator.module';
 import { ConfiguracionModule } from './modules/configuracion/configuracion.module';
 import { IntegrationModule } from './modules/integration/integration.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
     ConfiguracionModule,
     IntegrationModule,
     PurchasesModule,
+    InventoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
