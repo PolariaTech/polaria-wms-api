@@ -10,8 +10,6 @@ import { ConfiguratorModule } from './modules/configurator/configurator.module';
 import { ConfiguracionModule } from './modules/configuracion/configuracion.module';
 import { IntegrationModule } from './modules/integration/integration.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
-
-@Module({
   imports: [
     AppConfigModule,
     DatabaseModule,
