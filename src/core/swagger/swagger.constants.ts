@@ -8,6 +8,7 @@ export const SWAGGER_TAGS = {
   COMPRAS_SOL: 'Compras · Solicitudes (SOL)',
   COMPRAS_OC: 'Compras · Órdenes (OC)',
   COMPRAS_RECEPCION: 'Compras · Recepción (ingreso)',
+  INVENTARIO: 'Inventario · Mapa (warehouse_state)',
   SISTEMA: 'Sistema',
 } as const;
 
@@ -22,6 +23,7 @@ export const SWAGGER_TAG_ORDER: readonly SwaggerTag[] = [
   SWAGGER_TAGS.COMPRAS_SOL,
   SWAGGER_TAGS.COMPRAS_OC,
   SWAGGER_TAGS.COMPRAS_RECEPCION,
+  SWAGGER_TAGS.INVENTARIO,
   SWAGGER_TAGS.SISTEMA,
 ];
 
@@ -42,5 +44,7 @@ export const SWAGGER_TAG_DESCRIPTIONS: Record<SwaggerTag, string> = {
     'Órdenes de compra (OC): creación, emisión, cancelación y conversión desde SOL.',
   [SWAGGER_TAGS.COMPRAS_RECEPCION]:
     'Recepción de mercancía contra OC: conciliación ciega, temperatura e ingreso a slot (POL-5).',
+  [SWAGGER_TAGS.INVENTARIO]:
+    'Mapa de bodega: lectura warehouse_state y locking en tiempo real (POL-6).',
   [SWAGGER_TAGS.SISTEMA]: 'Health check y utilidades de la API.',
 };
