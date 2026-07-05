@@ -86,7 +86,55 @@ borrador → emitida → cancelada
 borrador → cancelada
 ```
 
-Pendientes (POL-5 recepción): `parcialmente_recibida`, `recibida`, `cerrada`.
+Implementados con recepción (POL-5):
+
+```
+emitida → parcialmente_recibida → recibida
+```
+
+Pendientes: `cerrada` (cierre administrativo post-recepción).
+
+---
+
+## Recepción de mercancía (POL-5)
+
+Base path: `/compras/recepciones`  
+Swagger tag: **Compras · Recepción (ingreso)**
+
+| Método | Ruta | Roles | Descripción |
+|--------|------|-------|-------------|
+| POST | `/compras/recepciones/ordenes/:idOrdenCompra/cerrar` | custodio, jefe, admin bodega, admin cuenta, configurador | Cierra recepción contra OC emitida |
+| GET | `/compras/recepciones` | lectura | Listar recepciones |
+| GET | `/compras/recepciones/ordenes/:idOrdenCompra` | lectura | Recepción de una OC |
+| GET | `/compras/recepciones/:id` | lectura | Detalle por id |
+
+**Escritura sensible:** `SensitiveWriteGuard` + bypass RLS vía Prisma.
+
+### POST cerrar recepción
+
+```json
+{
+  "codigoCuenta": "CTA001",
+  "idBodega": "550e8400-e29b-41d4-a716-446655440000",
+  "lineas": [
+    {
+      "idLineaOrdenCompra": "550e8400-e29b-41d4-a716-446655440201",
+      "cantidadRecibida": 50,
+      "temperaturaRegistrada": -18.5
+    }
+  ],
+  "idUbicacionIngreso": "550e8400-e29b-41d4-a716-446655440099",
+  "notas": "Recepción sin novedad"
+}
+```
+
+- Una recepción por OC (`uq_recepcion_orden`)
+- `sinDiferencias=true` si cantidades coinciden exactamente con la OC y no hay líneas adicionales
+- Con `idUbicacionIngreso`: crea `lote`, `warehouse_state` y `movimiento_inventario` tipo `recepcion`
+
+---
+
+## Órdenes de compra (OC) — detalle histórico
 
 ### POST /compras/ordenes — desde cero
 
