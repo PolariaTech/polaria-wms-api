@@ -1,0 +1,1394 @@
+From cbdafcd666123d4ac7a8358af8e9c6e30d5d36fc Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Sun, 5 Jul 2026 19:50:31 +0000
+Subject: [PATCH] =?UTF-8?q?feat(web):=20integrar=20recepci=C3=B3n=20POL-5?=
+ =?UTF-8?q?=20y=20lock/unlock=20mapa=20POL-6?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Conecta la web al API Nest para cerrar recepciones contra órdenes emitidas
+y bloquear/liberar posiciones del mapa de inventario en tiempo real.
+
+- POL-5: cerrarRecepcionCompraApi, modal de recepción e ingreso con OCs pendientes
+- POL-6: inventory-api lock/unlock con versión optimista en el mapa
+- Tests de servicios API y ajustes de tipos en compras para build TS
+---
+ .../dashboard/operational-pages.test.tsx      |   6 +-
+ .../components/MapaInventarioPageContent.tsx  | 138 +++++++++-
+ .../constants/inventory-lock.constants.ts     |  34 +++
+ src/modules/inventory/index.ts                |   9 +
+ .../services/inventory-api.service.test.ts    |  97 +++++++
+ .../services/inventory-api.service.ts         |  92 +++++++
+ .../inventory/services/inventory.service.ts   |   2 +-
+ .../inventory/types/inventory-api.types.ts    |  21 ++
+ .../components/IngresoPageContent.tsx         | 209 +++++++++++---
+ .../components/RecepcionCompraModal.tsx       | 254 ++++++++++++++++++
+ .../constants/recepcion-compra.constants.ts   |  21 ++
+ src/modules/purchases/index.ts                |   6 +-
+ .../pedido-proveedor-client.service.ts        |   4 +-
+ .../services/purchases-api.service.test.ts    |  58 ++++
+ .../services/purchases-api.service.ts         |  81 ++++++
+ .../purchases/services/purchases.service.ts   |  12 +-
+ .../purchases/types/purchases-api.types.ts    |  26 ++
+ .../purchases/types/purchases.types.ts        |   1 +
+ 18 files changed, 1018 insertions(+), 53 deletions(-)
+ create mode 100644 src/modules/inventory/constants/inventory-lock.constants.ts
+ create mode 100644 src/modules/inventory/services/inventory-api.service.test.ts
+ create mode 100644 src/modules/inventory/services/inventory-api.service.ts
+ create mode 100644 src/modules/inventory/types/inventory-api.types.ts
+ create mode 100644 src/modules/purchases/components/RecepcionCompraModal.tsx
+ create mode 100644 src/modules/purchases/constants/recepcion-compra.constants.ts
+
+diff --git a/src/app/(shell)/dashboard/operational-pages.test.tsx b/src/app/(shell)/dashboard/operational-pages.test.tsx
+index b9cde88..20390ed 100644
+--- a/src/app/(shell)/dashboard/operational-pages.test.tsx
++++ b/src/app/(shell)/dashboard/operational-pages.test.tsx
+@@ -236,14 +236,17 @@ describe("vistas operativas dashboard", () => {
+     render(<DashboardIngresoPage />);
+ 
+     expect(screen.getByRole("heading", { name: "Ingreso" })).toBeInTheDocument();
++    expect(
++      screen.getByText("Órdenes pendientes de recepción"),
++    ).toBeInTheDocument();
+     expect(screen.getByText("Recepciones de compra")).toBeInTheDocument();
+ 
+     await waitFor(() => {
+       expect(listRecepciones).toHaveBeenCalled();
++      expect(listOrdenesCompra).toHaveBeenCalled();
+     });
+ 
+     expect(listSolicitudesCompra).not.toHaveBeenCalled();
+-    expect(listOrdenesCompra).not.toHaveBeenCalled();
+   });
+ 
+   it("compras renderiza solicitudes y órdenes para administrador de cuenta", async () => {
+@@ -291,6 +294,7 @@ describe("vistas operativas dashboard", () => {
+       screen.getByText(/No tienes permiso para acceder a este módulo operativo/i),
+     ).toBeInTheDocument();
+     expect(listRecepciones).not.toHaveBeenCalled();
++    expect(listOrdenesCompra).not.toHaveBeenCalled();
+   });
+ 
+   it("bloquea mapa para administrador de cuenta", () => {
+diff --git a/src/modules/inventory/components/MapaInventarioPageContent.tsx b/src/modules/inventory/components/MapaInventarioPageContent.tsx
+index d9edb4a..c42c577 100644
+--- a/src/modules/inventory/components/MapaInventarioPageContent.tsx
++++ b/src/modules/inventory/components/MapaInventarioPageContent.tsx
+@@ -1,15 +1,131 @@
+ "use client";
+ 
++import { useCallback, useState } from "react";
+ import { ModuleListPage } from "@/components/shared/ModuleListPage";
+ import { formatDateTime } from "@/components/shared/formatters";
+ import { useWarehouseStateRealtime } from "@/hooks/useWarehouseStateRealtime";
++import { usePermissions } from "@/hooks/usePermissions";
++import { DomainServiceError } from "@/lib/domain-service-error";
+ import { useCompany } from "@/providers/CompanyProvider";
++import { useAuthStore } from "@/stores/auth.store";
++import {
++  canForceUnlockWarehouseState,
++  canLockWarehouseState,
++} from "../constants/inventory-lock.constants";
++import {
++  lockWarehouseStateApi,
++  unlockWarehouseStateApi,
++} from "../services/inventory-api.service";
++import type { WarehouseStateRow } from "../types/inventory.types";
++
++function formatLockLabel(
++  row: WarehouseStateRow,
++  currentUserId: string | null | undefined,
++): string {
++  if (!row.locked_by) {
++    return "Libre";
++  }
++
++  if (currentUserId && row.locked_by === currentUserId) {
++    return "Bloqueado por ti";
++  }
++
++  return `Bloqueado (${row.locked_by.slice(0, 8)}…)`;
++}
+ 
+ export function MapaInventarioPageContent() {
+-  const { activeBodegaId } = useCompany();
++  const { activeBodegaId, codigoCuenta } = useCompany();
++  const { idRol } = usePermissions();
++  const currentUserId = useAuthStore((state) => state.session?.idUsuario);
+   const { rows, isConnected, isLoading, error, lastEventAt } =
+     useWarehouseStateRealtime();
+ 
++  const [actionError, setActionError] = useState<string | null>(null);
++  const [pendingRowId, setPendingRowId] = useState<string | null>(null);
++
++  const puedeBloquear = canLockWarehouseState(idRol);
++  const puedeForzarUnlock = canForceUnlockWarehouseState(idRol);
++
++  const runLockAction = useCallback(
++    async (
++      row: WarehouseStateRow,
++      action: "lock" | "unlock",
++    ) => {
++      if (!codigoCuenta || !activeBodegaId) {
++        setActionError("Falta cuenta o bodega activa.");
++        return;
++      }
++
++      setActionError(null);
++      setPendingRowId(row.id_warehouse_state);
++
++      try {
++        const input = {
++          codigoCuenta,
++          idBodega: activeBodegaId,
++          expectedVersion: row.version,
++        };
++
++        if (action === "lock") {
++          await lockWarehouseStateApi(row.id_warehouse_state, input);
++        } else {
++          await unlockWarehouseStateApi(row.id_warehouse_state, input);
++        }
++      } catch (err: unknown) {
++        setActionError(
++          err instanceof DomainServiceError
++            ? err.message
++            : "No se pudo actualizar el bloqueo.",
++        );
++      } finally {
++        setPendingRowId(null);
++      }
++    },
++    [activeBodegaId, codigoCuenta],
++  );
++
++  const renderLockActions = (row: WarehouseStateRow) => {
++    if (!puedeBloquear) {
++      return <span className="polaria-text-body-sm text-polaria-w-50">—</span>;
++    }
++
++    const isPending = pendingRowId === row.id_warehouse_state;
++    const lockedByMe = Boolean(
++      row.locked_by && currentUserId && row.locked_by === currentUserId,
++    );
++    const lockedByOther = Boolean(row.locked_by && !lockedByMe);
++
++    if (!row.locked_by) {
++      return (
++        <button
++          type="button"
++          disabled={isPending}
++          onClick={() => void runLockAction(row, "lock")}
++          className="rounded-lg border border-polaria-t-20 bg-polaria-t-08 px-3 py-1.5 polaria-text-body-sm font-medium text-polaria-teal hover:bg-polaria-t-20 transition-colors disabled:opacity-50"
++        >
++          {isPending ? "…" : "Bloquear"}
++        </button>
++      );
++    }
++
++    if (lockedByMe || (lockedByOther && puedeForzarUnlock)) {
++      return (
++        <button
++          type="button"
++          disabled={isPending}
++          onClick={() => void runLockAction(row, "unlock")}
++          className="rounded-lg border border-polaria-w-08 bg-polaria-w-08 px-3 py-1.5 polaria-text-body-sm font-medium text-polaria-w hover:bg-polaria-w-20 transition-colors disabled:opacity-50"
++        >
++          {isPending ? "…" : lockedByOther ? "Forzar liberar" : "Liberar"}
++        </button>
++      );
++    }
++
++    return (
++      <span className="polaria-text-body-sm text-polaria-w-50">Ocupado</span>
++    );
++  };
++
+   return (
+     <div className="flex flex-col gap-4">
+       <div className="flex flex-wrap items-center justify-between gap-3">
+@@ -41,6 +157,15 @@ export function MapaInventarioPageContent() {
+         </p>
+       ) : null}
+ 
++      {actionError ? (
++        <p
++          role="alert"
++          className="rounded-xl border border-polaria-danger-border bg-polaria-danger-bg px-4 py-3 polaria-text-body-sm text-polaria-danger"
++        >
++          {actionError}
++        </p>
++      ) : null}
++
+       <ModuleListPage
+         isLoading={isLoading}
+         error={error}
+@@ -79,12 +204,23 @@ export function MapaInventarioPageContent() {
+             cell: (row) => row.temperatura ?? "—",
+             cellClassName: "text-polaria-w-50",
+           },
++          {
++            id: "bloqueo",
++            header: "Bloqueo",
++            cell: (row) => formatLockLabel(row, currentUserId),
++            cellClassName: "text-polaria-w-50",
++          },
+           {
+             id: "updated",
+             header: "Actualizado",
+             cell: (row) => formatDateTime(row.updated_at),
+             cellClassName: "text-polaria-w-50",
+           },
++          {
++            id: "acciones",
++            header: "Acciones",
++            cell: (row) => renderLockActions(row),
++          },
+         ]}
+       />
+     </div>
+diff --git a/src/modules/inventory/constants/inventory-lock.constants.ts b/src/modules/inventory/constants/inventory-lock.constants.ts
+new file mode 100644
+index 0000000..6cb4046
+--- /dev/null
++++ b/src/modules/inventory/constants/inventory-lock.constants.ts
+@@ -0,0 +1,34 @@
++import { WmsRol } from "@/constants/roles";
++
++/** Roles que pueden bloquear posiciones del mapa (POL-6, alineado con API). */
++export const ROLES_INVENTARIO_LOCK = [
++  WmsRol.configurador,
++  WmsRol.administrador_bodega,
++  WmsRol.jefe_bodega,
++  WmsRol.custodio,
++  WmsRol.operario,
++] as const;
++
++export const ROLES_INVENTARIO_FORCE_UNLOCK = [
++  WmsRol.configurador,
++  WmsRol.administrador_bodega,
++  WmsRol.jefe_bodega,
++] as const;
++
++export function canLockWarehouseState(idRol: string | null | undefined): boolean {
++  if (!idRol) {
++    return false;
++  }
++
++  return (ROLES_INVENTARIO_LOCK as readonly string[]).includes(idRol);
++}
++
++export function canForceUnlockWarehouseState(
++  idRol: string | null | undefined,
++): boolean {
++  if (!idRol) {
++    return false;
++  }
++
++  return (ROLES_INVENTARIO_FORCE_UNLOCK as readonly string[]).includes(idRol);
++}
+diff --git a/src/modules/inventory/index.ts b/src/modules/inventory/index.ts
+index 2a26228..9ed5215 100644
+--- a/src/modules/inventory/index.ts
++++ b/src/modules/inventory/index.ts
+@@ -3,6 +3,15 @@ export type {
+   WarehouseStateRow,
+ } from "./types/inventory.types";
+ 
++export type {
++  LockWarehouseStateApiInput,
++  WarehouseStateApiRow,
++} from "./types/inventory-api.types";
++
+ export { listWarehouseState } from "./services/inventory.service";
++export {
++  lockWarehouseStateApi,
++  unlockWarehouseStateApi,
++} from "./services/inventory-api.service";
+ export { useWarehouseStateSubscription } from "./hooks/useWarehouseStateSubscription";
+ export { MapaInventarioPageContent } from "./components/MapaInventarioPageContent";
+diff --git a/src/modules/inventory/services/inventory-api.service.test.ts b/src/modules/inventory/services/inventory-api.service.test.ts
+new file mode 100644
+index 0000000..6ea8ad3
+--- /dev/null
++++ b/src/modules/inventory/services/inventory-api.service.test.ts
+@@ -0,0 +1,97 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { DomainServiceError } from "@/lib/domain-service-error";
++import { ApiError, apiRequest } from "@/services/api";
++import {
++  lockWarehouseStateApi,
++  unlockWarehouseStateApi,
++} from "./inventory-api.service";
++
++vi.mock("@/services/api", () => ({
++  ApiError: class ApiError extends Error {
++    constructor(
++      message: string,
++      public readonly status: number,
++      public readonly code?: string,
++    ) {
++      super(message);
++      this.name = "ApiError";
++    }
++  },
++  apiRequest: vi.fn(),
++}));
++
++describe("inventory-api.service", () => {
++  beforeEach(() => {
++    vi.restoreAllMocks();
++  });
++
++  it("lockWarehouseStateApi bloquea posición con versión optimista", async () => {
++    vi.mocked(apiRequest).mockResolvedValue({
++      idWarehouseState: "ws-1",
++      lockedBy: "user-1",
++      version: 2,
++    });
++
++    await lockWarehouseStateApi("ws-1", {
++      codigoCuenta: "CUENTA-01",
++      idBodega: "BOD-01",
++      expectedVersion: 1,
++    });
++
++    expect(apiRequest).toHaveBeenCalledWith(
++      "/inventario/warehouse-state/ws-1/lock",
++      {
++        method: "POST",
++        auth: true,
++        body: {
++          codigoCuenta: "CUENTA-01",
++          idBodega: "BOD-01",
++          expectedVersion: 1,
++        },
++      },
++    );
++  });
++
++  it("unlockWarehouseStateApi libera posición", async () => {
++    vi.mocked(apiRequest).mockResolvedValue({
++      idWarehouseState: "ws-1",
++      lockedBy: null,
++      version: 3,
++    });
++
++    await unlockWarehouseStateApi("ws-1", {
++      codigoCuenta: "CUENTA-01",
++      idBodega: "BOD-01",
++      expectedVersion: 2,
++    });
++
++    expect(apiRequest).toHaveBeenCalledWith(
++      "/inventario/warehouse-state/ws-1/unlock",
++      {
++        method: "POST",
++        auth: true,
++        body: {
++          codigoCuenta: "CUENTA-01",
++          idBodega: "BOD-01",
++          expectedVersion: 2,
++        },
++      },
++    );
++  });
++
++  it("propaga ApiError como DomainServiceError", async () => {
++    vi.mocked(apiRequest).mockRejectedValue(
++      new ApiError("La posición está bloqueada por otro operario", 409),
++    );
++
++    await expect(
++      lockWarehouseStateApi("ws-1", {
++        codigoCuenta: "CUENTA-01",
++        idBodega: "BOD-01",
++      }),
++    ).rejects.toMatchObject({
++      message: "La posición está bloqueada por otro operario",
++      code: "MUTATION_FAILED",
++    });
++  });
++});
+diff --git a/src/modules/inventory/services/inventory-api.service.ts b/src/modules/inventory/services/inventory-api.service.ts
+new file mode 100644
+index 0000000..d392c53
+--- /dev/null
++++ b/src/modules/inventory/services/inventory-api.service.ts
+@@ -0,0 +1,92 @@
++import { DomainServiceError } from "@/lib/domain-service-error";
++import { ApiError, apiRequest } from "@/services/api";
++import type {
++  LockWarehouseStateApiInput,
++  WarehouseStateApiRow,
++} from "../types/inventory-api.types";
++
++async function postInventarioApi<T>(path: string, body: unknown): Promise<T> {
++  try {
++    return await apiRequest<T>(path, {
++      method: "POST",
++      auth: true,
++      body,
++    });
++  } catch (error) {
++    if (error instanceof ApiError) {
++      throw new DomainServiceError(error.message, "MUTATION_FAILED", error);
++    }
++    throw error;
++  }
++}
++
++function validateLockInput(input: LockWarehouseStateApiInput): LockWarehouseStateApiInput {
++  const codigoCuenta = input.codigoCuenta.trim();
++  const idBodega = input.idBodega.trim();
++
++  if (!codigoCuenta) {
++    throw new DomainServiceError(
++      "No se encontró la cuenta activa.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  if (!idBodega) {
++    throw new DomainServiceError(
++      "No se encontró la bodega activa.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  return {
++    codigoCuenta,
++    idBodega,
++    ...(input.expectedVersion != null
++      ? { expectedVersion: input.expectedVersion }
++      : {}),
++  };
++}
++
++/** Bloquea una posición del mapa de inventario (POL-6). */
++export async function lockWarehouseStateApi(
++  idWarehouseState: string,
++  input: LockWarehouseStateApiInput,
++): Promise<WarehouseStateApiRow> {
++  const id = idWarehouseState.trim();
++
++  if (!id) {
++    throw new DomainServiceError(
++      "La posición de inventario no es válida.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  const body = validateLockInput(input);
++
++  return postInventarioApi<WarehouseStateApiRow>(
++    `/inventario/warehouse-state/${encodeURIComponent(id)}/lock`,
++    body,
++  );
++}
++
++/** Libera el bloqueo de una posición del mapa (POL-6). */
++export async function unlockWarehouseStateApi(
++  idWarehouseState: string,
++  input: LockWarehouseStateApiInput,
++): Promise<WarehouseStateApiRow> {
++  const id = idWarehouseState.trim();
++
++  if (!id) {
++    throw new DomainServiceError(
++      "La posición de inventario no es válida.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  const body = validateLockInput(input);
++
++  return postInventarioApi<WarehouseStateApiRow>(
++    `/inventario/warehouse-state/${encodeURIComponent(id)}/unlock`,
++    body,
++  );
++}
+diff --git a/src/modules/inventory/services/inventory.service.ts b/src/modules/inventory/services/inventory.service.ts
+index 5363f37..2294d23 100644
+--- a/src/modules/inventory/services/inventory.service.ts
++++ b/src/modules/inventory/services/inventory.service.ts
+@@ -11,7 +11,7 @@ import type {
+ const WAREHOUSE_STATE_COLUMNS =
+   "id_warehouse_state,codigo_cuenta,id_bodega,id_ubicacion,id_producto,id_lote,cantidad,cantidad_reservada,temperatura,locked_by,locked_at,version,updated_at";
+ 
+-// TODO POL-5+: escrituras de inventario vía apiRequest al API Nest.
++// Escrituras de inventario (lock/unlock) vía inventory-api.service al API Nest.
+ 
+ /** Lista posiciones de inventario (`warehouse_state`) para una bodega. */
+ export async function listWarehouseState(
+diff --git a/src/modules/inventory/types/inventory-api.types.ts b/src/modules/inventory/types/inventory-api.types.ts
+new file mode 100644
+index 0000000..b6c9726
+--- /dev/null
++++ b/src/modules/inventory/types/inventory-api.types.ts
+@@ -0,0 +1,21 @@
++export interface LockWarehouseStateApiInput {
++  codigoCuenta: string;
++  idBodega: string;
++  expectedVersion?: number;
++}
++
++export interface WarehouseStateApiRow {
++  idWarehouseState: string;
++  codigoCuenta: string;
++  idBodega: string;
++  idUbicacion: string;
++  idProducto: string;
++  idLote: string | null;
++  cantidad: string;
++  cantidadReservada: string;
++  temperatura: string | null;
++  lockedBy: string | null;
++  lockedAt: string | null;
++  version: number;
++  updatedAt: string;
++}
+diff --git a/src/modules/purchases/components/IngresoPageContent.tsx b/src/modules/purchases/components/IngresoPageContent.tsx
+index fa8efa8..5d41a76 100644
+--- a/src/modules/purchases/components/IngresoPageContent.tsx
++++ b/src/modules/purchases/components/IngresoPageContent.tsx
+@@ -1,56 +1,177 @@
+ "use client";
+ 
+-import { useCallback } from "react";
++import { useCallback, useMemo, useState } from "react";
+ import { ModuleListPage } from "@/components/shared/ModuleListPage";
++import {
++  PolariaTableBadge,
++  PolariaTableCode,
++} from "@/components/shared/PolariaTableCells";
+ import { formatDateTime } from "@/components/shared/formatters";
+-import { useTenantList } from "@/hooks/useTenantList";
+-import { listRecepciones } from "../services/purchases.service";
++import { useAsyncQuery } from "@/hooks/useAsyncQuery";
++import { usePermissions } from "@/hooks/usePermissions";
++import { useCompany } from "@/providers/CompanyProvider";
++import { canCerrarRecepcionCompra } from "../constants/recepcion-compra.constants";
++import { ESTADO_ORDEN_LABELS } from "../constants/purchases-labels";
++import {
++  listOrdenesCompra,
++  listRecepciones,
++} from "../services/purchases.service";
++import type { OrdenCompraRow, RecepcionCompraRow } from "../types/purchases.types";
++import { RecepcionCompraModal } from "./RecepcionCompraModal";
++
++const ESTADOS_PENDIENTES_RECEPCION = new Set<OrdenCompraRow["estado"]>([
++  "emitida",
++  "parcialmente_recibida",
++]);
+ 
+ export function IngresoPageContent() {
+-  const loadRecepciones = useCallback(
+-    (params: { codigoCuenta: string; idBodega: string | null }) =>
+-      listRecepciones({
+-        codigoCuenta: params.codigoCuenta,
+-        idBodega: params.idBodega,
+-      }),
+-    [],
++  const { codigoCuenta, activeBodegaId } = useCompany();
++  const { idRol } = usePermissions();
++  const [ordenRecepcion, setOrdenRecepcion] = useState<OrdenCompraRow | null>(
++    null,
+   );
+ 
+-  const recepciones = useTenantList(loadRecepciones);
++  const puedeRegistrar = canCerrarRecepcionCompra(idRol);
++
++  const fetchRecepciones = useCallback(() => {
++    if (!codigoCuenta) {
++      return Promise.resolve([] as RecepcionCompraRow[]);
++    }
++
++    return listRecepciones({
++      codigoCuenta,
++      idBodega: activeBodegaId,
++    });
++  }, [activeBodegaId, codigoCuenta]);
++
++  const fetchOrdenes = useCallback(() => {
++    if (!codigoCuenta) {
++      return Promise.resolve([] as OrdenCompraRow[]);
++    }
++
++    return listOrdenesCompra({
++      codigoCuenta,
++      idBodega: activeBodegaId,
++    });
++  }, [activeBodegaId, codigoCuenta]);
++
++  const recepciones = useAsyncQuery(fetchRecepciones, Boolean(codigoCuenta));
++  const ordenes = useAsyncQuery(fetchOrdenes, Boolean(codigoCuenta));
++
++  const ordenesPendientes = useMemo(() => {
++    const recepcionadas = new Set(
++      (recepciones.data ?? []).map((row) => row.id_orden_compra),
++    );
++
++    return (ordenes.data ?? []).filter(
++      (orden) =>
++        ESTADOS_PENDIENTES_RECEPCION.has(orden.estado) &&
++        !recepcionadas.has(orden.id_orden_compra),
++    );
++  }, [ordenes.data, recepciones.data]);
++
++  const reloadAll = useCallback(async () => {
++    await Promise.all([recepciones.reload(), ordenes.reload()]);
++  }, [ordenes, recepciones]);
++
++  const isLoading =
++    recepciones.isLoading ||
++    ordenes.isLoading ||
++    recepciones.isRefreshing ||
++    ordenes.isRefreshing;
++
++  const error = recepciones.error ?? ordenes.error;
+ 
+   return (
+-    <ModuleListPage
+-      sectionTitle="Recepciones de compra"
+-      isLoading={recepciones.isLoading}
+-      error={recepciones.error}
+-      rows={recepciones.rows}
+-      emptyMessage="Sin recepciones registradas."
+-      getRowKey={(row) => row.id_recepcion}
+-      columns={[
+-        {
+-          id: "orden",
+-          header: "Orden compra",
+-          cell: (row) => row.id_orden_compra,
+-          cellClassName: "font-mono text-xs",
+-        },
+-        {
+-          id: "diferencias",
+-          header: "Sin diferencias",
+-          cell: (row) => (row.sin_diferencias ? "Sí" : "No"),
+-        },
+-        {
+-          id: "cerrada",
+-          header: "Cerrada",
+-          cell: (row) => formatDateTime(row.cerrada_at),
+-          cellClassName: "text-polaria-w-50",
+-        },
+-        {
+-          id: "created",
+-          header: "Registro",
+-          cell: (row) => formatDateTime(row.created_at),
+-          cellClassName: "text-polaria-w-50",
+-        },
+-      ]}
+-    />
++    <div className="flex flex-col gap-8">
++      <ModuleListPage
++        sectionTitle="Órdenes pendientes de recepción"
++        isLoading={isLoading}
++        error={error}
++        rows={ordenesPendientes}
++        emptyMessage="No hay órdenes emitidas pendientes de recepción."
++        getRowKey={(row) => row.id_orden_compra}
++        columns={[
++          {
++            id: "codigo",
++            header: "Orden",
++            cell: (row) => <PolariaTableCode>{row.codigo}</PolariaTableCode>,
++          },
++          {
++            id: "proveedor",
++            header: "Proveedor",
++            cell: (row) => row.proveedor_nombre?.trim() || "—",
++            cellClassName: "text-polaria-w-50",
++          },
++          {
++            id: "estado",
++            header: "Estado",
++            cell: (row) => (
++              <PolariaTableBadge variant="neutral">
++                {ESTADO_ORDEN_LABELS[row.estado] ?? row.estado}
++              </PolariaTableBadge>
++            ),
++          },
++          {
++            id: "accion",
++            header: "Acción",
++            cell: (row) =>
++              puedeRegistrar ? (
++                <button
++                  type="button"
++                  onClick={() => setOrdenRecepcion(row)}
++                  className="rounded-lg border border-polaria-t-20 bg-polaria-t-08 px-3 py-1.5 polaria-text-body-sm font-medium text-polaria-teal hover:bg-polaria-t-20 transition-colors"
++                >
++                  Registrar recepción
++                </button>
++              ) : (
++                <span className="polaria-text-body-sm text-polaria-w-50">—</span>
++              ),
++          },
++        ]}
++      />
++
++      <ModuleListPage
++        sectionTitle="Recepciones de compra"
++        isLoading={isLoading}
++        error={null}
++        rows={recepciones.data ?? []}
++        emptyMessage="Sin recepciones registradas."
++        getRowKey={(row) => row.id_recepcion}
++        columns={[
++          {
++            id: "orden",
++            header: "Orden compra",
++            cell: (row) => row.id_orden_compra,
++            cellClassName: "font-mono text-xs",
++          },
++          {
++            id: "diferencias",
++            header: "Sin diferencias",
++            cell: (row) => (row.sin_diferencias ? "Sí" : "No"),
++          },
++          {
++            id: "cerrada",
++            header: "Cerrada",
++            cell: (row) => formatDateTime(row.cerrada_at),
++            cellClassName: "text-polaria-w-50",
++          },
++          {
++            id: "created",
++            header: "Registro",
++            cell: (row) => formatDateTime(row.created_at),
++            cellClassName: "text-polaria-w-50",
++          },
++        ]}
++      />
++
++      {ordenRecepcion ? (
++        <RecepcionCompraModal
++          orden={ordenRecepcion}
++          onClose={() => setOrdenRecepcion(null)}
++          onRegistered={reloadAll}
++        />
++      ) : null}
++    </div>
+   );
+ }
+diff --git a/src/modules/purchases/components/RecepcionCompraModal.tsx b/src/modules/purchases/components/RecepcionCompraModal.tsx
+new file mode 100644
+index 0000000..a36323c
+--- /dev/null
++++ b/src/modules/purchases/components/RecepcionCompraModal.tsx
+@@ -0,0 +1,254 @@
++"use client";
++
++import { useEffect, useMemo, useState, type FormEvent } from "react";
++import {
++  PolariaFormField,
++  PolariaFormInput,
++} from "@/components/shared/PolariaFormField";
++import { PolariaFormModal } from "@/components/shared/PolariaFormModal";
++import { formatKgEs, parseDecimalEs } from "@/lib/decimal-es";
++import { DomainServiceError } from "@/lib/domain-service-error";
++import { useCompany } from "@/providers/CompanyProvider";
++import { cerrarRecepcionCompraApi } from "../services/purchases-api.service";
++import type { OrdenCompraLineaRow, OrdenCompraRow } from "../types/purchases.types";
++import { resolveOrdenLineaTitulo } from "../utils/orden-compra-display";
++
++interface RecepcionCompraModalProps {
++  orden: OrdenCompraRow | null;
++  onClose: () => void;
++  onRegistered: () => void | Promise<void>;
++}
++
++interface DraftLinea {
++  idLineaOrdenCompra: string;
++  titulo: string;
++  cantidadPedida: number;
++  cantidadYaRecibida: number;
++  cantidadRecibidaInput: string;
++  temperaturaInput: string;
++}
++
++function pendingCantidad(linea: OrdenCompraLineaRow): number {
++  const pedida = linea.cantidad;
++  const recibida = linea.cantidad_recibida ?? 0;
++  return Math.max(0, pedida - recibida);
++}
++
++function buildDraftLineas(lineas: OrdenCompraLineaRow[]): DraftLinea[] {
++  return lineas.map((linea) => {
++    const pendiente = pendingCantidad(linea);
++    return {
++      idLineaOrdenCompra: linea.id_linea_orden_compra,
++      titulo: resolveOrdenLineaTitulo(linea),
++      cantidadPedida: linea.cantidad,
++      cantidadYaRecibida: linea.cantidad_recibida ?? 0,
++      cantidadRecibidaInput: pendiente > 0 ? String(pendiente) : "0",
++      temperaturaInput: "",
++    };
++  });
++}
++
++export function RecepcionCompraModal({
++  orden,
++  onClose,
++  onRegistered,
++}: RecepcionCompraModalProps) {
++  const { codigoCuenta, activeBodegaId } = useCompany();
++  const [lineas, setLineas] = useState<DraftLinea[]>([]);
++  const [notas, setNotas] = useState("");
++  const [idUbicacionIngreso, setIdUbicacionIngreso] = useState("");
++  const [error, setError] = useState<string | null>(null);
++  const [isSubmitting, setIsSubmitting] = useState(false);
++
++  useEffect(() => {
++    if (!orden) {
++      return;
++    }
++
++    setLineas(buildDraftLineas(orden.lineas ?? []));
++    setNotas("");
++    setIdUbicacionIngreso("");
++    setError(null);
++    setIsSubmitting(false);
++  }, [orden]);
++
++  const canSubmit = useMemo(
++    () => Boolean(orden && codigoCuenta && activeBodegaId && lineas.length),
++    [activeBodegaId, codigoCuenta, lineas.length, orden],
++  );
++
++  if (!orden) {
++    return null;
++  }
++
++  const updateLinea = (
++    idLineaOrdenCompra: string,
++    patch: Partial<Pick<DraftLinea, "cantidadRecibidaInput" | "temperaturaInput">>,
++  ) => {
++    setLineas((current) =>
++      current.map((linea) =>
++        linea.idLineaOrdenCompra === idLineaOrdenCompra
++          ? { ...linea, ...patch }
++          : linea,
++      ),
++    );
++  };
++
++  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
++    event.preventDefault();
++
++    if (!canSubmit || !codigoCuenta || !activeBodegaId) {
++      setError("Falta cuenta o bodega activa.");
++      return;
++    }
++
++    setError(null);
++    setIsSubmitting(true);
++
++    try {
++      const lineasPayload = lineas.map((linea, index) => {
++        const cantidadRecibida = parseDecimalEs(linea.cantidadRecibidaInput);
++
++        if (
++          cantidadRecibida == null ||
++          !Number.isFinite(cantidadRecibida) ||
++          cantidadRecibida < 0
++        ) {
++          throw new DomainServiceError(
++            `La cantidad recibida de la línea ${index + 1} no es válida.`,
++            "INVALID_ARGUMENT",
++          );
++        }
++
++        const temperatura =
++          linea.temperaturaInput.trim() === ""
++            ? undefined
++            : parseDecimalEs(linea.temperaturaInput);
++
++        if (
++          temperatura != null &&
++          (!Number.isFinite(temperatura) || Number.isNaN(temperatura))
++        ) {
++          throw new DomainServiceError(
++            `La temperatura de la línea ${index + 1} no es válida.`,
++            "INVALID_ARGUMENT",
++          );
++        }
++
++        return {
++          idLineaOrdenCompra: linea.idLineaOrdenCompra,
++          cantidadRecibida,
++          ...(temperatura != null ? { temperaturaRegistrada: temperatura } : {}),
++        };
++      });
++
++      await cerrarRecepcionCompraApi({
++        idOrdenCompra: orden.id_orden_compra,
++        codigoCuenta,
++        idBodega: activeBodegaId,
++        lineas: lineasPayload,
++        ...(idUbicacionIngreso.trim()
++          ? { idUbicacionIngreso: idUbicacionIngreso.trim() }
++          : {}),
++        ...(notas.trim() ? { notas: notas.trim() } : {}),
++      });
++
++      await onRegistered();
++      onClose();
++    } catch (err: unknown) {
++      setError(
++        err instanceof DomainServiceError
++          ? err.message
++          : "No se pudo registrar la recepción.",
++      );
++    } finally {
++      setIsSubmitting(false);
++    }
++  };
++
++  return (
++    <PolariaFormModal
++      open
++      onClose={onClose}
++      sectionLabel="Recepción de mercancía"
++      title={orden.codigo}
++      description="Conciliación ciega contra la orden de compra emitida."
++      onSubmit={handleSubmit}
++      error={error}
++      isSubmitting={isSubmitting}
++      submitDisabled={!canSubmit}
++      submitLabel="Registrar recepción"
++      size="lg"
++      compact
++    >
++      {lineas.length === 0 ? (
++        <p className="polaria-text-body-sm text-polaria-w-50">
++          La orden no tiene líneas para recepcionar.
++        </p>
++      ) : (
++        <ul className="space-y-3">
++          {lineas.map((linea) => (
++            <li
++              key={linea.idLineaOrdenCompra}
++              className="rounded-xl border border-polaria-t-20 bg-polaria-t-08 px-4 py-3"
++            >
++              <p className="font-medium text-polaria-w">{linea.titulo}</p>
++              <p className="mt-1 polaria-text-body-sm text-polaria-w-50">
++                Pedido: {formatKgEs(linea.cantidadPedida)} kg · Ya recibido:{" "}
++                {formatKgEs(linea.cantidadYaRecibida)} kg
++              </p>
++              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
++                <PolariaFormInput
++                  id={`rec-cant-${linea.idLineaOrdenCompra}`}
++                  label="Cantidad recibida (kg)"
++                  inputMode="decimal"
++                  value={linea.cantidadRecibidaInput}
++                  onChange={(event) =>
++                    updateLinea(linea.idLineaOrdenCompra, {
++                      cantidadRecibidaInput: event.target.value,
++                    })
++                  }
++                  disabled={isSubmitting}
++                  compact
++                />
++                <PolariaFormInput
++                  id={`rec-temp-${linea.idLineaOrdenCompra}`}
++                  label="Temperatura (°C, opcional)"
++                  inputMode="decimal"
++                  value={linea.temperaturaInput}
++                  onChange={(event) =>
++                    updateLinea(linea.idLineaOrdenCompra, {
++                      temperaturaInput: event.target.value,
++                    })
++                  }
++                  disabled={isSubmitting}
++                  compact
++                />
++              </div>
++            </li>
++          ))}
++        </ul>
++      )}
++
++      <PolariaFormInput
++        id="rec-ubicacion-ingreso"
++        label="Ubicación de ingreso (UUID, opcional)"
++        value={idUbicacionIngreso}
++        onChange={(event) => setIdUbicacionIngreso(event.target.value)}
++        disabled={isSubmitting}
++        compact
++      />
++
++      <PolariaFormField id="rec-notas" label="Notas (opcional)" compact>
++        <textarea
++          id="rec-notas"
++          value={notas}
++          onChange={(event) => setNotas(event.target.value)}
++          disabled={isSubmitting}
++          rows={3}
++          className="w-full rounded-lg border border-polaria-w-08 bg-polaria-w-08 px-3 py-2 text-sm text-polaria-w placeholder:text-polaria-w-20 outline-none transition focus:border-polaria-t-20 focus:ring-1 focus:ring-polaria-t-20 disabled:cursor-not-allowed disabled:opacity-60"
++        />
++      </PolariaFormField>
++    </PolariaFormModal>
++  );
++}
+diff --git a/src/modules/purchases/constants/recepcion-compra.constants.ts b/src/modules/purchases/constants/recepcion-compra.constants.ts
+new file mode 100644
+index 0000000..e9bde55
+--- /dev/null
++++ b/src/modules/purchases/constants/recepcion-compra.constants.ts
+@@ -0,0 +1,21 @@
++import { WmsRol } from "@/constants/roles";
++
++/** Roles que pueden cerrar recepción física contra OC (POL-5, alineado con API). */
++export const ROLES_RECEPCION_ESCRITURA = [
++  WmsRol.configurador,
++  WmsRol.administrador_cuenta,
++  WmsRol.administrador_bodega,
++  WmsRol.jefe_bodega,
++  WmsRol.custodio,
++] as const;
++
++export type RolRecepcionEscritura =
++  (typeof ROLES_RECEPCION_ESCRITURA)[number];
++
++export function canCerrarRecepcionCompra(idRol: string | null | undefined): boolean {
++  if (!idRol) {
++    return false;
++  }
++
++  return (ROLES_RECEPCION_ESCRITURA as readonly string[]).includes(idRol);
++}
+diff --git a/src/modules/purchases/index.ts b/src/modules/purchases/index.ts
+index 2327ca7..03e3ec4 100644
+--- a/src/modules/purchases/index.ts
++++ b/src/modules/purchases/index.ts
+@@ -7,8 +7,11 @@ export type {
+ } from "./types/purchases.types";
+ 
+ export type {
++  CerrarRecepcionCompraApiInput,
+   CreateSolicitudCompraApiInput,
+   OrdenCompraApiRow,
++  RecepcionCompraApiRow,
++  RecepcionLineaApiInput,
+   SolicitudCompraLineaInput,
+   SolicitudCompraApiRow,
+ } from "./types/purchases-api.types";
+@@ -19,7 +22,7 @@ export {
+   listRecepciones,
+   listSolicitudesCompra,
+ } from "./services/purchases.service";
+-export type { OrdenCompraLineaRow } from "./services/purchases.service";
++export type { OrdenCompraLineaRow } from "./types/purchases.types";
+ 
+ export {
+   buildPedidoProveedorRequest,
+@@ -29,6 +32,7 @@ export type { PedidoProveedorRouteResponse } from "./services/pedido-proveedor-c
+ 
+ export {
+   aprobarSolicitudCompraApi,
++  cerrarRecepcionCompraApi,
+   convertirSolicitudCompraAOrdenApi,
+   createSolicitudCompraApi,
+   emitirOrdenCompraApi,
+diff --git a/src/modules/purchases/services/pedido-proveedor-client.service.ts b/src/modules/purchases/services/pedido-proveedor-client.service.ts
+index b780122..a5ce153 100644
+--- a/src/modules/purchases/services/pedido-proveedor-client.service.ts
++++ b/src/modules/purchases/services/pedido-proveedor-client.service.ts
+@@ -1,7 +1,7 @@
+ import { DomainServiceError } from "@/lib/domain-service-error";
+ import type { PedidoProveedorBody } from "@/lib/pedido-proveedor/pedido-proveedor.schema";
+ import type { OrdenCompraRow } from "../types/purchases.types";
+-import type { OrdenCompraLineaRow } from "./purchases.service";
++import type { OrdenCompraNotifyLineaRow } from "./purchases.service";
+ 
+ export interface PedidoProveedorRouteResponse {
+   ok: boolean;
+@@ -12,7 +12,7 @@ export interface PedidoProveedorRouteResponse {
+ 
+ export function buildPedidoProveedorRequest(
+   orden: OrdenCompraRow,
+-  lineas: OrdenCompraLineaRow[],
++  lineas: OrdenCompraNotifyLineaRow[],
+ ): PedidoProveedorBody {
+   const observacionesParts = [
+     orden.observaciones?.trim(),
+diff --git a/src/modules/purchases/services/purchases-api.service.test.ts b/src/modules/purchases/services/purchases-api.service.test.ts
+index 499b6a7..b206ae4 100644
+--- a/src/modules/purchases/services/purchases-api.service.test.ts
++++ b/src/modules/purchases/services/purchases-api.service.test.ts
+@@ -3,6 +3,7 @@ import { DomainServiceError } from "@/lib/domain-service-error";
+ import { ApiError, apiRequest } from "@/services/api";
+ import {
+   aprobarSolicitudCompraApi,
++  cerrarRecepcionCompraApi,
+   convertirSolicitudCompraAOrdenApi,
+   createSolicitudCompraApi,
+   emitirOrdenCompraApi,
+@@ -140,6 +141,63 @@ describe("purchases-api.service", () => {
+     );
+   });
+ 
++  it("cerrarRecepcionCompraApi cierra recepción contra OC", async () => {
++    vi.mocked(apiRequest).mockResolvedValue({
++      idRecepcion: "rec-1",
++      codigoCuenta: "CUENTA-01",
++      idBodega: "bod-1",
++      idOrdenCompra: "oc-1",
++      sinDiferencias: true,
++      notas: null,
++      cerradaAt: "2026-07-05T12:00:00.000Z",
++      estadoOrdenCompra: "recibida",
++    });
++
++    const row = await cerrarRecepcionCompraApi({
++      idOrdenCompra: "oc-1",
++      codigoCuenta: "CUENTA-01",
++      idBodega: "bod-1",
++      lineas: [
++        {
++          idLineaOrdenCompra: "linea-1",
++          cantidadRecibida: 10,
++          temperaturaRegistrada: -18,
++        },
++      ],
++    });
++
++    expect(apiRequest).toHaveBeenCalledWith(
++      "/compras/recepciones/ordenes/oc-1/cerrar",
++      {
++        method: "POST",
++        auth: true,
++        body: {
++          codigoCuenta: "CUENTA-01",
++          idBodega: "bod-1",
++          lineas: [
++            {
++              idLineaOrdenCompra: "linea-1",
++              cantidadRecibida: 10,
++              temperaturaRegistrada: -18,
++            },
++          ],
++        },
++      },
++    );
++    expect(row.idRecepcion).toBe("rec-1");
++  });
++
++  it("cerrarRecepcionCompraApi valida líneas", async () => {
++    await expect(
++      cerrarRecepcionCompraApi({
++        idOrdenCompra: "oc-1",
++        codigoCuenta: "CUENTA-01",
++        idBodega: "bod-1",
++        lineas: [],
++      }),
++    ).rejects.toBeInstanceOf(DomainServiceError);
++  });
++
+   it("propaga ApiError como DomainServiceError", async () => {
+     vi.mocked(apiRequest).mockRejectedValue(
+       new ApiError("No autorizado para esta empresa/cuenta", 403),
+diff --git a/src/modules/purchases/services/purchases-api.service.ts b/src/modules/purchases/services/purchases-api.service.ts
+index 008bbc5..180020d 100644
+--- a/src/modules/purchases/services/purchases-api.service.ts
++++ b/src/modules/purchases/services/purchases-api.service.ts
+@@ -1,9 +1,12 @@
+ import { DomainServiceError } from "@/lib/domain-service-error";
+ import { ApiError, apiRequest } from "@/services/api";
+ import type {
++  CerrarRecepcionCompraApiInput,
+   CreateOrdenCompraApiInput,
+   CreateSolicitudCompraApiInput,
+   OrdenCompraApiRow,
++  RecepcionCompraApiRow,
++  RecepcionLineaApiInput,
+   SolicitudCompraApiRow,
+ } from "../types/purchases-api.types";
+ 
+@@ -220,3 +223,81 @@ export async function emitirOrdenCompraApi(
+     `/compras/ordenes/${encodeURIComponent(id)}/emitir`,
+   );
+ }
++
++/** Cierra recepción de mercancía contra una orden de compra emitida (POL-5). */
++export async function cerrarRecepcionCompraApi(
++  input: CerrarRecepcionCompraApiInput,
++): Promise<RecepcionCompraApiRow> {
++  const idOrdenCompra = input.idOrdenCompra.trim();
++  const codigoCuenta = input.codigoCuenta.trim();
++  const idBodega = input.idBodega.trim();
++  const notas = input.notas?.trim() ?? "";
++  const idUbicacionIngreso = input.idUbicacionIngreso?.trim() ?? "";
++
++  if (!idOrdenCompra) {
++    throw new DomainServiceError(
++      "La orden de compra no es válida.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  if (!codigoCuenta) {
++    throw new DomainServiceError(
++      "No se encontró la cuenta activa.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  if (!idBodega) {
++    throw new DomainServiceError(
++      "No se encontró la bodega activa.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  if (!input.lineas.length) {
++    throw new DomainServiceError(
++      "Agrega al menos una línea de recepción.",
++      "INVALID_ARGUMENT",
++    );
++  }
++
++  const lineas: RecepcionLineaApiInput[] = input.lineas.map((linea, index) => {
++    const idLineaOrdenCompra = linea.idLineaOrdenCompra.trim();
++    const cantidadRecibida = linea.cantidadRecibida;
++
++    if (!idLineaOrdenCompra) {
++      throw new DomainServiceError(
++        `La línea ${index + 1} no es válida.`,
++        "INVALID_ARGUMENT",
++      );
++    }
++
++    if (!Number.isFinite(cantidadRecibida) || cantidadRecibida < 0) {
++      throw new DomainServiceError(
++        `La cantidad recibida de la línea ${index + 1} no es válida.`,
++        "INVALID_ARGUMENT",
++      );
++    }
++
++    return {
++      idLineaOrdenCompra,
++      cantidadRecibida,
++      ...(linea.temperaturaRegistrada != null &&
++      Number.isFinite(linea.temperaturaRegistrada)
++        ? { temperaturaRegistrada: linea.temperaturaRegistrada }
++        : {}),
++    };
++  });
++
++  return postComprasApi<RecepcionCompraApiRow>(
++    `/compras/recepciones/ordenes/${encodeURIComponent(idOrdenCompra)}/cerrar`,
++    {
++      codigoCuenta,
++      idBodega,
++      lineas,
++      ...(idUbicacionIngreso ? { idUbicacionIngreso } : {}),
++      ...(notas ? { notas } : {}),
++    },
++  );
++}
+diff --git a/src/modules/purchases/services/purchases.service.ts b/src/modules/purchases/services/purchases.service.ts
+index cf6533b..dcae2e3 100644
+--- a/src/modules/purchases/services/purchases.service.ts
++++ b/src/modules/purchases/services/purchases.service.ts
+@@ -23,7 +23,7 @@ const SOLICITUD_COLUMNS =
+ const ORDEN_COLUMNS =
+   "id_orden_compra,codigo_cuenta,id_bodega,id_proveedor,id_solicitud_compra,id_creador,codigo,estado,fecha_emision,fecha_entrega_estimada,destino_tipo,observaciones,created_at,updated_at," +
+   "proveedor(razon_social)," +
+-  "orden_compra_linea(id_linea_orden_compra,id_producto,cantidad,producto(sku,descripcion,metadatos_catalogo))";
++  "orden_compra_linea(id_linea_orden_compra,id_producto,cantidad,cantidad_recibida,producto(sku,descripcion,metadatos_catalogo))";
+ 
+ const RECEPCION_COLUMNS =
+   "id_recepcion,codigo_cuenta,id_bodega,id_orden_compra,sin_diferencias,notas,cerrada_at,cerrada_por,created_at";
+@@ -40,6 +40,7 @@ interface OrdenCompraLineaListDbRow {
+   id_linea_orden_compra: string;
+   id_producto: string;
+   cantidad: string | number;
++  cantidad_recibida?: string | number | null;
+   producto:
+     | {
+         sku: string | null;
+@@ -113,6 +114,8 @@ function mapOrdenCompraLineaListRow(
+     id_linea_orden_compra: row.id_linea_orden_compra,
+     id_producto: row.id_producto,
+     cantidad: Number(row.cantidad),
++    cantidad_recibida:
++      row.cantidad_recibida != null ? Number(row.cantidad_recibida) : 0,
+     producto: resolveOrdenLineaProducto(row.producto),
+   };
+ }
+@@ -256,7 +259,7 @@ export async function listOrdenCompraLineas(
+       .eq("id_orden_compra", ordenId);
+ 
+     return query as unknown as Promise<{
+-      data: OrdenCompraLineaDbRow[] | null;
++      data: OrdenCompraLineaNotifyDbRow[] | null;
+       error: { message: string } | null;
+     }>;
+   });
+@@ -329,7 +332,10 @@ export async function updateOrdenCompraDestino(
+       .eq("id_orden_compra", ordenId)
+       .eq("codigo_cuenta", cuenta)
+       .select("id_orden_compra")
+-      .single(),
++      .single() as unknown as Promise<{
++      data: { id_orden_compra: string } | null;
++      error: { message: string } | null;
++    }>,
+   );
+ }
+ 
+diff --git a/src/modules/purchases/types/purchases-api.types.ts b/src/modules/purchases/types/purchases-api.types.ts
+index fbc6c4f..b4358af 100644
+--- a/src/modules/purchases/types/purchases-api.types.ts
++++ b/src/modules/purchases/types/purchases-api.types.ts
+@@ -44,3 +44,29 @@ export interface CreateOrdenCompraApiInput {
+   fechaEntregaEstimada?: string | null;
+   lineas: OrdenCompraLineaApiInput[];
+ }
++
++export interface RecepcionLineaApiInput {
++  idLineaOrdenCompra: string;
++  cantidadRecibida: number;
++  temperaturaRegistrada?: number;
++}
++
++export interface CerrarRecepcionCompraApiInput {
++  idOrdenCompra: string;
++  codigoCuenta: string;
++  idBodega: string;
++  lineas: RecepcionLineaApiInput[];
++  idUbicacionIngreso?: string;
++  notas?: string | null;
++}
++
++export interface RecepcionCompraApiRow {
++  idRecepcion: string;
++  codigoCuenta: string;
++  idBodega: string;
++  idOrdenCompra: string;
++  sinDiferencias: boolean;
++  notas: string | null;
++  cerradaAt: string;
++  estadoOrdenCompra: EstadoOrdenCompra;
++}
+diff --git a/src/modules/purchases/types/purchases.types.ts b/src/modules/purchases/types/purchases.types.ts
+index bf65aa0..3567b76 100644
+--- a/src/modules/purchases/types/purchases.types.ts
++++ b/src/modules/purchases/types/purchases.types.ts
+@@ -45,6 +45,7 @@ export interface OrdenCompraLineaRow {
+   id_linea_orden_compra: string;
+   id_producto: string;
+   cantidad: number;
++  cantidad_recibida?: number;
+   producto?: {
+     sku: string | null;
+     descripcion: string | null;
+-- 
+2.43.0
+
