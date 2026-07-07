@@ -11,6 +11,8 @@ import { ConfiguracionModule } from './modules/configuracion/configuracion.modul
 import { IntegrationModule } from './modules/integration/integration.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { OperationsModule } from './modules/operations/operations.module';
+import { ProcessingModule } from './modules/processing/processing.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { InventoryModule } from './modules/inventory/inventory.module';
     IntegrationModule,
     PurchasesModule,
     InventoryModule,
+    OperationsModule,
+    ProcessingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
