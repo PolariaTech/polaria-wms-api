@@ -7,7 +7,11 @@ import type {
   TipoTarea,
 } from '../../../generated/prisma/client';
 
-export type FlujoOrdenTrabajo = 'a_bodega' | 'a_salida' | 'revisar';
+export type FlujoOrdenTrabajo =
+  | 'a_bodega'
+  | 'a_salida'
+  | 'revisar'
+  | 'bodega_a_bodega';
 
 export interface OrdenTrabajoLineaResponse {
   idLineaOrdenTrabajo: string;

@@ -13,6 +13,7 @@ export const SWAGGER_TAGS = {
   OPERACIONES_TAREAS: 'Operaciones · Tareas en cola',
   OPERACIONES_ALERTAS: 'Operaciones · Alertas',
   OPERACIONES_LLAMADAS: 'Operaciones · Llamadas al jefe',
+  OPERACIONES_REPORTES: 'Operaciones · Reportes bodega',
   PROCESAMIENTO: 'Procesamiento · Solicitudes',
   SISTEMA: 'Sistema',
 } as const;
@@ -33,6 +34,7 @@ export const SWAGGER_TAG_ORDER: readonly SwaggerTag[] = [
   SWAGGER_TAGS.OPERACIONES_TAREAS,
   SWAGGER_TAGS.OPERACIONES_ALERTAS,
   SWAGGER_TAGS.OPERACIONES_LLAMADAS,
+  SWAGGER_TAGS.OPERACIONES_REPORTES,
   SWAGGER_TAGS.PROCESAMIENTO,
   SWAGGER_TAGS.SISTEMA,
 ];
@@ -64,6 +66,8 @@ export const SWAGGER_TAG_DESCRIPTIONS: Record<SwaggerTag, string> = {
     'Alertas de temperatura, demora y órdenes reportadas. Jefe asigna; operario gestiona.',
   [SWAGGER_TAGS.OPERACIONES_LLAMADAS]:
     'Llamadas al jefe de bodega desde operario o procesador (flujo frio).',
+  [SWAGGER_TAGS.OPERACIONES_REPORTES]:
+    'Reportes operativos de bodega (solo lectura): admin bodega y jefe.',
   [SWAGGER_TAGS.PROCESAMIENTO]:
     'Solicitudes de procesamiento primario→secundario con merma y cierre por procesador.',
   [SWAGGER_TAGS.SISTEMA]: 'Health check y utilidades de la API.',

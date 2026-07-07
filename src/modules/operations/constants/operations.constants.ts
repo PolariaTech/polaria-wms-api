@@ -15,36 +15,49 @@ export const ROLES_OPERACIONES_LECTURA = [
   WmsRol.procesador,
 ] as const;
 
+/** Solo jefe crea órdenes (frio: canUseOrderForm = isJefe). */
 export const ROLES_ORDEN_TRABAJO_CREAR = [
   WmsRol.configurador,
-  WmsRol.administrador_bodega,
   WmsRol.jefe_bodega,
 ] as const;
 
+/** Solo operario ejecuta órdenes de trabajo (frio: canExecuteWorkOrders). */
 export const ROLES_ORDEN_TRABAJO_EJECUTAR = [
   WmsRol.configurador,
-  WmsRol.custodio,
   WmsRol.operario,
 ] as const;
 
-export const ROLES_TAREA_COLA_GESTION = [
+/** Jefe asigna tareas a operario/procesador. */
+export const ROLES_TAREA_COLA_ASIGNAR = [
   WmsRol.configurador,
-  WmsRol.administrador_bodega,
   WmsRol.jefe_bodega,
-  WmsRol.custodio,
-  WmsRol.operario,
 ] as const;
 
+/** Operario o procesador completan tareas (validación por tipo en servicio). */
+export const ROLES_TAREA_COLA_COMPLETAR = [
+  WmsRol.configurador,
+  WmsRol.operario,
+  WmsRol.procesador,
+] as const;
+
+/** Jefe gestiona alertas; admin bodega solo lectura. */
 export const ROLES_ALERTA_GESTION = [
   WmsRol.configurador,
-  WmsRol.administrador_bodega,
   WmsRol.jefe_bodega,
 ] as const;
 
+/** Operario ejecuta alertas asignadas. */
 export const ROLES_ALERTA_EJECUTAR = [
   WmsRol.configurador,
-  WmsRol.custodio,
   WmsRol.operario,
+] as const;
+
+/** Reportes de bodega (admin bodega + jefe, solo lectura). */
+export const ROLES_REPORTES_BODEGA = [
+  WmsRol.configurador,
+  WmsRol.administrador_cuenta,
+  WmsRol.administrador_bodega,
+  WmsRol.jefe_bodega,
 ] as const;
 
 export const ROLES_LLAMADA_CREAR = [

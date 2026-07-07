@@ -28,9 +28,9 @@ export class ListOrdenesTrabajoQueryDto extends TenantBodegaQueryDto {
   @IsString()
   estado?: string;
 
-  @ApiPropertyOptional({ enum: ['a_bodega', 'a_salida', 'revisar'] })
+  @ApiPropertyOptional({ enum: ['a_bodega', 'a_salida', 'revisar', 'bodega_a_bodega'] })
   @IsOptional()
-  @IsEnum(['a_bodega', 'a_salida', 'revisar'] as const)
+  @IsEnum(['a_bodega', 'a_salida', 'revisar', 'bodega_a_bodega'] as const)
   tipoFlujo?: FlujoOrdenTrabajo;
 }
 
@@ -44,8 +44,8 @@ export class CreateOrdenTrabajoDto {
   @IsUUID()
   idBodega!: string;
 
-  @ApiProperty({ enum: ['a_bodega', 'a_salida', 'revisar'] })
-  @IsEnum(['a_bodega', 'a_salida', 'revisar'] as const)
+  @ApiProperty({ enum: ['a_bodega', 'a_salida', 'revisar', 'bodega_a_bodega'] })
+  @IsEnum(['a_bodega', 'a_salida', 'revisar', 'bodega_a_bodega'] as const)
   tipoFlujo!: FlujoOrdenTrabajo;
 
   @ApiPropertyOptional()

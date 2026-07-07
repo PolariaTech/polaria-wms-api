@@ -34,18 +34,21 @@ const FLUJO_TIPO_OT: Record<FlujoOrdenTrabajo, TipoOrdenTrabajo> = {
   a_bodega: TipoOrdenTrabajo.reabasto,
   a_salida: TipoOrdenTrabajo.picking,
   revisar: TipoOrdenTrabajo.conteo,
+  bodega_a_bodega: TipoOrdenTrabajo.reabasto,
 };
 
 const FLUJO_TIPO_TAREA: Record<FlujoOrdenTrabajo, TipoTarea> = {
   a_bodega: TipoTarea.movimiento,
   a_salida: TipoTarea.despacho,
   revisar: TipoTarea.revision,
+  bodega_a_bodega: TipoTarea.movimiento,
 };
 
 const FLUJO_TITULO: Record<FlujoOrdenTrabajo, string> = {
   a_bodega: 'A bodega',
   a_salida: 'A salida',
   revisar: 'Revisar',
+  bodega_a_bodega: 'Bodega a bodega',
 };
 
 function parseTipoFlujo(observaciones: string | null): FlujoOrdenTrabajo | null {
@@ -53,7 +56,12 @@ function parseTipoFlujo(observaciones: string | null): FlujoOrdenTrabajo | null 
     return null;
   }
   const value = observaciones.slice('flujo:'.length).split('|')[0]?.trim();
-  if (value === 'a_bodega' || value === 'a_salida' || value === 'revisar') {
+  if (
+    value === 'a_bodega' ||
+    value === 'a_salida' ||
+    value === 'revisar' ||
+    value === 'bodega_a_bodega'
+  ) {
     return value;
   }
   return null;

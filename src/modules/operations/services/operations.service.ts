@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,6 +9,8 @@ import {
   EstadoOrdenTrabajo,
   EstadoTarea,
   TipoAlerta,
+  TipoTarea,
+  WmsRol,
 } from '../../../generated/prisma/client';
 import {
   applyTenantFilter,
@@ -100,6 +103,15 @@ export class OrdenTrabajoService {
     if (dto.tipoFlujo === 'a_salida' && !dto.idUbicacionOrigen) {
       throw new BadRequestException(
         'Las órdenes a salida requieren idUbicacionOrigen',
+      );
+    }
+
+    if (
+      dto.tipoFlujo === 'bodega_a_bodega' &&
+      (!dto.idUbicacionOrigen || !dto.idUbicacionDestino)
+    ) {
+      throw new BadRequestException(
+        'Las transferencias bodega a bodega requieren origen y destino',
       );
     }
 
@@ -251,8 +263,34 @@ export class TareaColaService {
       throw new BadRequestException('La tarea ya está completada');
     }
 
+    this.assertPuedeCompletarTarea(tarea.tipo, ctx.idRol);
+
     const updated = await this.repository.completar(idTarea, ctx.idUsuario);
     return this.repository.toResponse(updated);
+  }
+
+  private assertPuedeCompletarTarea(tipo: TipoTarea, idRol: WmsRol): void {
+    if (idRol === WmsRol.configurador) {
+      return;
+    }
+
+    if (tipo === TipoTarea.procesamiento) {
+      if (
+        idRol !== WmsRol.procesador &&
+        idRol !== WmsRol.operario
+      ) {
+        throw new ForbiddenException(
+          'Solo el procesador u operario puede completar tareas de procesamiento',
+        );
+      }
+      return;
+    }
+
+    if (idRol !== WmsRol.operario) {
+      throw new ForbiddenException(
+        'Solo el operario puede completar esta tarea',
+      );
+    }
   }
 }
 

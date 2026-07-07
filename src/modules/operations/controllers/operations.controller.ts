@@ -38,8 +38,11 @@ import {
   ROLES_OPERACIONES_LECTURA,
   ROLES_ORDEN_TRABAJO_CREAR,
   ROLES_ORDEN_TRABAJO_EJECUTAR,
-  ROLES_TAREA_COLA_GESTION,
+  ROLES_REPORTES_BODEGA,
+  ROLES_TAREA_COLA_ASIGNAR,
+  ROLES_TAREA_COLA_COMPLETAR,
 } from '../constants/operations.constants';
+import { BodegaReportesResumenDto } from '../dto/bodega-reportes-response.dto';
 import {
   AsignarAlertaDto,
   AsignarTareaDto,
@@ -53,6 +56,7 @@ import {
   ListTareasQueryDto,
   ReportarOrdenTrabajoDto,
   TenantBodegaBodyDto,
+  TenantBodegaQueryDto,
 } from '../dto/operations.dto';
 import {
   AlertaOperativaResponseDto,
@@ -73,6 +77,8 @@ import {
   OrdenTrabajoService,
   TareaColaService,
 } from '../services/operations.service';
+import { BodegaReportesService } from '../services/bodega-reportes.service';
+import type { BodegaReportesResumen } from '../infrastructure/bodega-reportes.repository';
 
 @ApiTags(SWAGGER_TAGS.OPERACIONES_ORDENES)
 @Controller('operaciones/ordenes-trabajo')
@@ -130,7 +136,7 @@ export class OrdenTrabajoController {
   @UseGuards(SensitiveWriteGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Ejecutar orden de trabajo (operario/custodio)',
+    summary: 'Ejecutar orden de trabajo (operario)',
     description:
       'Marca la orden y su tarea como completadas. Si se envía `idWarehouseState`, transfiere inventario al destino.',
   })
@@ -177,8 +183,8 @@ export class TareaColaController {
   }
 
   @Patch(':id/asignar')
-  @Roles(...ROLES_TAREA_COLA_GESTION)
-  @ApiOperation({ summary: 'Asignar tarea a operario' })
+  @Roles(...ROLES_TAREA_COLA_ASIGNAR)
+  @ApiOperation({ summary: 'Asignar tarea a operario o procesador (jefe de bodega)' })
   @ApiOkResponse({ type: TareaColaResponseDto })
   asignar(
     @Param('id', ParseUUIDPipe) id: string,
@@ -189,10 +195,13 @@ export class TareaColaController {
   }
 
   @Post(':id/completar')
-  @Roles(...ROLES_TAREA_COLA_GESTION)
+  @Roles(...ROLES_TAREA_COLA_COMPLETAR)
   @UseGuards(SensitiveWriteGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Marcar tarea como completada' })
+  @ApiOperation({
+    summary: 'Marcar tarea como completada',
+    description: 'Operario: movimiento/despacho/revisión. Procesador: procesamiento.',
+  })
   @ApiOkResponse({ type: TareaColaResponseDto })
   completar(
     @Param('id', ParseUUIDPipe) id: string,
@@ -306,5 +315,28 @@ export class LlamadaOperativaController {
     @TenantCtx() ctx: TenantContext,
   ): Promise<LlamadaOperativaResponse> {
     return this.llamadaService.atender(id, dto, ctx);
+  }
+}
+
+@ApiTags(SWAGGER_TAGS.OPERACIONES_REPORTES)
+@Controller('operaciones/reportes')
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+@ApiBearerAuth('access-token')
+export class BodegaReportesController {
+  constructor(private readonly reportesService: BodegaReportesService) {}
+
+  @Get('bodega')
+  @Roles(...ROLES_REPORTES_BODEGA)
+  @ApiOperation({
+    summary: 'Resumen de reportes operativos de bodega',
+    description:
+      'Solo lectura. Usado por administrador de bodega y jefe. Incluye ingresos, salidas, movimientos, alertas y merma.',
+  })
+  @ApiOkResponse({ type: BodegaReportesResumenDto })
+  getResumen(
+    @Query() query: TenantBodegaQueryDto,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<BodegaReportesResumen> {
+    return this.reportesService.getResumen(query, ctx);
   }
 }

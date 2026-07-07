@@ -29,6 +29,7 @@ import { SensitiveWriteGuard } from '../../../core/guards/sensitive-write.guard'
 import { TenantGuard } from '../../../core/guards/tenant.guard';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import {
+  ROLES_PROCESAMIENTO_ASIGNAR,
   ROLES_PROCESAMIENTO_CREAR,
   ROLES_PROCESAMIENTO_EJECUTAR,
   ROLES_PROCESAMIENTO_LECTURA,
@@ -93,7 +94,7 @@ export class SolicitudProcesamientoController {
   }
 
   @Patch(':id/asignar-procesador')
-  @Roles(...ROLES_PROCESAMIENTO_CREAR)
+  @Roles(...ROLES_PROCESAMIENTO_ASIGNAR)
   @ApiOperation({ summary: 'Asignar procesador y pasar a en_proceso' })
   @ApiOkResponse({ type: SolicitudProcesamientoResponseDto })
   asignarProcesador(
