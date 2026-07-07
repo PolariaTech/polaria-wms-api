@@ -21,6 +21,22 @@ Autenticación: Bearer JWT. Todos los endpoints requieren `codigoCuenta` + `idBo
 | Llamar jefe | configurador, operario, procesador |
 | Atender llamada | configurador, admin/jefe bodega |
 
+## Roles (alineado a frio)
+
+| Rol | Permisos API |
+|-----|----------------|
+| **Custodio** | Entradas vía `POST /compras/recepciones` (módulo purchases). Salidas/despacho vía ventas (fase siguiente). |
+| **Jefe bodega** | Crear OT (`a_bodega`, `a_salida`, `bodega_a_bodega`, `revisar`), asignar tareas, gestionar alertas, crear/asignar procesamiento |
+| **Admin bodega** | Solo lectura: listados + `GET /operaciones/reportes/bodega` |
+| **Operario** | Ejecutar OT, completar tareas movimiento/despacho/revisión, reportar fallos, llamar jefe |
+| **Procesador** | Ejecutar/cerrar procesamiento, llamar jefe |
+
+## Reportes
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/reportes/bodega` | Resumen ingresos, salidas, movimientos, alertas, merma (admin/jefe) |
+
 ## Órdenes de trabajo
 
 Flujos (`tipoFlujo`) equivalentes a frio:
