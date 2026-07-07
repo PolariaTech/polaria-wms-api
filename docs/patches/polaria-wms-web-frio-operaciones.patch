@@ -1,0 +1,1629 @@
+From 7f277681cbf4e979d3027265cabb19b988341e88 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 7 Jul 2026 13:20:20 +0000
+Subject: [PATCH] =?UTF-8?q?feat(operaciones):=20consumir=20API=20Nest=20?=
+ =?UTF-8?q?=E2=80=94=20jefe,=20operario,=20reportes=20y=20procesamiento?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- operations-api.service + processing-api.service
+- Jefe: modales crean OT (ingreso, salida, bodega-a-bodega, revisar) y procesamiento
+- Operario: tareas, completar, llamar jefe, alertas
+- Admin/jefe reportes vía GET /operaciones/reportes/bodega
+- listTareasCola y createSolicitudProcesamiento vía API
+---
+ .../components/JefeBodegaActionModals.tsx     |  28 +++
+ .../JefeBodegaEstadoPageContent.tsx           |  68 ++++++-
+ .../modals/JefeBodegaIngresoModal.tsx         |  98 ++++++++---
+ .../modals/JefeBodegaRevisarModal.tsx         |  89 +++++++---
+ .../modals/JefeBodegaSalidaModal.tsx          | 131 ++++++++------
+ .../modals/JefeBodegaTransferenciaModal.tsx   | 126 ++++++++-----
+ .../constants/jefe-bodega-actions.ts          |   3 +-
+ .../services/jefe-bodega-orden.service.ts     |  16 ++
+ .../OperarioOperacionPageContent.tsx          |  86 ++++++++-
+ .../services/operario-a-bodega.service.ts     |  16 +-
+ src/modules/operations/index.ts               |  18 ++
+ .../shared/services/operations-api.service.ts | 166 ++++++++++++++++++
+ .../shared/types/operations-api.types.ts      |  92 ++++++++++
+ .../shared/services/processing-api.service.ts | 141 +++++++++++++++
+ .../shared/services/processing.service.ts     |  49 ++++++
+ .../pedido-proveedor-client.service.ts        |   2 +-
+ .../services/bodega-reportes.service.ts       |  37 +++-
+ 17 files changed, 987 insertions(+), 179 deletions(-)
+ create mode 100644 src/modules/jefe-bodega/services/jefe-bodega-orden.service.ts
+ create mode 100644 src/modules/operations/index.ts
+ create mode 100644 src/modules/operations/shared/services/operations-api.service.ts
+ create mode 100644 src/modules/operations/shared/types/operations-api.types.ts
+ create mode 100644 src/modules/processing/shared/services/processing-api.service.ts
+
+diff --git a/src/modules/jefe-bodega/components/JefeBodegaActionModals.tsx b/src/modules/jefe-bodega/components/JefeBodegaActionModals.tsx
+index e3a57a3..e1dd10e 100644
+--- a/src/modules/jefe-bodega/components/JefeBodegaActionModals.tsx
++++ b/src/modules/jefe-bodega/components/JefeBodegaActionModals.tsx
+@@ -1,5 +1,6 @@
+ "use client";
+ 
++import type { UbicacionEstadoBodegaDbRow } from "@/modules/warehouses/estado-bodega/types/estado-bodega.types";
+ import type { JefeBodegaActionId } from "../constants/jefe-bodega-actions";
+ import { JefeBodegaIngresoModal } from "./modals/JefeBodegaIngresoModal";
+ import { JefeBodegaRevisarModal } from "./modals/JefeBodegaRevisarModal";
+@@ -9,29 +10,56 @@ import { JefeBodegaTransferenciaModal } from "./modals/JefeBodegaTransferenciaMo
+ interface JefeBodegaActionModalsProps {
+   activeModal: JefeBodegaActionId | null;
+   onClose: () => void;
++  codigoCuenta: string | null;
++  idBodega: string | null;
++  ubicacionesAlmacen: UbicacionEstadoBodegaDbRow[];
++  ubicacionesPicking: UbicacionEstadoBodegaDbRow[];
++  onOrdenCreated?: () => void;
+ }
+ 
+ export function JefeBodegaActionModals({
+   activeModal,
+   onClose,
++  codigoCuenta,
++  idBodega,
++  ubicacionesAlmacen,
++  ubicacionesPicking,
++  onOrdenCreated,
+ }: JefeBodegaActionModalsProps) {
+   return (
+     <>
+       <JefeBodegaIngresoModal
+         open={activeModal === "ingresos"}
+         onClose={onClose}
++        codigoCuenta={codigoCuenta}
++        idBodega={idBodega}
++        ubicacionesAlmacen={ubicacionesAlmacen}
++        onCreated={onOrdenCreated}
+       />
+       <JefeBodegaTransferenciaModal
+         open={activeModal === "bodega-a-bodega"}
+         onClose={onClose}
++        codigoCuenta={codigoCuenta}
++        idBodega={idBodega}
++        ubicacionesAlmacen={ubicacionesAlmacen}
++        onCreated={onOrdenCreated}
+       />
+       <JefeBodegaRevisarModal
+         open={activeModal === "revisar"}
+         onClose={onClose}
++        codigoCuenta={codigoCuenta}
++        idBodega={idBodega}
++        ubicacionesAlmacen={ubicacionesAlmacen}
++        onCreated={onOrdenCreated}
+       />
+       <JefeBodegaSalidaModal
+         open={activeModal === "crear-salida"}
+         onClose={onClose}
++        codigoCuenta={codigoCuenta}
++        idBodega={idBodega}
++        ubicacionesAlmacen={ubicacionesAlmacen}
++        ubicacionesPicking={ubicacionesPicking}
++        onCreated={onOrdenCreated}
+       />
+     </>
+   );
+diff --git a/src/modules/jefe-bodega/components/JefeBodegaEstadoPageContent.tsx b/src/modules/jefe-bodega/components/JefeBodegaEstadoPageContent.tsx
+index 080627d..b5827ff 100644
+--- a/src/modules/jefe-bodega/components/JefeBodegaEstadoPageContent.tsx
++++ b/src/modules/jefe-bodega/components/JefeBodegaEstadoPageContent.tsx
+@@ -1,19 +1,73 @@
+ "use client";
+ 
+-import { useState } from "react";
++import { useCallback, useEffect, useMemo, useState } from "react";
+ import { EstadoBodegaPageContent } from "@/modules/warehouses";
++import { listUbicacionesEstadoBodega } from "@/modules/warehouses/estado-bodega/services/estado-bodega.service";
++import type { UbicacionEstadoBodegaDbRow } from "@/modules/warehouses/estado-bodega/types/estado-bodega.types";
++import { OrdenProcesamientoCreateModal } from "@/modules/processing";
++import { useCompany } from "@/providers/tenant/CompanyProvider";
+ import type { JefeBodegaActionId } from "../constants/jefe-bodega-actions";
+ import { JefeBodegaActionBar } from "./JefeBodegaActionBar";
+ import { JefeBodegaActionModals } from "./JefeBodegaActionModals";
+ 
++function tipoUbicacionFlags(
++  tipo: UbicacionEstadoBodegaDbRow["tipo_ubicacion"],
++): { es_almacenamiento: boolean; es_picking: boolean } {
++  const row = Array.isArray(tipo) ? tipo[0] : tipo;
++  return {
++    es_almacenamiento: row?.es_almacenamiento === true,
++    es_picking: row?.es_picking === true,
++  };
++}
++
++function filterAlmacenamiento(rows: UbicacionEstadoBodegaDbRow[]) {
++  return rows.filter(
++    (u) => tipoUbicacionFlags(u.tipo_ubicacion).es_almacenamiento,
++  );
++}
++
++function filterPicking(rows: UbicacionEstadoBodegaDbRow[]) {
++  return rows.filter((u) => tipoUbicacionFlags(u.tipo_ubicacion).es_picking);
++}
++
+ export function JefeBodegaEstadoPageContent() {
++  const { codigoCuenta, activeBodegaId } = useCompany();
+   const [activeModal, setActiveModal] = useState<JefeBodegaActionId | null>(
+     null,
+   );
++  const [ubicaciones, setUbicaciones] = useState<UbicacionEstadoBodegaDbRow[]>(
++    [],
++  );
++  const [layoutNonce, setLayoutNonce] = useState(0);
++
++  const loadUbicaciones = useCallback(async () => {
++    if (!activeBodegaId) {
++      setUbicaciones([]);
++      return;
++    }
++    try {
++      const rows = await listUbicacionesEstadoBodega(activeBodegaId);
++      setUbicaciones(rows);
++    } catch {
++      setUbicaciones([]);
++    }
++  }, [activeBodegaId]);
++
++  useEffect(() => {
++    void loadUbicaciones();
++  }, [loadUbicaciones, layoutNonce]);
++
++  const almacen = useMemo(() => filterAlmacenamiento(ubicaciones), [ubicaciones]);
++  const picking = useMemo(() => filterPicking(ubicaciones), [ubicaciones]);
++
++  const handleOrdenCreated = useCallback(() => {
++    setLayoutNonce((n) => n + 1);
++  }, []);
+ 
+   return (
+     <>
+       <EstadoBodegaPageContent
++        key={layoutNonce}
+         operacionTabs={
+           <JefeBodegaActionBar onActionClick={setActiveModal} />
+         }
+@@ -21,7 +75,19 @@ export function JefeBodegaEstadoPageContent() {
+       <JefeBodegaActionModals
+         activeModal={activeModal}
+         onClose={() => setActiveModal(null)}
++        codigoCuenta={codigoCuenta}
++        idBodega={activeBodegaId}
++        ubicacionesAlmacen={almacen}
++        ubicacionesPicking={picking}
++        onOrdenCreated={handleOrdenCreated}
+       />
++      {activeModal === "procesamiento" ? (
++        <OrdenProcesamientoCreateModal
++          open
++          onClose={() => setActiveModal(null)}
++          onCreated={handleOrdenCreated}
++        />
++      ) : null}
+     </>
+   );
+ }
+diff --git a/src/modules/jefe-bodega/components/modals/JefeBodegaIngresoModal.tsx b/src/modules/jefe-bodega/components/modals/JefeBodegaIngresoModal.tsx
+index 109d9b3..0593cf8 100644
+--- a/src/modules/jefe-bodega/components/modals/JefeBodegaIngresoModal.tsx
++++ b/src/modules/jefe-bodega/components/modals/JefeBodegaIngresoModal.tsx
+@@ -1,42 +1,82 @@
+ "use client";
+ 
+ import { Box, LayoutGrid, MapPin, Package } from "lucide-react";
+-import { type FormEvent, useCallback } from "react";
++import { type FormEvent, useCallback, useState } from "react";
+ import { PolariaFormInput } from "@/components/shared/form/PolariaFormField";
+ import { PolariaFormModal } from "@/components/shared/form/PolariaFormModal";
++import type { UbicacionEstadoBodegaDbRow } from "@/modules/warehouses/estado-bodega/types/estado-bodega.types";
++import { createJefeOrdenTrabajo } from "../../services/jefe-bodega-orden.service";
+ import {
+   JefeBodegaModalHint,
+   JefeBodegaModalNotice,
+-  JefeBodegaModalSearchField,
+   JefeBodegaModalSection,
+ } from "./jefe-bodega-modal-ui";
+ 
+ interface JefeBodegaIngresoModalProps {
+   open: boolean;
+   onClose: () => void;
++  codigoCuenta: string | null;
++  idBodega: string | null;
++  ubicacionesAlmacen: UbicacionEstadoBodegaDbRow[];
++  onCreated?: () => void;
+ }
+ 
+ export function JefeBodegaIngresoModal({
+   open,
+   onClose,
++  codigoCuenta,
++  idBodega,
++  ubicacionesAlmacen,
++  onCreated,
+ }: JefeBodegaIngresoModalProps) {
++  const [idUbicacionDestino, setIdUbicacionDestino] = useState("");
++  const [error, setError] = useState<string | null>(null);
++  const [isSubmitting, setIsSubmitting] = useState(false);
++
+   const handleClose = useCallback(() => {
++    setError(null);
+     onClose();
+   }, [onClose]);
+ 
+-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
++  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
++    if (!codigoCuenta || !idBodega || !idUbicacionDestino) {
++      setError("Selecciona cuenta, bodega y casillero destino.");
++      return;
++    }
++
++    setIsSubmitting(true);
++    setError(null);
++
++    try {
++      await createJefeOrdenTrabajo({
++        codigoCuenta,
++        idBodega,
++        tipoFlujo: "a_bodega",
++        idUbicacionDestino,
++      });
++      onCreated?.();
++      handleClose();
++    } catch (err) {
++      setError(
++        err instanceof Error ? err.message : "No se pudo crear la orden.",
++      );
++    } finally {
++      setIsSubmitting(false);
++    }
+   };
+ 
++  const sinDestinos = ubicacionesAlmacen.length === 0;
++
+   return (
+     <PolariaFormModal
+       open={open}
+       onClose={handleClose}
+       title="Registrar entrada"
+-      description="Generar orden de ingreso"
++      description="Generar orden de ingreso (a bodega)"
+       onSubmit={handleSubmit}
+       submitLabel="Crear ingreso"
+-      submitDisabled
++      submitDisabled={sinDestinos || isSubmitting}
+       size="md"
+     >
+       <JefeBodegaModalSection icon={MapPin} label="Origen">
+@@ -50,31 +90,37 @@ export function JefeBodegaIngresoModal({
+         />
+       </JefeBodegaModalSection>
+ 
+-      <JefeBodegaModalSection icon={Package} label="Caja en ingresos">
+-        <JefeBodegaModalSearchField
+-          id="jefe-ingreso-caja"
+-          placeholder="Sin cajas disponibles"
+-        />
+-        <JefeBodegaModalNotice>
+-          No hay cajas en ingreso. Cuando el custodio registre mercancía, vas a
+-          poder elegirla acá.
+-        </JefeBodegaModalNotice>
++      <JefeBodegaModalSection icon={Package} label="Destino en bodega">
++        {sinDestinos ? (
++          <JefeBodegaModalNotice>
++            No hay casilleros de almacenamiento. Cuando el custodio registre
++            mercancía en ingreso, podrás crear órdenes hacia bodega.
++          </JefeBodegaModalNotice>
++        ) : (
++          <select
++            id="jefe-ingreso-destino"
++            value={idUbicacionDestino}
++            onChange={(e) => setIdUbicacionDestino(e.target.value)}
++            className="w-full rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-3 py-2.5 polaria-text-body-sm text-polaria-w"
++          >
++            <option value="">Seleccionar casillero</option>
++            {ubicacionesAlmacen.map((u) => (
++              <option key={u.id_ubicacion} value={u.id_ubicacion}>
++                {u.codigo}
++              </option>
++            ))}
++          </select>
++        )}
+         <JefeBodegaModalHint>
+-          Solo aparecen cajas que aún no tienen una orden pendiente hacia
+-          bodega.
++          El operario ubicará la mercancía en el casillero que elijas.
+         </JefeBodegaModalHint>
+       </JefeBodegaModalSection>
+ 
+-      <JefeBodegaModalSection icon={LayoutGrid} label="Posición en bodega">
+-        <JefeBodegaModalSearchField
+-          id="jefe-ingreso-posicion"
+-          value="Casillero 1"
+-          placeholder="Seleccionar casillero"
+-        />
+-        <JefeBodegaModalHint>
+-          El operario ubicará la caja en el casillero que elijas.
+-        </JefeBodegaModalHint>
+-      </JefeBodegaModalSection>
++      {error ? (
++        <p role="alert" className="polaria-text-body-sm text-polaria-danger">
++          {error}
++        </p>
++      ) : null}
+     </PolariaFormModal>
+   );
+ }
+diff --git a/src/modules/jefe-bodega/components/modals/JefeBodegaRevisarModal.tsx b/src/modules/jefe-bodega/components/modals/JefeBodegaRevisarModal.tsx
+index 3c0f80e..9b5a3b7 100644
+--- a/src/modules/jefe-bodega/components/modals/JefeBodegaRevisarModal.tsx
++++ b/src/modules/jefe-bodega/components/modals/JefeBodegaRevisarModal.tsx
+@@ -1,56 +1,91 @@
+ "use client";
+ 
+-import { Package } from "lucide-react";
+-import { type FormEvent, useCallback } from "react";
++import { Search } from "lucide-react";
++import { type FormEvent, useCallback, useState } from "react";
+ import { PolariaFormModal } from "@/components/shared/form/PolariaFormModal";
+-import {
+-  JefeBodegaModalHint,
+-  JefeBodegaModalNotice,
+-  JefeBodegaModalSearchField,
+-  JefeBodegaModalSection,
+-} from "./jefe-bodega-modal-ui";
+-
+-interface JefeBodegaRevisarModalProps {
++import type { UbicacionEstadoBodegaDbRow } from "@/modules/warehouses/estado-bodega/types/estado-bodega.types";
++import { createJefeOrdenTrabajo } from "../../services/jefe-bodega-orden.service";
++import { JefeBodegaModalHint, JefeBodegaModalSection } from "./jefe-bodega-modal-ui";
++
++interface Props {
+   open: boolean;
+   onClose: () => void;
++  codigoCuenta: string | null;
++  idBodega: string | null;
++  ubicacionesAlmacen: UbicacionEstadoBodegaDbRow[];
++  onCreated?: () => void;
+ }
+ 
+ export function JefeBodegaRevisarModal({
+   open,
+   onClose,
+-}: JefeBodegaRevisarModalProps) {
++  codigoCuenta,
++  idBodega,
++  ubicacionesAlmacen,
++  onCreated,
++}: Props) {
++  const [idUbicacionDestino, setIdUbicacionDestino] = useState("");
++  const [error, setError] = useState<string | null>(null);
++  const [isSubmitting, setIsSubmitting] = useState(false);
++
+   const handleClose = useCallback(() => {
++    setError(null);
+     onClose();
+   }, [onClose]);
+ 
+-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
++  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
++    if (!codigoCuenta || !idBodega || !idUbicacionDestino) {
++      setError("Selecciona la posición a revisar.");
++      return;
++    }
++
++    setIsSubmitting(true);
++    setError(null);
++
++    try {
++      await createJefeOrdenTrabajo({
++        codigoCuenta,
++        idBodega,
++        tipoFlujo: "revisar",
++        idUbicacionDestino,
++      });
++      onCreated?.();
++      handleClose();
++    } catch (err) {
++      setError(err instanceof Error ? err.message : "No se pudo crear la orden.");
++    } finally {
++      setIsSubmitting(false);
++    }
+   };
+ 
+   return (
+     <PolariaFormModal
+       open={open}
+       onClose={handleClose}
+-      title="Consultar inventario"
+-      description="Elegí una caja en ingreso, bodega o salida para que el operario la revise en detalle."
++      title="Revisar posición"
++      description="Orden de conteo / revisión de casillero"
+       onSubmit={handleSubmit}
+       submitLabel="Crear revisión"
+-      submitDisabled
++      submitDisabled={!idUbicacionDestino || isSubmitting}
+       size="md"
+     >
+-      <JefeBodegaModalSection icon={Package} label="Caja a revisar">
+-        <JefeBodegaModalSearchField
+-          id="jefe-revisar-caja"
+-          placeholder="Sin cajas en el sistema"
+-        />
+-        <JefeBodegaModalNotice>
+-          No hay mercancía en ninguna zona todavía. Cuando existan cajas, vas a
+-          poder pedir una revisión acá.
+-        </JefeBodegaModalNotice>
+-        <JefeBodegaModalHint>
+-          Las opciones se agrupan por zona para ubicarla más rápido.
+-        </JefeBodegaModalHint>
++      <JefeBodegaModalSection icon={Search} label="Posición">
++        <select
++          value={idUbicacionDestino}
++          onChange={(e) => setIdUbicacionDestino(e.target.value)}
++          className="w-full rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-3 py-2.5 polaria-text-body-sm"
++        >
++          <option value="">Seleccionar casillero</option>
++          {ubicacionesAlmacen.map((u) => (
++            <option key={u.id_ubicacion} value={u.id_ubicacion}>
++              {u.codigo}
++            </option>
++          ))}
++        </select>
++        <JefeBodegaModalHint>El operario marcará la revisión como completada.</JefeBodegaModalHint>
+       </JefeBodegaModalSection>
++      {error ? <p className="polaria-text-body-sm text-polaria-danger">{error}</p> : null}
+     </PolariaFormModal>
+   );
+ }
+diff --git a/src/modules/jefe-bodega/components/modals/JefeBodegaSalidaModal.tsx b/src/modules/jefe-bodega/components/modals/JefeBodegaSalidaModal.tsx
+index 6989b24..b0a37a9 100644
+--- a/src/modules/jefe-bodega/components/modals/JefeBodegaSalidaModal.tsx
++++ b/src/modules/jefe-bodega/components/modals/JefeBodegaSalidaModal.tsx
+@@ -1,28 +1,66 @@
+ "use client";
+ 
+-import { Box, LayoutGrid, MapPin, Package } from "lucide-react";
+-import { type FormEvent, useCallback } from "react";
+-import { PolariaFormInput } from "@/components/shared/form/PolariaFormField";
++import { Box, MapPin } from "lucide-react";
++import { type FormEvent, useCallback, useState } from "react";
++import type { UbicacionEstadoBodegaDbRow } from "@/modules/warehouses/estado-bodega/types/estado-bodega.types";
++import { createJefeOrdenTrabajo } from "../../services/jefe-bodega-orden.service";
++import { JefeBodegaModalHint, JefeBodegaModalSection } from "./jefe-bodega-modal-ui";
+ import { PolariaFormModal } from "@/components/shared/form/PolariaFormModal";
+-import {
+-  JefeBodegaModalHint,
+-  JefeBodegaModalNotice,
+-  JefeBodegaModalSearchField,
+-  JefeBodegaModalSection,
+-} from "./jefe-bodega-modal-ui";
+ 
+-interface JefeBodegaSalidaModalProps {
++interface Props {
+   open: boolean;
+   onClose: () => void;
++  codigoCuenta: string | null;
++  idBodega: string | null;
++  ubicacionesAlmacen: UbicacionEstadoBodegaDbRow[];
++  ubicacionesPicking: UbicacionEstadoBodegaDbRow[];
++  onCreated?: () => void;
+ }
+ 
+-export function JefeBodegaSalidaModal({ open, onClose }: JefeBodegaSalidaModalProps) {
++export function JefeBodegaSalidaModal({
++  open,
++  onClose,
++  codigoCuenta,
++  idBodega,
++  ubicacionesAlmacen,
++  ubicacionesPicking,
++  onCreated,
++}: Props) {
++  const [idUbicacionOrigen, setIdUbicacionOrigen] = useState("");
++  const [idUbicacionDestino, setIdUbicacionDestino] = useState("");
++  const [error, setError] = useState<string | null>(null);
++  const [isSubmitting, setIsSubmitting] = useState(false);
++
+   const handleClose = useCallback(() => {
++    setError(null);
+     onClose();
+   }, [onClose]);
+ 
+-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
++  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
++    if (!codigoCuenta || !idBodega || !idUbicacionOrigen) {
++      setError("Selecciona el casillero de origen en bodega.");
++      return;
++    }
++
++    setIsSubmitting(true);
++    setError(null);
++
++    try {
++      await createJefeOrdenTrabajo({
++        codigoCuenta,
++        idBodega,
++        tipoFlujo: "a_salida",
++        idUbicacionOrigen,
++        idUbicacionDestino: idUbicacionDestino || undefined,
++      });
++      onCreated?.();
++      handleClose();
++    } catch (err) {
++      setError(err instanceof Error ? err.message : "No se pudo crear la salida.");
++    } finally {
++      setIsSubmitting(false);
++    }
+   };
+ 
+   return (
+@@ -30,51 +68,42 @@ export function JefeBodegaSalidaModal({ open, onClose }: JefeBodegaSalidaModalPr
+       open={open}
+       onClose={handleClose}
+       title="Registrar salida"
+-      description="La caja pasará del almacenamiento a la zona de salida para preparar el despacho."
++      description="Orden para mover mercancía de bodega a zona de salida"
+       onSubmit={handleSubmit}
+       submitLabel="Crear salida"
+-      submitDisabled
++      submitDisabled={!idUbicacionOrigen || isSubmitting}
+       size="md"
+     >
+-      <JefeBodegaModalSection icon={MapPin} label="Origen">
+-        <PolariaFormInput
+-          id="jefe-salida-origen"
+-          label=""
+-          value="Bodega"
+-          readOnly
+-          aria-label="Origen"
+-          fieldClassName="[&>label]:sr-only"
+-        />
++      <JefeBodegaModalSection icon={MapPin} label="Origen (bodega)">
++        <select
++          value={idUbicacionOrigen}
++          onChange={(e) => setIdUbicacionOrigen(e.target.value)}
++          className="w-full rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-3 py-2.5 polaria-text-body-sm"
++        >
++          <option value="">Casillero origen</option>
++          {ubicacionesAlmacen.map((u) => (
++            <option key={u.id_ubicacion} value={u.id_ubicacion}>
++              {u.codigo}
++            </option>
++          ))}
++        </select>
+       </JefeBodegaModalSection>
+-
+-      <JefeBodegaModalSection icon={Package} label="Caja en bodega">
+-        <JefeBodegaModalSearchField
+-          id="jefe-salida-caja"
+-          placeholder="Sin cajas disponibles"
+-        />
+-        <JefeBodegaModalNotice>
+-          No hay cajas en bodega para enviar a salida, o ya tienen una orden
+-          asignada.
+-        </JefeBodegaModalNotice>
+-        <JefeBodegaModalHint>
+-          Solo cajas del almacenamiento sin orden pendiente hacia salida.
+-        </JefeBodegaModalHint>
+-      </JefeBodegaModalSection>
+-
+-      <JefeBodegaModalSection icon={LayoutGrid} label="Posición en salida">
+-        <PolariaFormInput
+-          id="jefe-salida-posicion"
+-          label=""
+-          value="1"
+-          readOnly
+-          aria-label="Posición en salida"
+-          fieldClassName="[&>label]:sr-only"
+-        />
+-        <JefeBodegaModalHint>
+-          Cupos en la columna de salida; se asigna automáticamente según
+-          disponibilidad.
+-        </JefeBodegaModalHint>
++      <JefeBodegaModalSection icon={Box} label="Destino (salida, opcional)">
++        <select
++          value={idUbicacionDestino}
++          onChange={(e) => setIdUbicacionDestino(e.target.value)}
++          className="w-full rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-3 py-2.5 polaria-text-body-sm"
++        >
++          <option value="">Auto / primera libre</option>
++          {ubicacionesPicking.map((u) => (
++            <option key={u.id_ubicacion} value={u.id_ubicacion}>
++              {u.codigo}
++            </option>
++          ))}
++        </select>
++        <JefeBodegaModalHint>El operario ejecutará el traslado.</JefeBodegaModalHint>
+       </JefeBodegaModalSection>
++      {error ? <p className="polaria-text-body-sm text-polaria-danger">{error}</p> : null}
+     </PolariaFormModal>
+   );
+ }
+diff --git a/src/modules/jefe-bodega/components/modals/JefeBodegaTransferenciaModal.tsx b/src/modules/jefe-bodega/components/modals/JefeBodegaTransferenciaModal.tsx
+index bc64c1f..492e464 100644
+--- a/src/modules/jefe-bodega/components/modals/JefeBodegaTransferenciaModal.tsx
++++ b/src/modules/jefe-bodega/components/modals/JefeBodegaTransferenciaModal.tsx
+@@ -1,30 +1,68 @@
+ "use client";
+ 
+-import { Box, LayoutGrid, MapPin, Package } from "lucide-react";
+-import { type FormEvent, useCallback } from "react";
+-import { PolariaFormInput } from "@/components/shared/form/PolariaFormField";
++import { ArrowLeftRight } from "lucide-react";
++import { type FormEvent, useCallback, useState } from "react";
+ import { PolariaFormModal } from "@/components/shared/form/PolariaFormModal";
+-import {
+-  JefeBodegaModalHint,
+-  JefeBodegaModalSearchField,
+-  JefeBodegaModalSection,
+-} from "./jefe-bodega-modal-ui";
++import type { UbicacionEstadoBodegaDbRow } from "@/modules/warehouses/estado-bodega/types/estado-bodega.types";
++import { createJefeOrdenTrabajo } from "../../services/jefe-bodega-orden.service";
++import { JefeBodegaModalSection } from "./jefe-bodega-modal-ui";
+ 
+-interface JefeBodegaTransferenciaModalProps {
++interface Props {
+   open: boolean;
+   onClose: () => void;
++  codigoCuenta: string | null;
++  idBodega: string | null;
++  ubicacionesAlmacen: UbicacionEstadoBodegaDbRow[];
++  onCreated?: () => void;
+ }
+ 
+ export function JefeBodegaTransferenciaModal({
+   open,
+   onClose,
+-}: JefeBodegaTransferenciaModalProps) {
++  codigoCuenta,
++  idBodega,
++  ubicacionesAlmacen,
++  onCreated,
++}: Props) {
++  const [idUbicacionOrigen, setIdUbicacionOrigen] = useState("");
++  const [idUbicacionDestino, setIdUbicacionDestino] = useState("");
++  const [error, setError] = useState<string | null>(null);
++  const [isSubmitting, setIsSubmitting] = useState(false);
++
+   const handleClose = useCallback(() => {
++    setError(null);
+     onClose();
+   }, [onClose]);
+ 
+-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
++  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
++    if (!codigoCuenta || !idBodega || !idUbicacionOrigen || !idUbicacionDestino) {
++      setError("Selecciona origen y destino.");
++      return;
++    }
++    if (idUbicacionOrigen === idUbicacionDestino) {
++      setError("Origen y destino deben ser distintos.");
++      return;
++    }
++
++    setIsSubmitting(true);
++    setError(null);
++
++    try {
++      await createJefeOrdenTrabajo({
++        codigoCuenta,
++        idBodega,
++        tipoFlujo: "bodega_a_bodega",
++        idUbicacionOrigen,
++        idUbicacionDestino,
++      });
++      onCreated?.();
++      handleClose();
++    } catch (err) {
++      setError(err instanceof Error ? err.message : "No se pudo crear la orden.");
++    } finally {
++      setIsSubmitting(false);
++    }
+   };
+ 
+   return (
+@@ -32,49 +70,41 @@ export function JefeBodegaTransferenciaModal({
+       open={open}
+       onClose={handleClose}
+       title="Transferir cajas"
+-      description="Mové mercancía de un casillero a otro dentro del almacenamiento."
++      description="Bodega a bodega dentro del almacenamiento"
+       onSubmit={handleSubmit}
+       submitLabel="Crear orden"
+-      submitDisabled
++      submitDisabled={isSubmitting}
+       size="md"
+     >
+-      <JefeBodegaModalSection icon={MapPin} label="Destino de la orden">
+-        <PolariaFormInput
+-          id="jefe-transfer-destino"
+-          label=""
+-          value="Bodega (mapa interno)"
+-          readOnly
+-          aria-label="Destino de la orden"
+-          fieldClassName="[&>label]:sr-only"
+-        />
+-      </JefeBodegaModalSection>
+-
+-      <JefeBodegaModalSection icon={Box} label="Origen">
+-        <JefeBodegaModalSearchField
+-          id="jefe-transfer-origen"
+-          value="Bodega (casillero ocupado)"
+-          placeholder="Seleccionar origen"
+-        />
+-      </JefeBodegaModalSection>
+-
+-      <JefeBodegaModalSection icon={Package} label="Caja en bodega">
+-        <JefeBodegaModalSearchField
+-          id="jefe-transfer-caja"
+-          placeholder="Sin cajas disponibles"
+-        />
+-        <JefeBodegaModalHint>
+-          Cajas ocupadas en el mapa que aún no tienen orden de traslado
+-          pendiente.
+-        </JefeBodegaModalHint>
++      <JefeBodegaModalSection icon={ArrowLeftRight} label="Origen">
++        <select
++          value={idUbicacionOrigen}
++          onChange={(e) => setIdUbicacionOrigen(e.target.value)}
++          className="w-full rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-3 py-2.5 polaria-text-body-sm"
++        >
++          <option value="">Casillero origen</option>
++          {ubicacionesAlmacen.map((u) => (
++            <option key={u.id_ubicacion} value={u.id_ubicacion}>
++              {u.codigo}
++            </option>
++          ))}
++        </select>
+       </JefeBodegaModalSection>
+-
+-      <JefeBodegaModalSection icon={LayoutGrid} label="Nueva posición">
+-        <JefeBodegaModalSearchField
+-          id="jefe-transfer-posicion"
+-          value="Casillero 1"
+-          placeholder="Seleccionar casillero"
+-        />
++      <JefeBodegaModalSection icon={ArrowLeftRight} label="Destino">
++        <select
++          value={idUbicacionDestino}
++          onChange={(e) => setIdUbicacionDestino(e.target.value)}
++          className="w-full rounded-xl border border-polaria-w-08 bg-polaria-w-08 px-3 py-2.5 polaria-text-body-sm"
++        >
++          <option value="">Casillero destino</option>
++          {ubicacionesAlmacen.map((u) => (
++            <option key={u.id_ubicacion} value={u.id_ubicacion}>
++              {u.codigo}
++            </option>
++          ))}
++        </select>
+       </JefeBodegaModalSection>
++      {error ? <p className="polaria-text-body-sm text-polaria-danger">{error}</p> : null}
+     </PolariaFormModal>
+   );
+ }
+diff --git a/src/modules/jefe-bodega/constants/jefe-bodega-actions.ts b/src/modules/jefe-bodega/constants/jefe-bodega-actions.ts
+index 5d5bb03..5fef0f4 100644
+--- a/src/modules/jefe-bodega/constants/jefe-bodega-actions.ts
++++ b/src/modules/jefe-bodega/constants/jefe-bodega-actions.ts
+@@ -49,9 +49,8 @@ export const JEFE_BODEGA_ACTIONS: readonly JefeBodegaAction[] = [
+   {
+     id: "procesamiento",
+     title: "Procesamiento",
+-    subtitle: "Próximamente",
++    subtitle: "Nueva solicitud",
+     icon: Cpu,
+-    disabled: true,
+   },
+   {
+     id: "crear-salida",
+diff --git a/src/modules/jefe-bodega/services/jefe-bodega-orden.service.ts b/src/modules/jefe-bodega/services/jefe-bodega-orden.service.ts
+new file mode 100644
+index 0000000..ee52876
+--- /dev/null
++++ b/src/modules/jefe-bodega/services/jefe-bodega-orden.service.ts
+@@ -0,0 +1,16 @@
++import { createOrdenTrabajoApi } from "@/modules/operations";
++import type { FlujoOrdenTrabajoApi } from "@/modules/operations";
++
++export interface CreateJefeOrdenInput {
++  codigoCuenta: string;
++  idBodega: string;
++  tipoFlujo: FlujoOrdenTrabajoApi;
++  idUbicacionOrigen?: string;
++  idUbicacionDestino?: string;
++  idAsignado?: string;
++  observaciones?: string;
++}
++
++export async function createJefeOrdenTrabajo(input: CreateJefeOrdenInput) {
++  return createOrdenTrabajoApi(input);
++}
+diff --git a/src/modules/operario/components/OperarioOperacionPageContent.tsx b/src/modules/operario/components/OperarioOperacionPageContent.tsx
+index 51c95bb..2b205d4 100644
+--- a/src/modules/operario/components/OperarioOperacionPageContent.tsx
++++ b/src/modules/operario/components/OperarioOperacionPageContent.tsx
+@@ -9,6 +9,11 @@ import {
+   PolariaRequestPanel,
+ } from "@/components/shared/requests";
+ import { useAsyncQuery } from "@/hooks/shared/useAsyncQuery";
++import {
++  completarTareaColaApi,
++  crearLlamadaJefeApi,
++  listAlertasOperativasApi,
++} from "@/modules/operations";
+ import { useCompany } from "@/providers/tenant/CompanyProvider";
+ import { useAuthStore } from "@/stores/auth.store";
+ import {
+@@ -24,6 +29,7 @@ export function OperarioOperacionPageContent() {
+   const { codigoCuenta, activeBodegaId } = useCompany();
+   const idUsuario = useAuthStore((state) => state.session?.idUsuario ?? null);
+   const [actionNotice, setActionNotice] = useState<string | null>(null);
++  const [isMutating, setIsMutating] = useState(false);
+ 
+   const fetchTareas = useCallback(
+     () =>
+@@ -35,11 +41,75 @@ export function OperarioOperacionPageContent() {
+     [activeBodegaId, codigoCuenta, idUsuario],
+   );
+ 
+-  const { data, isLoading, error } = useAsyncQuery(
++  const { data, isLoading, error, reload } = useAsyncQuery(
+     fetchTareas,
+     Boolean(codigoCuenta && activeBodegaId && idUsuario),
+   );
+ 
++  const handleCompletarTarea = useCallback(
++    async (idTarea: string) => {
++      if (!codigoCuenta || !activeBodegaId) return;
++      setIsMutating(true);
++      setActionNotice(null);
++      try {
++        await completarTareaColaApi(idTarea, {
++          codigoCuenta,
++          idBodega: activeBodegaId,
++        });
++        setActionNotice("Tarea completada.");
++        await reload();
++      } catch (err) {
++        setActionNotice(
++          err instanceof Error ? err.message : "No se pudo completar la tarea.",
++        );
++      } finally {
++        setIsMutating(false);
++      }
++    },
++    [activeBodegaId, codigoCuenta, reload],
++  );
++
++  const handleLlamarJefe = useCallback(async () => {
++    if (!codigoCuenta || !activeBodegaId) return;
++    setIsMutating(true);
++    setActionNotice(null);
++    try {
++      await crearLlamadaJefeApi({ codigoCuenta, idBodega: activeBodegaId });
++      setActionNotice("Llamada enviada al jefe de bodega.");
++    } catch (err) {
++      setActionNotice(
++        err instanceof Error ? err.message : "No se pudo llamar al jefe.",
++      );
++    } finally {
++      setIsMutating(false);
++    }
++  }, [activeBodegaId, codigoCuenta]);
++
++  const handleVerAlertas = useCallback(async () => {
++    if (!codigoCuenta || !activeBodegaId) return;
++    setIsMutating(true);
++    setActionNotice(null);
++    try {
++      const alertas = await listAlertasOperativasApi({
++        codigoCuenta,
++        idBodega: activeBodegaId,
++        estado: "abierta",
++      });
++      const asignadas = alertas.filter((a) => a.idResponsable === idUsuario);
++      setActionNotice(
++        asignadas.length > 0
++          ? `Tienes ${asignadas.length} alerta(s) asignada(s).`
++          : "No tienes alertas asignadas.",
++      );
++    } catch (err) {
++      setActionNotice(
++        err instanceof Error ? err.message : "No se pudieron cargar alertas.",
++      );
++    } finally {
++      setIsMutating(false);
++    }
++  }, [activeBodegaId, codigoCuenta, idUsuario]);
++
+   const tareas = data ?? [];
+   const tareasCount = tareas.length;
+   const pendientesCount = tareasCount;
+@@ -59,6 +129,11 @@ export function OperarioOperacionPageContent() {
+               `Traslado ${tarea.id_tarea.slice(0, 8)}`
+             }
+             subtitle={tarea.descripcion?.trim() || undefined}
++            onClick={
++              isMutating
++                ? undefined
++                : () => void handleCompletarTarea(tarea.id_tarea)
++            }
+           />
+         ))}
+       </div>
+@@ -74,9 +149,7 @@ export function OperarioOperacionPageContent() {
+           icon: AlertCircle,
+           tone: "teal",
+           onClick: () => {
+-            setActionNotice(
+-              "Las alertas de bodega estarán disponibles próximamente.",
+-            );
++            void handleVerAlertas();
+           },
+         },
+         {
+@@ -85,10 +158,9 @@ export function OperarioOperacionPageContent() {
+           icon: Phone,
+           tone: "warning",
+           onClick: () => {
+-            setActionNotice(
+-              "La llamada al jefe de bodega estará disponible próximamente.",
+-            );
++            void handleLlamarJefe();
+           },
++          disabled: isMutating,
+         },
+       ]}
+     />
+diff --git a/src/modules/operario/services/operario-a-bodega.service.ts b/src/modules/operario/services/operario-a-bodega.service.ts
+index aa107ec..cb7421c 100644
+--- a/src/modules/operario/services/operario-a-bodega.service.ts
++++ b/src/modules/operario/services/operario-a-bodega.service.ts
+@@ -1,5 +1,5 @@
+-import { listTareasCola } from "@/modules/processing";
+-import type { TareaColaRow } from "@/modules/processing";
++import { listTareasColaApi } from "@/modules/operations";
++import type { TareaColaRow } from "@/modules/processing/shared/types/processing.types";
+ 
+ export interface ListTareasOperarioABodegaParams {
+   codigoCuenta: string | null;
+@@ -7,7 +7,7 @@ export interface ListTareasOperarioABodegaParams {
+   idUsuario: string | null;
+ }
+ 
+-/** Tareas de movimiento / traslado pendientes asignadas al operario. */
++/** Tareas de movimiento / traslado pendientes asignadas al operario (API Nest). */
+ export async function listTareasOperarioABodega(
+   params: ListTareasOperarioABodegaParams,
+ ): Promise<TareaColaRow[]> {
+@@ -17,15 +17,17 @@ export async function listTareasOperarioABodega(
+     return [];
+   }
+ 
+-  const rows = await listTareasCola({
++  const rows = await listTareasColaApi({
+     codigoCuenta,
+     idBodega,
++    idAsignado: idUsuario,
++    estado: "pendiente",
+   });
+ 
+   return rows.filter(
+     (row) =>
+-      row.id_asignado === idUsuario &&
+-      row.estado === "pendiente" &&
+-      row.tipo === "movimiento",
++      row.tipo === "movimiento" ||
++      row.tipo === "despacho" ||
++      row.tipo === "revision",
+   );
+ }
+diff --git a/src/modules/operations/index.ts b/src/modules/operations/index.ts
+new file mode 100644
+index 0000000..d6c5430
+--- /dev/null
++++ b/src/modules/operations/index.ts
+@@ -0,0 +1,18 @@
++export type {
++  BodegaReportesApiResumen,
++  CreateOrdenTrabajoApiInput,
++  FlujoOrdenTrabajoApi,
++  OrdenTrabajoApiRow,
++} from "./shared/types/operations-api.types";
++
++export {
++  asignarTareaColaApi,
++  completarTareaColaApi,
++  createOrdenTrabajoApi,
++  crearLlamadaJefeApi,
++  ejecutarOrdenTrabajoApi,
++  getBodegaReportesApi,
++  listAlertasOperativasApi,
++  listOrdenesTrabajoApi,
++  listTareasColaApi,
++} from "./shared/services/operations-api.service";
+diff --git a/src/modules/operations/shared/services/operations-api.service.ts b/src/modules/operations/shared/services/operations-api.service.ts
+new file mode 100644
+index 0000000..ed169f1
+--- /dev/null
++++ b/src/modules/operations/shared/services/operations-api.service.ts
+@@ -0,0 +1,166 @@
++import { DomainServiceError } from "@/lib/utils/domain-service-error";
++import { ApiError, apiRequest } from "@/services/api/api";
++import type { TareaColaRow } from "@/modules/processing/shared/types/processing.types";
++import type {
++  AlertaOperativaApiRow,
++  BodegaReportesApiResumen,
++  CreateOrdenTrabajoApiInput,
++  EjecutarOrdenTrabajoApiInput,
++  LlamadaOperativaApiRow,
++  OrdenTrabajoApiRow,
++  TareaColaApiRow,
++  TenantBodegaApiParams,
++} from "../types/operations-api.types";
++
++function tenantQuery(params: TenantBodegaApiParams): string {
++  const codigoCuenta = encodeURIComponent(params.codigoCuenta.trim());
++  const idBodega = encodeURIComponent(params.idBodega.trim());
++  return `codigoCuenta=${codigoCuenta}&idBodega=${idBodega}`;
++}
++
++async function mutateApi<T>(
++  path: string,
++  method: "POST" | "PATCH",
++  body?: unknown,
++): Promise<T> {
++  try {
++    return await apiRequest<T>(path, { method, auth: true, body });
++  } catch (error) {
++    if (error instanceof ApiError) {
++      throw new DomainServiceError(error.message, "MUTATION_FAILED", error);
++    }
++    throw error;
++  }
++}
++
++function mapTareaColaRow(row: TareaColaApiRow): TareaColaRow {
++  return {
++    id_tarea: row.idTarea,
++    codigo_cuenta: row.codigoCuenta,
++    id_bodega: row.idBodega,
++    tipo: row.tipo as TareaColaRow["tipo"],
++    estado: row.estado as TareaColaRow["estado"],
++    id_asignado: row.idAsignado,
++    id_orden_trabajo: row.idOrdenTrabajo,
++    titulo: row.titulo,
++    descripcion: row.descripcion,
++    created_at: row.createdAt,
++    updated_at: row.updatedAt,
++  };
++}
++
++export async function listOrdenesTrabajoApi(
++  params: TenantBodegaApiParams & { estado?: string; tipoFlujo?: string },
++): Promise<OrdenTrabajoApiRow[]> {
++  const qs = tenantQuery(params);
++  const extra = [
++    params.estado ? `estado=${encodeURIComponent(params.estado)}` : "",
++    params.tipoFlujo ? `tipoFlujo=${encodeURIComponent(params.tipoFlujo)}` : "",
++  ]
++    .filter(Boolean)
++    .join("&");
++
++  return apiRequest<OrdenTrabajoApiRow[]>(
++    `/operaciones/ordenes-trabajo?${qs}${extra ? `&${extra}` : ""}`,
++    { auth: true },
++  );
++}
++
++export async function createOrdenTrabajoApi(
++  input: CreateOrdenTrabajoApiInput,
++): Promise<OrdenTrabajoApiRow> {
++  return mutateApi<OrdenTrabajoApiRow>(
++    "/operaciones/ordenes-trabajo",
++    "POST",
++    input,
++  );
++}
++
++export async function ejecutarOrdenTrabajoApi(
++  idOrdenTrabajo: string,
++  input: EjecutarOrdenTrabajoApiInput,
++): Promise<OrdenTrabajoApiRow> {
++  return mutateApi<OrdenTrabajoApiRow>(
++    `/operaciones/ordenes-trabajo/${encodeURIComponent(idOrdenTrabajo)}/ejecutar`,
++    "POST",
++    input,
++  );
++}
++
++export async function listTareasColaApi(
++  params: TenantBodegaApiParams & { estado?: string; idAsignado?: string },
++): Promise<TareaColaRow[]> {
++  const qs = tenantQuery(params);
++  const extra = [
++    params.estado ? `estado=${encodeURIComponent(params.estado)}` : "",
++    params.idAsignado
++      ? `idAsignado=${encodeURIComponent(params.idAsignado)}`
++      : "",
++  ]
++    .filter(Boolean)
++    .join("&");
++
++  const rows = await apiRequest<TareaColaApiRow[]>(
++    `/operaciones/tareas?${qs}${extra ? `&${extra}` : ""}`,
++    { auth: true },
++  );
++
++  return rows.map(mapTareaColaRow);
++}
++
++export async function asignarTareaColaApi(
++  idTarea: string,
++  params: TenantBodegaApiParams & { idAsignado?: string },
++): Promise<TareaColaRow> {
++  const row = await mutateApi<TareaColaApiRow>(
++    `/operaciones/tareas/${encodeURIComponent(idTarea)}/asignar`,
++    "PATCH",
++    params,
++  );
++  return mapTareaColaRow(row);
++}
++
++export async function completarTareaColaApi(
++  idTarea: string,
++  params: TenantBodegaApiParams,
++): Promise<TareaColaRow> {
++  const row = await mutateApi<TareaColaApiRow>(
++    `/operaciones/tareas/${encodeURIComponent(idTarea)}/completar`,
++    "POST",
++    params,
++  );
++  return mapTareaColaRow(row);
++}
++
++export async function listAlertasOperativasApi(
++  params: TenantBodegaApiParams & { estado?: string },
++): Promise<AlertaOperativaApiRow[]> {
++  const qs = tenantQuery(params);
++  const extra = params.estado
++    ? `&estado=${encodeURIComponent(params.estado)}`
++    : "";
++
++  return apiRequest<AlertaOperativaApiRow[]>(
++    `/operaciones/alertas?${qs}${extra}`,
++    { auth: true },
++  );
++}
++
++export async function crearLlamadaJefeApi(
++  params: TenantBodegaApiParams & { message?: string },
++): Promise<LlamadaOperativaApiRow> {
++  return mutateApi<LlamadaOperativaApiRow>(
++    "/operaciones/llamadas",
++    "POST",
++    params,
++  );
++}
++
++export async function getBodegaReportesApi(
++  params: TenantBodegaApiParams,
++): Promise<BodegaReportesApiResumen> {
++  return apiRequest<BodegaReportesApiResumen>(
++    `/operaciones/reportes/bodega?${tenantQuery(params)}`,
++    { auth: true },
++  );
++}
+diff --git a/src/modules/operations/shared/types/operations-api.types.ts b/src/modules/operations/shared/types/operations-api.types.ts
+new file mode 100644
+index 0000000..b6c6ca3
+--- /dev/null
++++ b/src/modules/operations/shared/types/operations-api.types.ts
+@@ -0,0 +1,92 @@
++export type FlujoOrdenTrabajoApi =
++  | "a_bodega"
++  | "a_salida"
++  | "revisar"
++  | "bodega_a_bodega";
++
++export interface OrdenTrabajoApiRow {
++  idOrdenTrabajo: string;
++  codigoCuenta: string;
++  idBodega: string;
++  codigo: string;
++  estado: string;
++  tipo: string;
++  tipoFlujo: FlujoOrdenTrabajoApi | null;
++  idAsignado: string | null;
++  idSolicitante: string | null;
++  idLote: string | null;
++  idUbicacionOrigen: string | null;
++  idUbicacionDestino: string | null;
++  observaciones: string | null;
++  createdAt: string;
++  updatedAt: string;
++}
++
++export interface TareaColaApiRow {
++  idTarea: string;
++  codigoCuenta: string;
++  idBodega: string;
++  tipo: string;
++  estado: string;
++  idAsignado: string | null;
++  idOrdenTrabajo: string | null;
++  titulo: string | null;
++  descripcion: string | null;
++  createdAt: string;
++  updatedAt: string;
++}
++
++export interface AlertaOperativaApiRow {
++  idAlerta: string;
++  codigoCuenta: string;
++  idBodega: string;
++  tipo: string;
++  estado: string;
++  titulo: string;
++  descripcion: string | null;
++  idResponsable: string | null;
++  createdAt: string;
++}
++
++export interface LlamadaOperativaApiRow {
++  idLlamada: string;
++  codigoCuenta: string;
++  idBodega: string;
++  fromRol: string;
++  message: string;
++  atendida: boolean;
++  createdAt: string;
++}
++
++export interface BodegaReportesApiResumen {
++  ingresos: number;
++  salidas: number;
++  movimientos: number;
++  despachados: number;
++  alertas: number;
++  mermaKg: number;
++  ordenesTrabajoPendientes: number;
++  tareasPendientes: number;
++  llamadasPendientes: number;
++}
++
++export interface TenantBodegaApiParams {
++  codigoCuenta: string;
++  idBodega: string;
++}
++
++export interface CreateOrdenTrabajoApiInput extends TenantBodegaApiParams {
++  tipoFlujo: FlujoOrdenTrabajoApi;
++  idUbicacionOrigen?: string;
++  idUbicacionDestino?: string;
++  idLote?: string;
++  idProducto?: string;
++  cantidad?: number;
++  idAsignado?: string;
++  observaciones?: string;
++}
++
++export interface EjecutarOrdenTrabajoApiInput extends TenantBodegaApiParams {
++  idWarehouseState?: string;
++  version?: number;
++}
+diff --git a/src/modules/processing/shared/services/processing-api.service.ts b/src/modules/processing/shared/services/processing-api.service.ts
+new file mode 100644
+index 0000000..f17784f
+--- /dev/null
++++ b/src/modules/processing/shared/services/processing-api.service.ts
+@@ -0,0 +1,141 @@
++import { DomainServiceError } from "@/lib/utils/domain-service-error";
++import { ApiError, apiRequest } from "@/services/api/api";
++import type {
++  CreateSolicitudProcesamientoInput,
++  SolicitudProcesamientoRow,
++} from "../types/processing.types";
++
++async function mutateApi<T>(
++  path: string,
++  method: "POST" | "PATCH",
++  body?: unknown,
++): Promise<T> {
++  try {
++    return await apiRequest<T>(path, { method, auth: true, body });
++  } catch (error) {
++    if (error instanceof ApiError) {
++      throw new DomainServiceError(error.message, "MUTATION_FAILED", error);
++    }
++    throw error;
++  }
++}
++
++interface SolicitudProcesamientoApiRow {
++  idSolicitudProcesamiento: string;
++  codigoCuenta: string;
++  idBodega: string;
++  codigo: string;
++  idCliente: string | null;
++  idProductoPrimario: string;
++  idProductoSecundario: string;
++  idSolicitante: string;
++  idProcesador: string | null;
++  estado: string;
++  kilosPrimario: string;
++  kilosSecundario: string | null;
++  kilosMerma: string | null;
++  reglaConversionCantidadPrimario: string | null;
++  reglaConversionUnidadesSecundario: string | null;
++  estimadoUnidadesSecundario: string | null;
++  createdAt: string;
++  updatedAt: string;
++}
++
++function mapSolicitudRow(row: SolicitudProcesamientoApiRow): SolicitudProcesamientoRow {
++  return {
++    id_solicitud_procesamiento: row.idSolicitudProcesamiento,
++    codigo_cuenta: row.codigoCuenta,
++    id_bodega: row.idBodega,
++    codigo: row.codigo,
++    id_cliente: row.idCliente,
++    id_producto_primario: row.idProductoPrimario,
++    id_producto_secundario: row.idProductoSecundario,
++    id_solicitante: row.idSolicitante,
++    id_procesador: row.idProcesador,
++    estado: row.estado as SolicitudProcesamientoRow["estado"],
++    kilos_primario: row.kilosPrimario,
++    kilos_secundario: row.kilosSecundario,
++    kilos_merma: row.kilosMerma,
++    regla_conversion_cantidad_primario: row.reglaConversionCantidadPrimario,
++    regla_conversion_unidades_secundario: row.reglaConversionUnidadesSecundario,
++    estimado_unidades_secundario: row.estimadoUnidadesSecundario,
++    created_at: row.createdAt,
++    updated_at: row.updatedAt,
++  };
++}
++
++export async function listSolicitudesProcesamientoApi(params: {
++  codigoCuenta: string;
++  idBodega: string;
++  estado?: string;
++  idProcesador?: string;
++}): Promise<SolicitudProcesamientoRow[]> {
++  const qs = new URLSearchParams({
++    codigoCuenta: params.codigoCuenta,
++    idBodega: params.idBodega,
++  });
++  if (params.estado) qs.set("estado", params.estado);
++  if (params.idProcesador) qs.set("idProcesador", params.idProcesador);
++
++  const rows = await apiRequest<SolicitudProcesamientoApiRow[]>(
++    `/procesamiento/solicitudes?${qs.toString()}`,
++    { auth: true },
++  );
++
++  return rows.map(mapSolicitudRow);
++}
++
++export async function createSolicitudProcesamientoApi(
++  input: Omit<CreateSolicitudProcesamientoInput, "idSolicitante"> & {
++    idSolicitante?: string;
++  },
++): Promise<SolicitudProcesamientoRow> {
++  const row = await mutateApi<SolicitudProcesamientoApiRow>(
++    "/procesamiento/solicitudes",
++    "POST",
++    {
++      codigoCuenta: input.codigoCuenta,
++      idBodega: input.idBodega,
++      idProductoPrimario: input.idProductoPrimario,
++      idProductoSecundario: input.idProductoSecundario,
++      kilosPrimario: input.kilosPrimario,
++      reglaConversionCantidadPrimario: input.reglaConversionCantidadPrimario,
++      reglaConversionUnidadesSecundario:
++        input.reglaConversionUnidadesSecundario,
++      perdidaProcesamientoPct: undefined,
++      observaciones: undefined,
++    },
++  );
++
++  return mapSolicitudRow(row);
++}
++
++export async function asignarProcesadorApi(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string; idProcesador: string },
++): Promise<SolicitudProcesamientoRow> {
++  const row = await mutateApi<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/asignar-procesador`,
++    "PATCH",
++    params,
++  );
++  return mapSolicitudRow(row);
++}
++
++export async function cerrarSolicitudProcesamientoApi(
++  idSolicitud: string,
++  params: {
++    codigoCuenta: string;
++    idBodega: string;
++    kilosSecundario: number;
++    kilosMerma: number;
++    sobranteKg?: number;
++  },
++): Promise<SolicitudProcesamientoRow> {
++  const row = await mutateApi<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/cerrar`,
++    "POST",
++    params,
++  );
++  return mapSolicitudRow(row);
++}
+diff --git a/src/modules/processing/shared/services/processing.service.ts b/src/modules/processing/shared/services/processing.service.ts
+index 0c5ada4..0155546 100644
+--- a/src/modules/processing/shared/services/processing.service.ts
++++ b/src/modules/processing/shared/services/processing.service.ts
+@@ -8,6 +8,11 @@ import {
+   type TenantListParams,
+ } from "@/lib/supabase/domain-query";
+ import { DomainServiceError } from "@/lib/utils/domain-service-error";
++import { listTareasColaApi } from "@/modules/operations";
++import {
++  createSolicitudProcesamientoApi,
++  listSolicitudesProcesamientoApi,
++} from "./processing-api.service";
+ import type {
+   CreateSolicitudProcesamientoInput,
+   ProductoProcesamientoOption,
+@@ -112,6 +117,20 @@ function mapSolicitudOperadorRow(
+ export async function listSolicitudesProcesamiento(
+   params: TenantListParams,
+ ): Promise<SolicitudProcesamientoRow[]> {
++  const codigoCuenta = params.codigoCuenta?.trim();
++  const idBodega = params.idBodega?.trim();
++
++  if (codigoCuenta && idBodega) {
++    try {
++      return await listSolicitudesProcesamientoApi({
++        codigoCuenta,
++        idBodega,
++      });
++    } catch {
++      // fallback lectura Supabase
++    }
++  }
++
+   const limit = params.limit ?? DEFAULT_LIST_LIMIT;
+ 
+   return runDomainQuery((client) => {
+@@ -145,6 +164,13 @@ export async function listSolicitudesProcesamientoOperador(
+ export async function listTareasCola(
+   params: TenantListParams,
+ ): Promise<TareaColaRow[]> {
++  const codigoCuenta = params.codigoCuenta?.trim();
++  const idBodega = params.idBodega?.trim();
++
++  if (codigoCuenta && idBodega) {
++    return listTareasColaApi({ codigoCuenta, idBodega });
++  }
++
+   const limit = params.limit ?? DEFAULT_LIST_LIMIT;
+ 
+   return runDomainQuery((client) => {
+@@ -310,6 +336,29 @@ export async function createSolicitudProcesamiento(
+     );
+   }
+ 
++  try {
++    const row = await createSolicitudProcesamientoApi({
++      codigoCuenta,
++      idBodega,
++      idSolicitante,
++      idProductoPrimario,
++      idProductoSecundario,
++      kilosPrimario: input.kilosPrimario,
++      reglaConversionCantidadPrimario: input.reglaConversionCantidadPrimario,
++      reglaConversionUnidadesSecundario: input.reglaConversionUnidadesSecundario,
++      estimadoUnidadesSecundario: input.estimadoUnidadesSecundario,
++    });
++
++    const productLabels = await fetchProductoLabels([
++      row.id_producto_primario,
++      row.id_producto_secundario,
++    ]);
++
++    return mapSolicitudOperadorRow(row, productLabels);
++  } catch {
++    // fallback Supabase si API no disponible
++  }
++
+   const row = await runDomainMutation<SolicitudProcesamientoRow>((client) => {
+     const query = client
+       .from("solicitud_procesamiento")
+diff --git a/src/modules/purchases/ordenes/services/pedido-proveedor-client.service.ts b/src/modules/purchases/ordenes/services/pedido-proveedor-client.service.ts
+index 00af1bf..8966c5c 100644
+--- a/src/modules/purchases/ordenes/services/pedido-proveedor-client.service.ts
++++ b/src/modules/purchases/ordenes/services/pedido-proveedor-client.service.ts
+@@ -1,7 +1,7 @@
+ import { DomainServiceError } from "@/lib/utils/domain-service-error";
+ import type { PedidoProveedorBody } from "@/lib/pedido-proveedor/pedido-proveedor.schema";
+ import type { OrdenCompraRow } from "../../shared/types/purchases.types";
+-import type { OrdenCompraNotifyLineaRow } from "./purchases.service";
++import type { OrdenCompraNotifyLineaRow } from "../../shared/services/purchases.service";
+ 
+ export interface PedidoProveedorRouteResponse {
+   ok: boolean;
+diff --git a/src/modules/warehouses/bodega-reportes/services/bodega-reportes.service.ts b/src/modules/warehouses/bodega-reportes/services/bodega-reportes.service.ts
+index 509772a..3022a94 100644
+--- a/src/modules/warehouses/bodega-reportes/services/bodega-reportes.service.ts
++++ b/src/modules/warehouses/bodega-reportes/services/bodega-reportes.service.ts
+@@ -1,3 +1,4 @@
++import { getBodegaReportesApi } from "@/modules/operations";
+ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+ import { BODEGA_REPORTES_BAR_LABELS } from "../constants/bodega-reportes-config";
+ import type {
+@@ -38,7 +39,7 @@ async function sumMermaKg(idBodega: string): Promise<number> {
+       .from("solicitud_procesamiento")
+       .select("kilos_merma")
+       .eq("id_bodega", idBodega)
+-      .eq("estado", "cerrada");
++      .eq("estado", "terminada");
+ 
+     if (error || !data) return 0;
+ 
+@@ -65,14 +66,16 @@ function buildChartData(resumen: BodegaReportesResumen): {
+     value: resumen[id],
+   }));
+ 
+-  const donutChart: BodegaReporteCategoriaMetric[] = [
+-    { id: "ingresos", total: resumen.ingresos },
+-    { id: "salidas", total: resumen.salidas },
+-    { id: "movimientos", total: resumen.movimientos },
+-    { id: "despachados", total: resumen.despachados },
+-    { id: "alertas", total: resumen.alertas },
+-    { id: "merma", total: resumen.mermaKg },
+-  ].filter((item) => item.total > 0);
++  const donutChart: BodegaReporteCategoriaMetric[] = (
++    [
++      { id: "ingresos" as const, total: resumen.ingresos },
++      { id: "salidas" as const, total: resumen.salidas },
++      { id: "movimientos" as const, total: resumen.movimientos },
++      { id: "despachados" as const, total: resumen.despachados },
++      { id: "alertas" as const, total: resumen.alertas },
++      { id: "merma" as const, total: resumen.mermaKg },
++    ] as BodegaReporteCategoriaMetric[]
++  ).filter((item) => item.total > 0);
+ 
+   return { barChart, donutChart };
+ }
+@@ -96,6 +99,22 @@ export async function getBodegaReportesData(
+     return { resumen: EMPTY_RESUMEN, ...charts };
+   }
+ 
++  try {
++    const apiResumen = await getBodegaReportesApi({ codigoCuenta, idBodega });
++    const resumen: BodegaReportesResumen = {
++      ingresos: apiResumen.ingresos,
++      salidas: apiResumen.salidas,
++      movimientos: apiResumen.movimientos,
++      despachados: apiResumen.despachados,
++      alertas: apiResumen.alertas,
++      mermaKg: apiResumen.mermaKg,
++    };
++    const charts = buildChartData(resumen);
++    return { resumen, ...charts };
++  } catch {
++    // fallback Supabase abajo
++  }
++
+   const [
+     ingresos,
+     salidas,
+-- 
+2.43.0
+
