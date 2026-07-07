@@ -9,6 +9,11 @@ export const SWAGGER_TAGS = {
   COMPRAS_OC: 'Compras · Órdenes (OC)',
   COMPRAS_RECEPCION: 'Compras · Recepción (ingreso)',
   INVENTARIO: 'Inventario · Mapa (warehouse_state)',
+  OPERACIONES_ORDENES: 'Operaciones · Órdenes de trabajo',
+  OPERACIONES_TAREAS: 'Operaciones · Tareas en cola',
+  OPERACIONES_ALERTAS: 'Operaciones · Alertas',
+  OPERACIONES_LLAMADAS: 'Operaciones · Llamadas al jefe',
+  PROCESAMIENTO: 'Procesamiento · Solicitudes',
   SISTEMA: 'Sistema',
 } as const;
 
@@ -24,6 +29,11 @@ export const SWAGGER_TAG_ORDER: readonly SwaggerTag[] = [
   SWAGGER_TAGS.COMPRAS_OC,
   SWAGGER_TAGS.COMPRAS_RECEPCION,
   SWAGGER_TAGS.INVENTARIO,
+  SWAGGER_TAGS.OPERACIONES_ORDENES,
+  SWAGGER_TAGS.OPERACIONES_TAREAS,
+  SWAGGER_TAGS.OPERACIONES_ALERTAS,
+  SWAGGER_TAGS.OPERACIONES_LLAMADAS,
+  SWAGGER_TAGS.PROCESAMIENTO,
   SWAGGER_TAGS.SISTEMA,
 ];
 
@@ -46,5 +56,15 @@ export const SWAGGER_TAG_DESCRIPTIONS: Record<SwaggerTag, string> = {
     'Recepción de mercancía contra OC: conciliación ciega, temperatura e ingreso a slot (POL-5).',
   [SWAGGER_TAGS.INVENTARIO]:
     'Mapa de bodega: lectura warehouse_state y locking en tiempo real (POL-6).',
+  [SWAGGER_TAGS.OPERACIONES_ORDENES]:
+    'Órdenes de trabajo de bodega: a bodega (entrada), a salida (despacho) y revisar (conteo). Jefe crea; operario ejecuta.',
+  [SWAGGER_TAGS.OPERACIONES_TAREAS]:
+    'Cola de tareas operativas para operario/custodio: asignación y cierre.',
+  [SWAGGER_TAGS.OPERACIONES_ALERTAS]:
+    'Alertas de temperatura, demora y órdenes reportadas. Jefe asigna; operario gestiona.',
+  [SWAGGER_TAGS.OPERACIONES_LLAMADAS]:
+    'Llamadas al jefe de bodega desde operario o procesador (flujo frio).',
+  [SWAGGER_TAGS.PROCESAMIENTO]:
+    'Solicitudes de procesamiento primario→secundario con merma y cierre por procesador.',
   [SWAGGER_TAGS.SISTEMA]: 'Health check y utilidades de la API.',
 };
