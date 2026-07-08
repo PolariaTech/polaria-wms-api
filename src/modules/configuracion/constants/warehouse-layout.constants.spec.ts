@@ -1,5 +1,6 @@
 import {
   formatSlotCodigo,
+  formatZoneSlotCodigo,
   resolveCapacidadSlots,
 } from './warehouse-layout.constants';
 
@@ -29,6 +30,13 @@ describe('warehouse-layout.constants', () => {
 
     it('amplía padding cuando hay más de 999 slots', () => {
       expect(formatSlotCodigo(1000, 1000)).toBe('SLOT-1000');
+    });
+  });
+
+  describe('formatZoneSlotCodigo', () => {
+    it('formatea ING-01 con padding mínimo de 2', () => {
+      expect(formatZoneSlotCodigo('ING-', 1, 8)).toBe('ING-01');
+      expect(formatZoneSlotCodigo('SAL-', 8, 8)).toBe('SAL-08');
     });
   });
 });

@@ -143,6 +143,34 @@ export class RecepcionCompraService {
       ? EstadoOrdenCompra.recibida
       : EstadoOrdenCompra.parcialmente_recibida;
 
+    let idUbicacionIngreso = dto.idUbicacionIngreso?.trim() || undefined;
+
+    const entradas = [
+      ...lineasNormalizadas
+        .filter((l) => l.cantidadRecibida > 0)
+        .map((linea) => {
+          const ocLinea = lineasMap.get(linea.idLineaOrdenCompra)!;
+          return {
+            idProducto: ocLinea.idProducto,
+            cantidad: new Prisma.Decimal(linea.cantidadRecibida),
+            temperatura:
+              linea.temperaturaRegistrada != null
+                ? new Prisma.Decimal(linea.temperaturaRegistrada)
+                : undefined,
+          };
+        }),
+      ...lineasAdicionales
+        .filter((l) => l.cantidadRecibida > 0)
+        .map((linea) => ({
+          idProducto: linea.idProducto,
+          cantidad: new Prisma.Decimal(linea.cantidadRecibida),
+          temperatura:
+            linea.temperaturaRegistrada != null
+              ? new Prisma.Decimal(linea.temperaturaRegistrada)
+              : undefined,
+        })),
+    ];
+
     let ingresoInventario:
       | {
           idUbicacionIngreso: string;
@@ -154,9 +182,29 @@ export class RecepcionCompraService {
         }
       | undefined;
 
-    if (dto.idUbicacionIngreso) {
+    if (entradas.length > 0) {
+      if (!idUbicacionIngreso) {
+        const autoSlot = await this.repository.findNextUbicacionIngresoLibre(
+          dto.idBodega,
+        );
+
+        if (!autoSlot) {
+          const haySlots = await this.repository.countUbicacionesIngreso(
+            dto.idBodega,
+          );
+
+          throw new BadRequestException(
+            haySlots === 0
+              ? 'Esta bodega no tiene slots de ingreso configurados.'
+              : 'No hay slots libres en la zona de ingreso.',
+          );
+        }
+
+        idUbicacionIngreso = autoSlot.idUbicacion;
+      }
+
       const ubicacion = await this.repository.findUbicacionIngreso(
-        dto.idUbicacionIngreso,
+        idUbicacionIngreso,
         dto.idBodega,
       );
 
@@ -166,42 +214,14 @@ export class RecepcionCompraService {
         );
       }
 
-      const entradas = [
-        ...lineasNormalizadas
-          .filter((l) => l.cantidadRecibida > 0)
-          .map((linea) => {
-            const ocLinea = lineasMap.get(linea.idLineaOrdenCompra)!;
-            return {
-              idProducto: ocLinea.idProducto,
-              cantidad: new Prisma.Decimal(linea.cantidadRecibida),
-              temperatura:
-                linea.temperaturaRegistrada != null
-                  ? new Prisma.Decimal(linea.temperaturaRegistrada)
-                  : undefined,
-            };
-          }),
-        ...lineasAdicionales
-          .filter((l) => l.cantidadRecibida > 0)
-          .map((linea) => ({
-            idProducto: linea.idProducto,
-            cantidad: new Prisma.Decimal(linea.cantidadRecibida),
-            temperatura:
-              linea.temperaturaRegistrada != null
-                ? new Prisma.Decimal(linea.temperaturaRegistrada)
-                : undefined,
-          })),
-      ];
-
-      if (entradas.length === 0) {
-        throw new BadRequestException(
-          'Debe recibir al menos una cantidad positiva para registrar inventario',
-        );
-      }
-
       ingresoInventario = {
-        idUbicacionIngreso: dto.idUbicacionIngreso,
+        idUbicacionIngreso,
         entradas,
       };
+    } else if (idUbicacionIngreso) {
+      throw new BadRequestException(
+        'Debe recibir al menos una cantidad positiva para registrar inventario',
+      );
     }
 
     const recepcion = await this.repository.cerrarRecepcion(
@@ -211,7 +231,7 @@ export class RecepcionCompraService {
         idOrdenCompra,
         lineas: lineasNormalizadas,
         lineasAdicionales,
-        idUbicacionIngreso: dto.idUbicacionIngreso,
+        idUbicacionIngreso,
         notas: dto.notas,
       },
       ctx.idUsuario,
