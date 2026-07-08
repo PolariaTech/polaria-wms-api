@@ -29,11 +29,6 @@ export class RecepcionCompraService {
     dto: CreateRecepcionCompraDto,
     ctx: TenantContext,
   ): Promise<RecepcionCompraResponse> {
-    assertOperationalTenantScope(ctx, {
-      codigoCuenta: dto.codigoCuenta,
-      idBodega: dto.idBodega,
-    });
-
     if (dto.lineas.some((linea) => linea.cantidadRecibida < 0)) {
       throw new BadRequestException('Las cantidades recibidas no pueden ser negativas');
     }
@@ -44,9 +39,17 @@ export class RecepcionCompraService {
       throw new NotFoundException('Orden de compra no encontrada');
     }
 
-    if (orden.codigoCuenta !== dto.codigoCuenta || orden.idBodega !== dto.idBodega) {
+    assertOperationalTenantScope(ctx, {
+      codigoCuenta: orden.codigoCuenta,
+      idBodega: orden.idBodega,
+    });
+
+    if (
+      orden.codigoCuenta !== dto.codigoCuenta.trim() ||
+      orden.idBodega !== dto.idBodega
+    ) {
       throw new BadRequestException(
-        'La cuenta o bodega no coinciden con la orden de compra',
+        'La cuenta o bodega del request no coinciden con la orden de compra',
       );
     }
 

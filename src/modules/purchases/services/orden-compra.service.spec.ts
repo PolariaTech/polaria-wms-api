@@ -13,12 +13,14 @@ import {
 } from '../../../generated/prisma/client';
 import { OrdenCompraRepository } from '../infrastructure/orden-compra.repository';
 import { SolicitudCompraRepository } from '../infrastructure/solicitud-compra.repository';
+import { BodegaDestinoService } from './bodega-destino.service';
 import { OrdenCompraService } from './orden-compra.service';
 
 describe('OrdenCompraService', () => {
   let service: OrdenCompraService;
   let repository: jest.Mocked<OrdenCompraRepository>;
   let solicitudRepository: jest.Mocked<SolicitudCompraRepository>;
+  let bodegaDestinoService: jest.Mocked<BodegaDestinoService>;
 
   const idOrden = '550e8400-e29b-41d4-a716-446655440200';
   const idSolicitud = '550e8400-e29b-41d4-a716-446655440100';
@@ -104,6 +106,7 @@ describe('OrdenCompraService', () => {
             findById: jest.fn(),
             list: jest.fn(),
             updateEstado: jest.fn(),
+            updateDestino: jest.fn(),
             convertSolicitudToOrden: jest.fn(),
             toResponse: jest.fn(),
           },
@@ -114,12 +117,21 @@ describe('OrdenCompraService', () => {
             findById: jest.fn(),
           },
         },
+        {
+          provide: BodegaDestinoService,
+          useValue: {
+            validateOrdenDestino: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     service = module.get(OrdenCompraService);
     repository = module.get(OrdenCompraRepository);
     solicitudRepository = module.get(SolicitudCompraRepository);
+    bodegaDestinoService = module.get(BodegaDestinoService);
+
+    bodegaDestinoService.validateOrdenDestino.mockResolvedValue(undefined);
 
     repository.findBodega.mockResolvedValue({
       idBodega,
@@ -273,10 +285,61 @@ describe('OrdenCompraService', () => {
     const result = await service.emitir(idOrden, operadorContext);
 
     expect(result.estado).toBe(EstadoOrdenCompra.emitida);
+    expect(bodegaDestinoService.validateOrdenDestino).toHaveBeenCalledWith(
+      {
+        codigoCuenta: 'CTA001',
+        idBodega,
+        destinoTipo: DestinoTipo.interna,
+      },
+      operadorContext,
+    );
     expect(repository.updateEstado).toHaveBeenCalledWith(
       idOrden,
       EstadoOrdenCompra.emitida,
     );
+  });
+
+  it('actualiza destino de OC en borrador', async () => {
+    repository.findById.mockResolvedValue(ordenRecord as never);
+    repository.updateDestino.mockResolvedValue({
+      ...ordenRecord,
+      destinoTipo: DestinoTipo.externa,
+      fechaEntregaEstimada: new Date('2026-07-15'),
+    } as never);
+
+    const result = await service.updateDestino(
+      idOrden,
+      {
+        destinoTipo: DestinoTipo.externa,
+        idBodega,
+        fechaEntregaEstimada: '2026-07-15',
+      },
+      operadorContext,
+    );
+
+    expect(result.destinoTipo).toBe(DestinoTipo.externa);
+    expect(repository.updateDestino).toHaveBeenCalledWith(
+      idOrden,
+      expect.objectContaining({
+        destinoTipo: DestinoTipo.externa,
+        idBodega,
+      }),
+    );
+  });
+
+  it('rechaza actualizar destino si OC no está en borrador', async () => {
+    repository.findById.mockResolvedValue({
+      ...ordenRecord,
+      estado: EstadoOrdenCompra.emitida,
+    } as never);
+
+    await expect(
+      service.updateDestino(
+        idOrden,
+        { destinoTipo: DestinoTipo.interna, idBodega },
+        operadorContext,
+      ),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('rechaza emitir OC que no está en borrador', async () => {

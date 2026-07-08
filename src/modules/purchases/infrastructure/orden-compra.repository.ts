@@ -8,7 +8,9 @@ import {
 import { PrismaService } from '../../../core/database/prisma.service';
 import {
   CONTADOR_CLAVE_ORDEN_COMPRA,
+  CODIGO_OC_PREFIX,
   formatCodigoOrden,
+  parseCodigoOrdenSecuencia,
 } from '../constants/orden-compra.constants';
 import type {
   ConvertirSolicitudExtras,
@@ -82,7 +84,7 @@ export class OrdenCompraRepository {
     input: CreateOrdenCompraInput,
     idCreador: string,
   ): Promise<OrdenWithLineas> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.runOrdenCompraTransaction(async (tx) => {
       const codigo = await this.nextCodigoOrden(tx, input.codigoCuenta);
 
       return tx.ordenCompra.create({
@@ -124,7 +126,7 @@ export class OrdenCompraRepository {
     idCreador: string,
     extras?: ConvertirSolicitudExtras,
   ): Promise<OrdenWithLineas> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.runOrdenCompraTransaction(async (tx) => {
       const codigo = await this.nextCodigoOrden(tx, solicitud.codigoCuenta);
 
       const orden = await tx.ordenCompra.create({
@@ -175,10 +177,79 @@ export class OrdenCompraRepository {
     });
   }
 
-  private async nextCodigoOrden(
+  updateDestino(
+    idOrdenCompra: string,
+    data: {
+      destinoTipo: DestinoTipo;
+      idBodega: string;
+      fechaEntregaEstimada?: Date | null;
+    },
+  ): Promise<OrdenWithLineas> {
+    return this.prisma.ordenCompra.update({
+      where: { idOrdenCompra },
+      data: {
+        destinoTipo: data.destinoTipo,
+        idBodega: data.idBodega,
+        ...(data.fechaEntregaEstimada !== undefined
+          ? { fechaEntregaEstimada: data.fechaEntregaEstimada }
+          : {}),
+      },
+      include: ordenInclude,
+    });
+  }
+
+  private async runOrdenCompraTransaction<T>(
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await this.prisma.$transaction(fn);
+      } catch (error) {
+        if (
+          attempt < maxAttempts &&
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new Error('No se pudo asignar un código de orden de compra único');
+  }
+
+  private async maxSecuenciaOrdenExistente(
     tx: Prisma.TransactionClient,
     codigoCuenta: string,
-  ): Promise<string> {
+  ): Promise<bigint> {
+    const ordenes = await tx.ordenCompra.findMany({
+      where: {
+        codigoCuenta,
+        codigo: { startsWith: CODIGO_OC_PREFIX },
+      },
+      select: { codigo: true },
+    });
+
+    let max = 0n;
+    for (const orden of ordenes) {
+      const secuencia = parseCodigoOrdenSecuencia(orden.codigo);
+      if (secuencia !== null && secuencia > max) {
+        max = secuencia;
+      }
+    }
+
+    return max;
+  }
+
+  private async ensureContadorOrden(
+    tx: Prisma.TransactionClient,
+    codigoCuenta: string,
+    maxExistente: bigint,
+  ) {
     const existing = await tx.contador.findFirst({
       where: {
         codigoCuenta,
@@ -187,22 +258,66 @@ export class OrdenCompraRepository {
       },
     });
 
-    if (existing) {
-      const updated = await tx.contador.update({
-        where: { idContador: existing.idContador },
-        data: { valor: { increment: 1 } },
+    if (!existing) {
+      return tx.contador.create({
+        data: {
+          codigoCuenta,
+          clave: CONTADOR_CLAVE_ORDEN_COMPRA,
+          valor: maxExistente,
+        },
       });
-      return formatCodigoOrden(updated.valor);
     }
 
-    const created = await tx.contador.create({
-      data: {
-        codigoCuenta,
-        clave: CONTADOR_CLAVE_ORDEN_COMPRA,
-        valor: 1n,
-      },
+    if (existing.valor < maxExistente) {
+      return tx.contador.update({
+        where: { idContador: existing.idContador },
+        data: { valor: maxExistente },
+      });
+    }
+
+    return existing;
+  }
+
+  private async codigoOrdenDisponible(
+    tx: Prisma.TransactionClient,
+    codigoCuenta: string,
+    codigo: string,
+  ): Promise<boolean> {
+    const orden = await tx.ordenCompra.findFirst({
+      where: { codigoCuenta, codigo },
+      select: { idOrdenCompra: true },
     });
-    return formatCodigoOrden(created.valor);
+
+    return orden === null;
+  }
+
+  private async nextCodigoOrden(
+    tx: Prisma.TransactionClient,
+    codigoCuenta: string,
+  ): Promise<string> {
+    const maxExistente = await this.maxSecuenciaOrdenExistente(tx, codigoCuenta);
+    const contador = await this.ensureContadorOrden(
+      tx,
+      codigoCuenta,
+      maxExistente,
+    );
+
+    let updated = await tx.contador.update({
+      where: { idContador: contador.idContador },
+      data: { valor: { increment: 1 } },
+    });
+
+    let codigo = formatCodigoOrden(updated.valor);
+
+    while (!(await this.codigoOrdenDisponible(tx, codigoCuenta, codigo))) {
+      updated = await tx.contador.update({
+        where: { idContador: contador.idContador },
+        data: { valor: { increment: 1 } },
+      });
+      codigo = formatCodigoOrden(updated.valor);
+    }
+
+    return codigo;
   }
 
   toResponse(orden: OrdenWithLineas): OrdenCompraResponse {

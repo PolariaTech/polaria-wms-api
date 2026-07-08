@@ -17,8 +17,10 @@ import {
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import type { CreateOrdenCompraDto } from '../dto/create-orden-compra.dto';
 import type { ListOrdenesQueryDto } from '../dto/list-ordenes-query.dto';
+import type { UpdateOrdenDestinoDto } from '../dto/update-orden-destino.dto';
 import { OrdenCompraRepository } from '../infrastructure/orden-compra.repository';
 import { SolicitudCompraRepository } from '../infrastructure/solicitud-compra.repository';
+import { BodegaDestinoService } from './bodega-destino.service';
 import type {
   ConvertirSolicitudExtras,
   CreateOrdenCompraInput,
@@ -31,6 +33,7 @@ export class OrdenCompraService {
   constructor(
     private readonly repository: OrdenCompraRepository,
     private readonly solicitudRepository: SolicitudCompraRepository,
+    private readonly bodegaDestinoService: BodegaDestinoService,
   ) {}
 
   async create(
@@ -146,10 +149,52 @@ export class OrdenCompraService {
       );
     }
 
+    await this.bodegaDestinoService.validateOrdenDestino(
+      {
+        codigoCuenta: orden.codigoCuenta,
+        idBodega: orden.idBodega,
+        destinoTipo: orden.destinoTipo,
+      },
+      ctx,
+    );
+
     const updated = await this.repository.updateEstado(
       idOrdenCompra,
       EstadoOrdenCompra.emitida,
     );
+
+    return this.repository.toResponse(updated);
+  }
+
+  async updateDestino(
+    idOrdenCompra: string,
+    dto: UpdateOrdenDestinoDto,
+    ctx: TenantContext,
+  ): Promise<OrdenCompraResponse> {
+    const orden = await this.getAccessibleOrden(idOrdenCompra, ctx);
+
+    if (orden.estado !== EstadoOrdenCompra.borrador) {
+      throw new BadRequestException(
+        'Solo se puede actualizar el destino de una orden en borrador',
+      );
+    }
+
+    await this.bodegaDestinoService.validateOrdenDestino(
+      {
+        codigoCuenta: orden.codigoCuenta,
+        idBodega: dto.idBodega,
+        destinoTipo: dto.destinoTipo,
+      },
+      ctx,
+    );
+
+    const updated = await this.repository.updateDestino(idOrdenCompra, {
+      destinoTipo: dto.destinoTipo,
+      idBodega: dto.idBodega,
+      ...(dto.fechaEntregaEstimada !== undefined
+        ? { fechaEntregaEstimada: new Date(dto.fechaEntregaEstimada) }
+        : {}),
+    });
 
     return this.repository.toResponse(updated);
   }

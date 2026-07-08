@@ -108,7 +108,7 @@ Swagger tag: **Compras · Recepción (ingreso)**
 | GET | `/compras/recepciones/ordenes/:idOrdenCompra` | lectura | Recepción de una OC |
 | GET | `/compras/recepciones/:id` | lectura | Detalle por id |
 
-**Escritura sensible:** `SensitiveWriteGuard` + bypass RLS vía Prisma.
+**Escritura sensible:** bypass RLS vía Prisma + `RolesGuard` (roles de recepción, incl. custodio). No usa `SensitiveWriteGuard` genérico de inventario.
 
 ### POST cerrar recepción
 

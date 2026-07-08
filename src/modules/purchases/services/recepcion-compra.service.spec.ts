@@ -149,4 +149,30 @@ describe('RecepcionCompraService', () => {
       BadRequestException,
     );
   });
+
+  it('valida tenant contra la OC, no solo contra el body', async () => {
+    repository.findOrdenCompra.mockResolvedValue({
+      idOrdenCompra: idOrden,
+      codigoCuenta: 'CTA001',
+      idBodega,
+      estado: EstadoOrdenCompra.emitida,
+      recepcion: null,
+      lineas: [
+        {
+          idLineaOrdenCompra: idLinea,
+          idProducto,
+          cantidad: new Prisma.Decimal(50),
+          cantidadRecibida: new Prisma.Decimal(0),
+        },
+      ],
+    } as never);
+
+    await expect(
+      service.cerrar(
+        idOrden,
+        { ...dto, codigoCuenta: 'CTA999' },
+        custodioContext,
+      ),
+    ).rejects.toThrow('no coinciden con la orden de compra');
+  });
 });

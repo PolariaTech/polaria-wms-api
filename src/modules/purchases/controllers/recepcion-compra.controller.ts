@@ -25,7 +25,6 @@ import { SWAGGER_TAGS } from '../../../core/swagger/swagger.constants';
 import { JwtAuthGuard } from '../../../core/guards/jwt-auth.guard';
 import { Roles } from '../../../core/guards/roles.decorator';
 import { RolesGuard } from '../../../core/guards/roles.guard';
-import { SensitiveWriteGuard } from '../../../core/guards/sensitive-write.guard';
 import { TenantGuard } from '../../../core/guards/tenant.guard';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import {
@@ -47,12 +46,12 @@ export class RecepcionCompraController {
 
   @Post('ordenes/:idOrdenCompra/cerrar')
   @Roles(...ROLES_RECEPCION_ESCRITURA)
-  @UseGuards(SensitiveWriteGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Cerrar recepción contra OC (conciliación ciega + temperatura)',
     description:
       'Persiste recepción vía backend (bypass RLS). Actualiza cantidades recibidas y estado de la OC. ' +
+      'Roles de recepción (incl. custodio) validados por RolesGuard; el scope tenant se cruza con la OC. ' +
       'Opcionalmente registra inventario en slot de zona ingreso (`idUbicacionIngreso`).',
   })
   @ApiCreatedResponse({ type: RecepcionCompraResponseDto })

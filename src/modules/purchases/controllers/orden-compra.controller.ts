@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -34,6 +35,7 @@ import {
 import { CreateOrdenCompraDto } from '../dto/create-orden-compra.dto';
 import { ListOrdenesQueryDto } from '../dto/list-ordenes-query.dto';
 import { OrdenCompraResponseDto } from '../dto/orden-compra-response.dto';
+import { UpdateOrdenDestinoDto } from '../dto/update-orden-destino.dto';
 import type { OrdenCompraResponse } from '../interfaces/orden-compra.interfaces';
 import { OrdenCompraService } from '../services/orden-compra.service';
 
@@ -88,13 +90,33 @@ export class OrdenCompraController {
   @Post(':id/emitir')
   @Roles(...ROLES_OC_ESCRITURA)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Emitir orden de compra (borrador → emitida)' })
+  @ApiOperation({
+    summary: 'Emitir orden de compra (borrador → emitida)',
+    description:
+      'Valida destino (tipo, bodega, cuenta y capacidad disponible) antes de emitir.',
+  })
   @ApiOkResponse({ type: OrdenCompraResponseDto })
   emitir(
     @Param('id', ParseUUIDPipe) id: string,
     @TenantCtx() ctx: TenantContext,
   ): Promise<OrdenCompraResponse> {
     return this.ordenService.emitir(id, ctx);
+  }
+
+  @Patch(':id/destino')
+  @Roles(...ROLES_OC_ESCRITURA)
+  @ApiOperation({
+    summary: 'Actualizar destino de una orden en borrador',
+    description:
+      'Unifica permisos y validación de destinoTipo, idBodega y fechaEntregaEstimada.',
+  })
+  @ApiOkResponse({ type: OrdenCompraResponseDto })
+  updateDestino(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateOrdenDestinoDto,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<OrdenCompraResponse> {
+    return this.ordenService.updateDestino(id, dto, ctx);
   }
 
   @Post(':id/cancelar')
