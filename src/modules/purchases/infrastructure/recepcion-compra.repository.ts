@@ -79,6 +79,34 @@ export class RecepcionCompraRepository {
     });
   }
 
+  findNextUbicacionIngresoLibre(idBodega: string) {
+    return this.prisma.ubicacion.findFirst({
+      where: {
+        idBodega,
+        estaActiva: true,
+        estadoSlot: 'libre',
+        tipoUbicacion: { esRecepcion: true },
+        warehouseStates: { none: {} },
+      },
+      orderBy: { codigo: 'asc' },
+      select: {
+        idUbicacion: true,
+        idBodega: true,
+        codigoCuenta: true,
+      },
+    });
+  }
+
+  countUbicacionesIngreso(idBodega: string) {
+    return this.prisma.ubicacion.count({
+      where: {
+        idBodega,
+        estaActiva: true,
+        tipoUbicacion: { esRecepcion: true },
+      },
+    });
+  }
+
   cerrarRecepcion(
     input: CerrarRecepcionInput,
     idUsuario: string,

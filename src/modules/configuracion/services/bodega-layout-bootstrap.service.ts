@@ -10,7 +10,7 @@ import { ROL_PLATAFORMA } from '../../../shared/constants/roles';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import { resolveCapacidadSlots } from '../constants/warehouse-layout.constants';
 import { BodegaLayoutRepository } from '../infrastructure/bodega-layout.repository';
-import type { BootstrapLayoutResult } from '../interfaces/bodega-layout.interfaces';
+import type { BootstrapLayoutResult, EnsureOperationalZonesResult } from '../interfaces/bodega-layout.interfaces';
 
 @Injectable()
 export class BodegaLayoutBootstrapService {
@@ -50,6 +50,31 @@ export class BodegaLayoutBootstrapService {
     const capacidadSlots = resolveCapacidadSlots(bodega.capacidadSlots);
 
     return this.layoutRepository.bootstrapLayout(bodega, capacidadSlots);
+  }
+
+  async ensureOperationalZones(
+    idBodega: string,
+    ctx: TenantContext,
+  ): Promise<EnsureOperationalZonesResult> {
+    const bodega = await this.layoutRepository.findBodega(idBodega);
+
+    if (!bodega) {
+      throw new NotFoundException('Bodega no encontrada');
+    }
+
+    if (!bodega.estaActiva) {
+      throw new ForbiddenException('La bodega está inactiva');
+    }
+
+    if (bodega.tipo !== BodegaTipo.interna) {
+      throw new BadRequestException(
+        'Solo las bodegas internas admiten zonas operativas',
+      );
+    }
+
+    this.assertTenantAccess(bodega.codigoCuenta, ctx);
+
+    return this.layoutRepository.ensureOperationalZones(bodega);
   }
 
   private assertTenantAccess(
