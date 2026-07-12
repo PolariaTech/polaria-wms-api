@@ -2,11 +2,19 @@ import { Injectable } from '@nestjs/common';
 import {
   EstadoProcesamiento,
   EstadoTarea,
+  EstadoOrdenTrabajo,
   Prisma,
+  TipoLineaOt,
   TipoMovimiento,
+  TipoOrdenTrabajo,
   TipoTarea,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
+import {
+  buildObservacionesOtProcesamiento,
+  buildTareaSolicitudDescripcion,
+  parseObservacionesOtProcesamiento,
+} from '../constants/procesamiento-tarea.constants';
 import {
   CONTADOR_CLAVE_SOLICITUD_PROCESAMIENTO,
   TIPO_REFERENCIA_PROCESAMIENTO,
@@ -17,12 +25,31 @@ import type {
   CreateSolicitudProcesamientoInput,
   SolicitudProcesamientoResponse,
 } from '../interfaces/processing.interfaces';
+import { ProcesamientoInventarioRepository } from './procesamiento-inventario.repository';
+import {
+  estimadoSecundarioAplicarPerdidaPct,
+  normalizePerdidaPct,
+  unidadesSecundarioEnterasParaMapa,
+  unidadesSecundarioPorRegla,
+} from '../utils/catalogo-procesamiento.util';
+import { kgSobranteParaDevolucionMapa, sobranteKgTotalTrasEnCurso } from '../utils/sobrante-kg.util';
 
 export type SolicitudRow = Prisma.SolicitudProcesamientoGetPayload<object>;
 
+interface ProductoProcesamientoCtx {
+  idProducto: string;
+  mermaPct: Prisma.Decimal | null;
+  unidadVisualizacion: string;
+  reglaConversionCantidadPrimario: Prisma.Decimal | null;
+  reglaConversionUnidadesSecundario: Prisma.Decimal | null;
+}
+
 @Injectable()
 export class SolicitudProcesamientoRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inventario: ProcesamientoInventarioRepository,
+  ) {}
 
   list(where: Prisma.SolicitudProcesamientoWhereInput): Promise<SolicitudRow[]> {
     return this.prisma.solicitudProcesamiento.findMany({
@@ -37,20 +64,49 @@ export class SolicitudProcesamientoRepository {
     });
   }
 
+  findTareaVinculada(
+    idSolicitud: string,
+    codigoCuenta: string,
+    idBodega: string,
+  ) {
+    return this.prisma.tareaCola.findFirst({
+      where: {
+        codigoCuenta,
+        idBodega,
+        tipo: TipoTarea.procesamiento,
+        descripcion: buildTareaSolicitudDescripcion(idSolicitud),
+      },
+    });
+  }
+
   async create(
     input: CreateSolicitudProcesamientoInput,
     idSolicitante: string,
   ): Promise<SolicitudRow> {
+    const [primario, secundario] = await Promise.all([
+      this.loadProducto(input.idProductoPrimario, input.codigoCuenta),
+      this.loadProducto(input.idProductoSecundario, input.codigoCuenta),
+    ]);
+
+    const reglaA =
+      input.reglaConversionCantidadPrimario ??
+      Number(secundario.reglaConversionCantidadPrimario ?? 1);
+    const reglaB =
+      input.reglaConversionUnidadesSecundario ??
+      Number(secundario.reglaConversionUnidadesSecundario ?? 0);
+    const perdidaPct = normalizePerdidaPct(
+      input.perdidaProcesamientoPct ?? Number(secundario.mermaPct ?? 0),
+    );
+
+    const teorico = unidadesSecundarioPorRegla(
+      input.kilosPrimario,
+      reglaA,
+      reglaB,
+    );
+    const estimado = estimadoSecundarioAplicarPerdidaPct(teorico, perdidaPct);
+
     return this.prisma.$transaction(async (tx) => {
       const codigo = await this.nextCodigo(tx, input.codigoCuenta, input.idBodega);
-
-      const estimado =
-        input.reglaConversionCantidadPrimario &&
-        input.reglaConversionUnidadesSecundario &&
-        input.kilosPrimario > 0
-          ? (input.kilosPrimario / input.reglaConversionCantidadPrimario) *
-            input.reglaConversionUnidadesSecundario
-          : null;
 
       const solicitud = await tx.solicitudProcesamiento.create({
         data: {
@@ -63,18 +119,9 @@ export class SolicitudProcesamientoRepository {
           idSolicitante,
           estado: EstadoProcesamiento.pendiente,
           kilosPrimario: new Prisma.Decimal(input.kilosPrimario),
-          reglaConversionCantidadPrimario:
-            input.reglaConversionCantidadPrimario != null
-              ? new Prisma.Decimal(input.reglaConversionCantidadPrimario)
-              : null,
-          reglaConversionUnidadesSecundario:
-            input.reglaConversionUnidadesSecundario != null
-              ? new Prisma.Decimal(input.reglaConversionUnidadesSecundario)
-              : null,
-          perdidaProcesamientoPct:
-            input.perdidaProcesamientoPct != null
-              ? new Prisma.Decimal(input.perdidaProcesamientoPct)
-              : null,
+          reglaConversionCantidadPrimario: new Prisma.Decimal(reglaA),
+          reglaConversionUnidadesSecundario: new Prisma.Decimal(reglaB),
+          perdidaProcesamientoPct: new Prisma.Decimal(perdidaPct),
           estimadoUnidadesSecundario:
             estimado != null ? new Prisma.Decimal(estimado) : null,
           observaciones: input.observaciones?.trim() || null,
@@ -88,11 +135,105 @@ export class SolicitudProcesamientoRepository {
           tipo: TipoTarea.procesamiento,
           estado: EstadoTarea.pendiente,
           titulo: `Procesamiento · ${codigo}`,
-          descripcion: input.observaciones?.trim() || null,
+          descripcion: buildTareaSolicitudDescripcion(
+            solicitud.idSolicitudProcesamiento,
+          ),
         },
       });
 
       return solicitud;
+    });
+  }
+
+  async asignarOperario(
+    solicitud: SolicitudRow,
+    idOperario: string,
+  ): Promise<SolicitudRow> {
+    const tarea = await this.findTareaVinculada(
+      solicitud.idSolicitudProcesamiento,
+      solicitud.codigoCuenta,
+      solicitud.idBodega,
+    );
+
+    if (!tarea) {
+      throw new Error('TAREA_NOT_FOUND');
+    }
+
+    await this.prisma.tareaCola.update({
+      where: { idTarea: tarea.idTarea },
+      data: { idAsignado: idOperario, estado: EstadoTarea.pendiente },
+    });
+
+    return solicitud;
+  }
+
+  async iniciarEnCurso(
+    solicitud: SolicitudRow,
+    idOperario: string,
+    idProcesador: string | null,
+    idUsuario: string,
+  ): Promise<SolicitudRow> {
+    const primario = await this.loadProducto(
+      solicitud.idProductoPrimario,
+      solicitud.codigoCuenta,
+    );
+    const kilosPrimario = Number(solicitud.kilosPrimario.toString());
+    const unidad = primario.unidadVisualizacion;
+
+    return this.prisma.$transaction(async (tx) => {
+      const descuento = await this.inventario.descontarPrimarioEnCurso(tx, {
+        codigoCuenta: solicitud.codigoCuenta,
+        idBodega: solicitud.idBodega,
+        idProductoPrimario: solicitud.idProductoPrimario,
+        kilosADescontar: kilosPrimario,
+        idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+        idUsuario,
+      });
+
+      if (descuento.kgDescontado <= 0) {
+        throw new Error('STOCK_INSUFICIENTE');
+      }
+
+      const estimado = solicitud.estimadoUnidadesSecundario
+        ? Number(solicitud.estimadoUnidadesSecundario.toString())
+        : null;
+
+      const sobrante = sobranteKgTotalTrasEnCurso({
+        unidadPrimarioVisualizacion: unidad,
+        cantidadPrimario: kilosPrimario,
+        deductedKg: descuento.kgDescontado,
+        estimadoUnidadesSecundario: estimado,
+        reglaCantidadPrimario: Number(
+          solicitud.reglaConversionCantidadPrimario?.toString() ?? 1,
+        ),
+        reglaUnidadesSecundario: Number(
+          solicitud.reglaConversionUnidadesSecundario?.toString() ?? 0,
+        ),
+      });
+
+      const updated = await tx.solicitudProcesamiento.update({
+        where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
+        data: {
+          estado: EstadoProcesamiento.en_proceso,
+          idProcesador: idProcesador,
+          kgPrimarioDescontado: new Prisma.Decimal(descuento.kgDescontado),
+          sobranteKg: new Prisma.Decimal(sobrante),
+        },
+      });
+
+      await tx.tareaCola.updateMany({
+        where: {
+          descripcion: buildTareaSolicitudDescripcion(
+            solicitud.idSolicitudProcesamiento,
+          ),
+        },
+        data: {
+          estado: EstadoTarea.en_proceso,
+          idAsignado: idProcesador,
+        },
+      });
+
+      return updated;
     });
   }
 
@@ -102,10 +243,7 @@ export class SolicitudProcesamientoRepository {
   ): Promise<SolicitudRow> {
     return this.prisma.solicitudProcesamiento.update({
       where: { idSolicitudProcesamiento: id },
-      data: {
-        idProcesador,
-        estado: EstadoProcesamiento.en_proceso,
-      },
+      data: { idProcesador },
     });
   }
 
@@ -124,19 +262,21 @@ export class SolicitudProcesamientoRepository {
     input: CerrarSolicitudProcesamientoInput,
     idUsuario: string,
   ): Promise<SolicitudRow> {
+    const estimado = solicitud.estimadoUnidadesSecundario
+      ? Number(solicitud.estimadoUnidadesSecundario.toString())
+      : 0;
+    const kilosSecundario =
+      input.kilosSecundario ??
+      unidadesSecundarioEnterasParaMapa(estimado);
+
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.solicitudProcesamiento.update({
         where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
         data: {
-          estado: EstadoProcesamiento.terminada,
-          kilosSecundario: new Prisma.Decimal(input.kilosSecundario),
+          estado: EstadoProcesamiento.pendiente_cierre,
+          kilosSecundario: new Prisma.Decimal(kilosSecundario),
           kilosMerma: new Prisma.Decimal(input.kilosMerma),
-          sobranteKg:
-            input.sobranteKg != null
-              ? new Prisma.Decimal(input.sobranteKg)
-              : null,
           cierreDesdeProcesador: true,
-          kgPrimarioDescontado: solicitud.kilosPrimario,
         },
       });
 
@@ -150,33 +290,305 @@ export class SolicitudProcesamientoRepository {
         },
       });
 
-      await tx.movimientoInventario.create({
-        data: {
-          codigoCuenta: solicitud.codigoCuenta,
-          idBodega: solicitud.idBodega,
-          idProducto: solicitud.idProductoPrimario,
-          cantidad: solicitud.kilosPrimario,
-          tipoMovimiento: TipoMovimiento.merma,
-          idUsuario,
-          idReferencia: solicitud.idSolicitudProcesamiento,
-          tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
-          metadata: { tipo: 'merma_procesamiento', kilosMerma: input.kilosMerma },
-        },
-      });
+      if (input.kilosMerma > 0) {
+        await tx.movimientoInventario.create({
+          data: {
+            codigoCuenta: solicitud.codigoCuenta,
+            idBodega: solicitud.idBodega,
+            idProducto: solicitud.idProductoPrimario,
+            cantidad: new Prisma.Decimal(input.kilosMerma),
+            tipoMovimiento: TipoMovimiento.merma,
+            idUsuario,
+            idReferencia: solicitud.idSolicitudProcesamiento,
+            tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
+            metadata: { tipo: 'merma_procesamiento' },
+          },
+        });
+      }
 
       await tx.tareaCola.updateMany({
         where: {
-          codigoCuenta: solicitud.codigoCuenta,
-          idBodega: solicitud.idBodega,
-          tipo: TipoTarea.procesamiento,
-          titulo: { contains: solicitud.codigo },
-          estado: { in: [EstadoTarea.pendiente, EstadoTarea.en_proceso] },
+          descripcion: buildTareaSolicitudDescripcion(
+            solicitud.idSolicitudProcesamiento,
+          ),
+          estado: EstadoTarea.en_proceso,
         },
         data: { estado: EstadoTarea.completada, idAsignado: idUsuario },
       });
 
       return updated;
     });
+  }
+
+  async terminar(
+    solicitud: SolicitudRow,
+  ): Promise<SolicitudRow> {
+    return this.prisma.solicitudProcesamiento.update({
+      where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
+      data: {
+        estado: EstadoProcesamiento.terminada,
+        cierreDesdeProcesador: false,
+      },
+    });
+  }
+
+  async crearOrdenesPostCierre(
+    solicitud: SolicitudRow,
+    idSolicitante: string,
+    idUbicacionDestinoProcesado?: string,
+    idUbicacionDestinoDesperdicio?: string,
+  ): Promise<{ ordenProcesadoId: string | null; ordenDesperdicioId: string | null }> {
+    const primario = await this.loadProducto(
+      solicitud.idProductoPrimario,
+      solicitud.codigoCuenta,
+    );
+    const sobrante = kgSobranteParaDevolucionMapa({
+      sobranteKg: solicitud.sobranteKg
+        ? Number(solicitud.sobranteKg.toString())
+        : 0,
+      unidadPrimarioVisualizacion: primario.unidadVisualizacion,
+    });
+
+    const unidades = unidadesSecundarioEnterasParaMapa(
+      solicitud.estimadoUnidadesSecundario
+        ? Number(solicitud.estimadoUnidadesSecundario.toString())
+        : 0,
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      let ordenProcesadoId: string | null = null;
+      let ordenDesperdicioId: string | null = null;
+
+      if (unidades > 0 && idUbicacionDestinoProcesado) {
+        const codigo = await this.nextCodigoOt(
+          tx,
+          solicitud.codigoCuenta,
+          solicitud.idBodega,
+        );
+        const orden = await tx.ordenTrabajo.create({
+          data: {
+            codigoCuenta: solicitud.codigoCuenta,
+            idBodega: solicitud.idBodega,
+            codigo,
+            tipo: TipoOrdenTrabajo.transformacion,
+            idSolicitante,
+            idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+            idUbicacionDestino: idUbicacionDestinoProcesado,
+            observaciones: buildObservacionesOtProcesamiento(
+              'procesado',
+              solicitud.idSolicitudProcesamiento,
+            ),
+            lineas: {
+              create: {
+                idProducto: solicitud.idProductoSecundario,
+                idUbicacion: idUbicacionDestinoProcesado,
+                tipoLinea: TipoLineaOt.entrada,
+                cantidad: new Prisma.Decimal(unidades),
+              },
+            },
+          },
+        });
+        ordenProcesadoId = orden.idOrdenTrabajo;
+
+        await tx.tareaCola.create({
+          data: {
+            codigoCuenta: solicitud.codigoCuenta,
+            idBodega: solicitud.idBodega,
+            tipo: TipoTarea.movimiento,
+            estado: EstadoTarea.pendiente,
+            idOrdenTrabajo: orden.idOrdenTrabajo,
+            titulo: `Procesado · ${solicitud.codigo}`,
+            descripcion: buildObservacionesOtProcesamiento(
+              'procesado',
+              solicitud.idSolicitudProcesamiento,
+            ),
+          },
+        });
+      }
+
+      if (sobrante > 0 && idUbicacionDestinoDesperdicio) {
+        const codigo = await this.nextCodigoOt(
+          tx,
+          solicitud.codigoCuenta,
+          solicitud.idBodega,
+        );
+        const orden = await tx.ordenTrabajo.create({
+          data: {
+            codigoCuenta: solicitud.codigoCuenta,
+            idBodega: solicitud.idBodega,
+            codigo,
+            tipo: TipoOrdenTrabajo.reabasto,
+            idSolicitante,
+            idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+            idUbicacionDestino: idUbicacionDestinoDesperdicio,
+            observaciones: buildObservacionesOtProcesamiento(
+              'desperdicio',
+              solicitud.idSolicitudProcesamiento,
+            ),
+            lineas: {
+              create: {
+                idProducto: solicitud.idProductoPrimario,
+                idUbicacion: idUbicacionDestinoDesperdicio,
+                tipoLinea: TipoLineaOt.entrada,
+                cantidad: new Prisma.Decimal(sobrante),
+              },
+            },
+          },
+        });
+        ordenDesperdicioId = orden.idOrdenTrabajo;
+
+        await tx.tareaCola.create({
+          data: {
+            codigoCuenta: solicitud.codigoCuenta,
+            idBodega: solicitud.idBodega,
+            tipo: TipoTarea.movimiento,
+            estado: EstadoTarea.pendiente,
+            idOrdenTrabajo: orden.idOrdenTrabajo,
+            titulo: `Sobrante · ${solicitud.codigo}`,
+            descripcion: buildObservacionesOtProcesamiento(
+              'desperdicio',
+              solicitud.idSolicitudProcesamiento,
+            ),
+          },
+        });
+      }
+
+      return { ordenProcesadoId, ordenDesperdicioId };
+    });
+  }
+
+  async ejecutarOtProcesamiento(
+    idOrdenTrabajo: string,
+    idUsuario: string,
+  ): Promise<void> {
+    const orden = await this.prisma.ordenTrabajo.findUnique({
+      where: { idOrdenTrabajo },
+      include: { lineas: true },
+    });
+
+    if (!orden?.idSolicitudProcesamiento) return;
+
+    const meta = parseObservacionesOtProcesamiento(orden.observaciones);
+    if (!meta) return;
+
+    const solicitud = await this.findById(orden.idSolicitudProcesamiento);
+    if (!solicitud) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (meta.rol === 'procesado' && orden.idUbicacionDestino) {
+        const unidades = unidadesSecundarioEnterasParaMapa(
+          solicitud.estimadoUnidadesSecundario
+            ? Number(solicitud.estimadoUnidadesSecundario.toString())
+            : 0,
+        );
+        await this.inventario.ubicarSecundarioProcesado(tx, {
+          codigoCuenta: solicitud.codigoCuenta,
+          idBodega: solicitud.idBodega,
+          idProductoSecundario: solicitud.idProductoSecundario,
+          idUbicacionDestino: orden.idUbicacionDestino,
+          unidades,
+          idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+          idUsuario,
+        });
+      }
+
+      if (meta.rol === 'desperdicio' && orden.idUbicacionDestino) {
+        const primario = await this.loadProducto(
+          solicitud.idProductoPrimario,
+          solicitud.codigoCuenta,
+        );
+        const sobrante = kgSobranteParaDevolucionMapa({
+          sobranteKg: solicitud.sobranteKg
+            ? Number(solicitud.sobranteKg.toString())
+            : 0,
+          unidadPrimarioVisualizacion: primario.unidadVisualizacion,
+        });
+        await this.inventario.devolverSobrantePrimario(tx, {
+          codigoCuenta: solicitud.codigoCuenta,
+          idBodega: solicitud.idBodega,
+          idProductoPrimario: solicitud.idProductoPrimario,
+          idUbicacionDestino: orden.idUbicacionDestino,
+          sobranteKg: sobrante,
+          idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+          idUsuario,
+        });
+      }
+
+      await this.tryMarcarTerminada(tx, solicitud);
+    });
+  }
+
+  private async tryMarcarTerminada(
+    tx: Prisma.TransactionClient,
+    solicitud: SolicitudRow,
+  ): Promise<void> {
+    if (solicitud.estado !== EstadoProcesamiento.pendiente_cierre) return;
+
+    const primario = await this.loadProducto(
+      solicitud.idProductoPrimario,
+      solicitud.codigoCuenta,
+    );
+    const sobrante = kgSobranteParaDevolucionMapa({
+      sobranteKg: solicitud.sobranteKg
+        ? Number(solicitud.sobranteKg.toString())
+        : 0,
+      unidadPrimarioVisualizacion: primario.unidadVisualizacion,
+    });
+
+    const unidades = unidadesSecundarioEnterasParaMapa(
+      solicitud.estimadoUnidadesSecundario
+        ? Number(solicitud.estimadoUnidadesSecundario.toString())
+        : 0,
+    );
+
+    const okProcesado =
+      unidades <= 0 ||
+      (await this.inventario.tieneSecundarioUbicado(tx, {
+        idBodega: solicitud.idBodega,
+        idProductoSecundario: solicitud.idProductoSecundario,
+        unidadesMinimas: unidades,
+      }));
+
+    const otsPendientes = await tx.ordenTrabajo.count({
+      where: {
+        idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+        estado: { in: [EstadoOrdenTrabajo.planificada, EstadoOrdenTrabajo.en_proceso] },
+      },
+    });
+
+    const okSobrante = sobrante <= 0 || otsPendientes === 0;
+
+    if (okProcesado && okSobrante) {
+      await tx.solicitudProcesamiento.update({
+        where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
+        data: {
+          estado: EstadoProcesamiento.terminada,
+          cierreDesdeProcesador: false,
+        },
+      });
+    }
+  }
+
+  private async loadProducto(
+    idProducto: string,
+    codigoCuenta: string,
+  ): Promise<ProductoProcesamientoCtx> {
+    const row = await this.prisma.producto.findFirst({
+      where: { idProducto, codigoCuenta },
+      select: {
+        idProducto: true,
+        mermaPct: true,
+        unidadVisualizacion: true,
+        reglaConversionCantidadPrimario: true,
+        reglaConversionUnidadesSecundario: true,
+      },
+    });
+
+    if (!row) {
+      throw new Error('PRODUCTO_NOT_FOUND');
+    }
+
+    return row;
   }
 
   private async nextCodigo(
@@ -209,6 +621,30 @@ export class SolicitudProcesamientoRepository {
       },
     });
     return formatCodigoSolicitudProcesamiento(created.valor);
+  }
+
+  private async nextCodigoOt(
+    tx: Prisma.TransactionClient,
+    codigoCuenta: string,
+    idBodega: string,
+  ): Promise<string> {
+    const clave = 'orden_trabajo';
+    const existing = await tx.contador.findFirst({
+      where: { codigoCuenta, idBodega, clave },
+    });
+
+    if (existing) {
+      const updated = await tx.contador.update({
+        where: { idContador: existing.idContador },
+        data: { valor: { increment: 1 } },
+      });
+      return `OT-${String(updated.valor).padStart(6, '0')}`;
+    }
+
+    const created = await tx.contador.create({
+      data: { codigoCuenta, idBodega, clave, valor: 1n },
+    });
+    return `OT-${String(created.valor).padStart(6, '0')}`;
   }
 
   toResponse(row: SolicitudRow): SolicitudProcesamientoResponse {

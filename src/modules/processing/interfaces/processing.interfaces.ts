@@ -42,7 +42,7 @@ export interface CreateSolicitudProcesamientoInput {
 export interface CerrarSolicitudProcesamientoInput {
   codigoCuenta: string;
   idBodega: string;
-  kilosSecundario: number;
+  kilosSecundario?: number;
   kilosMerma: number;
   sobranteKg?: number;
 }

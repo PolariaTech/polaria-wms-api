@@ -98,22 +98,51 @@ export class CambiarEstadoProcesamientoDto extends TenantBodegaProcesamientoQuer
   })
   @IsEnum(['pendiente', 'en_proceso', 'pendiente_cierre', 'terminada', 'cancelada'] as const)
   estado!: 'pendiente' | 'en_proceso' | 'pendiente_cierre' | 'terminada' | 'cancelada';
-}
 
-export class CerrarSolicitudProcesamientoDto extends TenantBodegaProcesamientoQueryDto {
-  @ApiProperty({ example: 450 })
-  @IsNumber()
-  @Min(0)
-  kilosSecundario!: number;
-
-  @ApiProperty({ example: 25 })
-  @IsNumber()
-  @Min(0)
-  kilosMerma!: number;
-
-  @ApiPropertyOptional({ example: 25 })
+  @ApiPropertyOptional({ description: 'Kg merma al pasar a pendiente_cierre' })
   @IsOptional()
   @IsNumber()
   @Min(0)
-  sobranteKg?: number;
+  desperdicioKg?: number;
+}
+
+export class CerrarSolicitudProcesamientoDto extends TenantBodegaProcesamientoQueryDto {
+  @ApiPropertyOptional({
+    example: 450,
+    description: 'Unidades secundario; si se omite, usa floor(estimado)',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  kilosSecundario?: number;
+
+  @ApiProperty({ example: 25, description: 'Kg merma operativa (desperdicioKg frio)' })
+  @IsNumber()
+  @Min(0)
+  kilosMerma!: number;
+}
+
+export class AsignarOperarioDto extends TenantBodegaProcesamientoQueryDto {
+  @ApiProperty()
+  @IsUUID()
+  idOperario!: string;
+}
+
+export class IniciarProcesamientoDto extends TenantBodegaProcesamientoQueryDto {
+  @ApiPropertyOptional({ description: 'Procesador a asignar al pasar a en curso' })
+  @IsOptional()
+  @IsUUID()
+  idProcesador?: string;
+}
+
+export class CreateOrdenesPostCierreDto extends TenantBodegaProcesamientoQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  idUbicacionDestinoProcesado?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  idUbicacionDestinoDesperdicio?: string;
 }
