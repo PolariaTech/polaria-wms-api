@@ -8,15 +8,48 @@ Aplica los cambios de **servicios** (sin UI) para consumir el flujo completo de 
 
 ## Aplicar en tu PC (polaria-wms-web)
 
+### Windows (PowerShell) — recomendado
+
+Desde la carpeta `polaria-wms-web` (ya en la rama `cursor/frio-procesamiento-web-d2d9`):
+
+```powershell
+curl.exe -L -o web-proc.patch "https://raw.githubusercontent.com/PolariaTech/polaria-wms-api/cursor/frio-procesamiento-d2d9/docs/patches/polaria-wms-web-frio-procesamiento.patch"
+git am web-proc.patch
+npm run build
+git push -u origin cursor/frio-procesamiento-web-d2d9
+```
+
+Si `git am` falla:
+
+```powershell
+git am --abort
+git apply --3way web-proc.patch
+git add -A
+git commit -m "feat(procesamiento): consumir flujo frio vía API Nest (patch)"
+git push -u origin cursor/frio-procesamiento-web-d2d9
+```
+
+**Notas Windows:**
+- Usa `curl.exe` (no `curl` solo: en PowerShell es alias de `Invoke-WebRequest`).
+- No uses `/tmp/` ni `\` al final de línea; guarda el patch en la carpeta del repo (`web-proc.patch`).
+- El `curl` y la URL deben ir en **una sola línea**.
+
+Alternativa sin curl:
+
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/PolariaTech/polaria-wms-api/cursor/frio-procesamiento-d2d9/docs/patches/polaria-wms-web-frio-procesamiento.patch" -OutFile web-proc.patch
+```
+
+### Linux / macOS
+
 ```bash
 cd polaria-wms-web
 git fetch origin
 git checkout main
 git pull origin main
 git checkout -b cursor/frio-procesamiento-web-d2d9
-curl -L -o /tmp/web-proc.patch \
-  "https://raw.githubusercontent.com/PolariaTech/polaria-wms-api/cursor/frio-procesamiento-d2d9/docs/patches/polaria-wms-web-frio-procesamiento.patch"
-git am /tmp/web-proc.patch
+curl -L -o web-proc.patch "https://raw.githubusercontent.com/PolariaTech/polaria-wms-api/cursor/frio-procesamiento-d2d9/docs/patches/polaria-wms-web-frio-procesamiento.patch"
+git am web-proc.patch
 npm run build
 git push -u origin cursor/frio-procesamiento-web-d2d9
 ```
@@ -25,7 +58,7 @@ Si `git am` falla por contexto:
 
 ```bash
 git am --abort
-git apply --3way /tmp/web-proc.patch
+git apply --3way web-proc.patch
 git add -A && git commit -m "feat(procesamiento): consumir flujo frio vía API Nest (patch)"
 ```
 
