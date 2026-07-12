@@ -1,0 +1,371 @@
+diff --git a/src/modules/processing/index.ts b/src/modules/processing/index.ts
+index 3ba0b29..878b34e 100644
+--- a/src/modules/processing/index.ts
++++ b/src/modules/processing/index.ts
+@@ -1,7 +1,9 @@
+ export type {
++  CreateOrdenesPostCierreInput,
+   CreateSolicitudProcesamientoInput,
+   EstadoProcesamiento,
+   EstadoTarea,
++  OrdenesPostCierreResult,
+   ProductoProcesamientoOption,
+   SolicitudProcesamientoOperadorRow,
+   SolicitudProcesamientoRow,
+@@ -16,13 +18,22 @@ export {
+ } from "./shared/constants/processing-status";
+ 
+ export {
++  aplicarOrdenProcesamiento,
++  asignarOperarioProcesamiento,
++  asignarProcesadorProcesamiento,
++  cerrarSolicitudProcesamiento,
++  crearOrdenesPostCierre,
+   createSolicitudProcesamiento,
++  getDesperdicioSugerido,
++  getSolicitudProcesamiento,
+   getStockProductoBodega,
++  iniciarProcesamiento,
+   listProductosPrimariosProcesamiento,
+   listProductosSecundariosProcesamiento,
+   listSolicitudesProcesamiento,
+   listSolicitudesProcesamientoOperador,
+   listTareasCola,
++  terminarSolicitudProcesamiento,
+ } from "./shared/services/processing.service";
+ 
+ export { BodegaInternaOperadorHub } from "./operador/components/BodegaInternaOperadorHub";
+diff --git a/src/modules/processing/shared/services/processing-api.service.ts b/src/modules/processing/shared/services/processing-api.service.ts
+index f17784f..01c38e4 100644
+--- a/src/modules/processing/shared/services/processing-api.service.ts
++++ b/src/modules/processing/shared/services/processing-api.service.ts
+@@ -1,7 +1,9 @@
+ import { DomainServiceError } from "@/lib/utils/domain-service-error";
+ import { ApiError, apiRequest } from "@/services/api/api";
+ import type {
++  CreateOrdenesPostCierreInput,
+   CreateSolicitudProcesamientoInput,
++  OrdenesPostCierreResult,
+   SolicitudProcesamientoRow,
+ } from "../types/processing.types";
+ 
+@@ -34,9 +36,14 @@ interface SolicitudProcesamientoApiRow {
+   kilosPrimario: string;
+   kilosSecundario: string | null;
+   kilosMerma: string | null;
++  sobranteKg: string | null;
+   reglaConversionCantidadPrimario: string | null;
+   reglaConversionUnidadesSecundario: string | null;
++  perdidaProcesamientoPct: string | null;
+   estimadoUnidadesSecundario: string | null;
++  kgPrimarioDescontado: string | null;
++  cierreDesdeProcesador: boolean;
++  observaciones: string | null;
+   createdAt: string;
+   updatedAt: string;
+ }
+@@ -56,9 +63,14 @@ function mapSolicitudRow(row: SolicitudProcesamientoApiRow): SolicitudProcesamie
+     kilos_primario: row.kilosPrimario,
+     kilos_secundario: row.kilosSecundario,
+     kilos_merma: row.kilosMerma,
++    sobrante_kg: row.sobranteKg,
+     regla_conversion_cantidad_primario: row.reglaConversionCantidadPrimario,
+     regla_conversion_unidades_secundario: row.reglaConversionUnidadesSecundario,
++    perdida_procesamiento_pct: row.perdidaProcesamientoPct,
+     estimado_unidades_secundario: row.estimadoUnidadesSecundario,
++    kg_primario_descontado: row.kgPrimarioDescontado,
++    cierre_desde_procesador: row.cierreDesdeProcesador,
++    observaciones: row.observaciones,
+     created_at: row.createdAt,
+     updated_at: row.updatedAt,
+   };
+@@ -85,6 +97,25 @@ export async function listSolicitudesProcesamientoApi(params: {
+   return rows.map(mapSolicitudRow);
+ }
+ 
++export async function getSolicitudProcesamientoApi(
++  idSolicitud: string,
++): Promise<SolicitudProcesamientoRow> {
++  const row = await apiRequest<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}`,
++    { auth: true },
++  );
++  return mapSolicitudRow(row);
++}
++
++export async function getDesperdicioSugeridoApi(
++  idSolicitud: string,
++): Promise<{ desperdicioKgSugerido: number | null }> {
++  return apiRequest<{ desperdicioKgSugerido: number | null }>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/desperdicio-sugerido`,
++    { auth: true },
++  );
++}
++
+ export async function createSolicitudProcesamientoApi(
+   input: Omit<CreateSolicitudProcesamientoInput, "idSolicitante"> & {
+     idSolicitante?: string;
+@@ -102,14 +133,42 @@ export async function createSolicitudProcesamientoApi(
+       reglaConversionCantidadPrimario: input.reglaConversionCantidadPrimario,
+       reglaConversionUnidadesSecundario:
+         input.reglaConversionUnidadesSecundario,
+-      perdidaProcesamientoPct: undefined,
+-      observaciones: undefined,
++      perdidaProcesamientoPct: input.perdidaProcesamientoPct,
++      observaciones: input.observaciones,
+     },
+   );
+ 
+   return mapSolicitudRow(row);
+ }
+ 
++export async function asignarOperarioProcesamientoApi(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string; idOperario: string },
++): Promise<SolicitudProcesamientoRow> {
++  const row = await mutateApi<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/asignar-operario`,
++    "PATCH",
++    params,
++  );
++  return mapSolicitudRow(row);
++}
++
++export async function iniciarProcesamientoApi(
++  idSolicitud: string,
++  params: {
++    codigoCuenta: string;
++    idBodega: string;
++    idProcesador?: string;
++  },
++): Promise<SolicitudProcesamientoRow> {
++  const row = await mutateApi<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/iniciar`,
++    "POST",
++    params,
++  );
++  return mapSolicitudRow(row);
++}
++
+ export async function asignarProcesadorApi(
+   idSolicitud: string,
+   params: { codigoCuenta: string; idBodega: string; idProcesador: string },
+@@ -127,9 +186,8 @@ export async function cerrarSolicitudProcesamientoApi(
+   params: {
+     codigoCuenta: string;
+     idBodega: string;
+-    kilosSecundario: number;
+     kilosMerma: number;
+-    sobranteKg?: number;
++    kilosSecundario?: number;
+   },
+ ): Promise<SolicitudProcesamientoRow> {
+   const row = await mutateApi<SolicitudProcesamientoApiRow>(
+@@ -139,3 +197,36 @@ export async function cerrarSolicitudProcesamientoApi(
+   );
+   return mapSolicitudRow(row);
+ }
++
++export async function crearOrdenesPostCierreApi(
++  idSolicitud: string,
++  input: CreateOrdenesPostCierreInput,
++): Promise<OrdenesPostCierreResult> {
++  return mutateApi<OrdenesPostCierreResult>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/ordenes-post-cierre`,
++    "POST",
++    input,
++  );
++}
++
++export async function aplicarOrdenProcesamientoApi(
++  idSolicitud: string,
++  idOrden: string,
++): Promise<{ ok: true }> {
++  return mutateApi<{ ok: true }>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/ordenes/${encodeURIComponent(idOrden)}/aplicar`,
++    "POST",
++  );
++}
++
++export async function terminarSolicitudProcesamientoApi(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string },
++): Promise<SolicitudProcesamientoRow> {
++  const row = await mutateApi<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/terminar`,
++    "POST",
++    params,
++  );
++  return mapSolicitudRow(row);
++}
+diff --git a/src/modules/processing/shared/services/processing.service.ts b/src/modules/processing/shared/services/processing.service.ts
+index 0155546..7d69e7c 100644
+--- a/src/modules/processing/shared/services/processing.service.ts
++++ b/src/modules/processing/shared/services/processing.service.ts
+@@ -10,11 +10,22 @@ import {
+ import { DomainServiceError } from "@/lib/utils/domain-service-error";
+ import { listTareasColaApi } from "@/modules/operations";
+ import {
++  aplicarOrdenProcesamientoApi,
++  asignarOperarioProcesamientoApi,
++  asignarProcesadorApi,
++  cerrarSolicitudProcesamientoApi,
++  crearOrdenesPostCierreApi,
+   createSolicitudProcesamientoApi,
++  getDesperdicioSugeridoApi,
++  getSolicitudProcesamientoApi,
++  iniciarProcesamientoApi,
+   listSolicitudesProcesamientoApi,
++  terminarSolicitudProcesamientoApi,
+ } from "./processing-api.service";
+ import type {
++  CreateOrdenesPostCierreInput,
+   CreateSolicitudProcesamientoInput,
++  OrdenesPostCierreResult,
+   ProductoProcesamientoOption,
+   SolicitudProcesamientoOperadorRow,
+   SolicitudProcesamientoRow,
+@@ -112,7 +123,74 @@ function mapSolicitudOperadorRow(
+   };
+ }
+ 
+-// TODO POL-5+: cerrar solicitudes de procesamiento vía apiRequest al API Nest.
++// Flujo frio: mutaciones vía API Nest (sin cambios de UI).
++
++export async function getSolicitudProcesamiento(
++  idSolicitud: string,
++): Promise<SolicitudProcesamientoRow> {
++  return getSolicitudProcesamientoApi(idSolicitud);
++}
++
++export async function getDesperdicioSugerido(
++  idSolicitud: string,
++): Promise<number | null> {
++  const result = await getDesperdicioSugeridoApi(idSolicitud);
++  return result.desperdicioKgSugerido;
++}
++
++export async function asignarOperarioProcesamiento(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string; idOperario: string },
++): Promise<SolicitudProcesamientoRow> {
++  return asignarOperarioProcesamientoApi(idSolicitud, params);
++}
++
++export async function iniciarProcesamiento(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string; idProcesador?: string },
++): Promise<SolicitudProcesamientoRow> {
++  return iniciarProcesamientoApi(idSolicitud, params);
++}
++
++export async function asignarProcesadorProcesamiento(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string; idProcesador: string },
++): Promise<SolicitudProcesamientoRow> {
++  return asignarProcesadorApi(idSolicitud, params);
++}
++
++export async function cerrarSolicitudProcesamiento(
++  idSolicitud: string,
++  params: {
++    codigoCuenta: string;
++    idBodega: string;
++    kilosMerma: number;
++    kilosSecundario?: number;
++  },
++): Promise<SolicitudProcesamientoRow> {
++  return cerrarSolicitudProcesamientoApi(idSolicitud, params);
++}
++
++export async function crearOrdenesPostCierre(
++  idSolicitud: string,
++  input: CreateOrdenesPostCierreInput,
++): Promise<OrdenesPostCierreResult> {
++  return crearOrdenesPostCierreApi(idSolicitud, input);
++}
++
++export async function aplicarOrdenProcesamiento(
++  idSolicitud: string,
++  idOrden: string,
++): Promise<{ ok: true }> {
++  return aplicarOrdenProcesamientoApi(idSolicitud, idOrden);
++}
++
++export async function terminarSolicitudProcesamiento(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string },
++): Promise<SolicitudProcesamientoRow> {
++  return terminarSolicitudProcesamientoApi(idSolicitud, params);
++}
+ 
+ export async function listSolicitudesProcesamiento(
+   params: TenantListParams,
+diff --git a/src/modules/processing/shared/types/processing.types.ts b/src/modules/processing/shared/types/processing.types.ts
+index ded62be..7b6fd97 100644
+--- a/src/modules/processing/shared/types/processing.types.ts
++++ b/src/modules/processing/shared/types/processing.types.ts
+@@ -6,12 +6,6 @@ export type EstadoProcesamiento =
+   | "terminada"
+   | "cancelada";
+ 
+-export type EstadoTarea =
+-  | "pendiente"
+-  | "en_proceso"
+-  | "completada"
+-  | "cancelada";
+-
+ export type TipoTarea =
+   | "ingreso"
+   | "movimiento"
+@@ -20,6 +14,12 @@ export type TipoTarea =
+   | "revision"
+   | "otro";
+ 
++export type EstadoTarea =
++  | "pendiente"
++  | "en_proceso"
++  | "completada"
++  | "cancelada";
++
+ export interface SolicitudProcesamientoRow {
+   id_solicitud_procesamiento: string;
+   codigo_cuenta: string;
+@@ -34,9 +34,14 @@ export interface SolicitudProcesamientoRow {
+   kilos_primario: string;
+   kilos_secundario: string | null;
+   kilos_merma: string | null;
++  sobrante_kg: string | null;
+   regla_conversion_cantidad_primario: string | null;
+   regla_conversion_unidades_secundario: string | null;
++  perdida_procesamiento_pct: string | null;
+   estimado_unidades_secundario: string | null;
++  kg_primario_descontado: string | null;
++  cierre_desde_procesador: boolean;
++  observaciones: string | null;
+   created_at: string;
+   updated_at: string;
+ }
+@@ -68,7 +73,21 @@ export interface CreateSolicitudProcesamientoInput {
+   kilosPrimario: number;
+   reglaConversionCantidadPrimario: number;
+   reglaConversionUnidadesSecundario: number;
+-  estimadoUnidadesSecundario: number;
++  estimadoUnidadesSecundario?: number;
++  perdidaProcesamientoPct?: number;
++  observaciones?: string;
++}
++
++export interface CreateOrdenesPostCierreInput {
++  codigoCuenta: string;
++  idBodega: string;
++  idUbicacionDestinoProcesado?: string;
++  idUbicacionDestinoDesperdicio?: string;
++}
++
++export interface OrdenesPostCierreResult {
++  ordenProcesadoId: string | null;
++  ordenDesperdicioId: string | null;
+ }
+ 
+ export interface TareaColaRow {

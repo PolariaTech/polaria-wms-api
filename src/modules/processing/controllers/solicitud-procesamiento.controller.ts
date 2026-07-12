@@ -30,19 +30,26 @@ import { TenantGuard } from '../../../core/guards/tenant.guard';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import {
   ROLES_PROCESAMIENTO_ASIGNAR,
+  ROLES_PROCESAMIENTO_ASIGNAR_OPERARIO,
   ROLES_PROCESAMIENTO_CREAR,
   ROLES_PROCESAMIENTO_EJECUTAR,
+  ROLES_PROCESAMIENTO_INICIAR,
   ROLES_PROCESAMIENTO_LECTURA,
 } from '../constants/processing.constants';
 import {
+  AsignarOperarioDto,
   AsignarProcesadorDto,
   CambiarEstadoProcesamientoDto,
   CerrarSolicitudProcesamientoDto,
+  CreateOrdenesPostCierreDto,
   CreateSolicitudProcesamientoDto,
+  IniciarProcesamientoDto,
   ListSolicitudesProcesamientoQueryDto,
+  TenantBodegaProcesamientoQueryDto,
 } from '../dto/processing.dto';
 import { SolicitudProcesamientoResponseDto } from '../dto/processing-response.dto';
 import type { SolicitudProcesamientoResponse } from '../interfaces/processing.interfaces';
+import { SolicitudProcesamientoRepository } from '../infrastructure/solicitud-procesamiento.repository';
 import { SolicitudProcesamientoService } from '../services/solicitud-procesamiento.service';
 
 @ApiTags(SWAGGER_TAGS.PROCESAMIENTO)
@@ -50,7 +57,10 @@ import { SolicitudProcesamientoService } from '../services/solicitud-procesamien
 @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 @ApiBearerAuth('access-token')
 export class SolicitudProcesamientoController {
-  constructor(private readonly service: SolicitudProcesamientoService) {}
+  constructor(
+    private readonly service: SolicitudProcesamientoService,
+    private readonly repository: SolicitudProcesamientoRepository,
+  ) {}
 
   @Get()
   @Roles(...ROLES_PROCESAMIENTO_LECTURA)
@@ -75,17 +85,31 @@ export class SolicitudProcesamientoController {
     return this.service.findById(id, ctx);
   }
 
+  @Get(':id/desperdicio-sugerido')
+  @Roles(...ROLES_PROCESAMIENTO_LECTURA)
+  @ApiOperation({
+    summary: 'Kg merma sugeridos según % catálogo (frio)',
+  })
+  async desperdicioSugerido(
+    @Param('id', ParseUUIDPipe) id: string,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<{ desperdicioKgSugerido: number | null }> {
+    const row = await this.service.findById(id, ctx);
+    return {
+      desperdicioKgSugerido: this.service.getDesperdicioSugerido(row),
+    };
+  }
+
   @Post()
   @Roles(...ROLES_PROCESAMIENTO_CREAR)
   @UseGuards(SensitiveWriteGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Crear solicitud de procesamiento',
+    summary: 'Crear solicitud (Iniciado)',
     description:
-      'Crea la solicitud en estado pendiente y encola tarea para el procesador (flujo frio).',
+      'Calcula estimado con regla de tres y % merma del catálogo (frio).',
   })
   @ApiCreatedResponse({ type: SolicitudProcesamientoResponseDto })
-  @ApiForbiddenResponse()
   create(
     @Body() dto: CreateSolicitudProcesamientoDto,
     @TenantCtx() ctx: TenantContext,
@@ -93,9 +117,39 @@ export class SolicitudProcesamientoController {
     return this.service.create(dto, ctx);
   }
 
+  @Patch(':id/asignar-operario')
+  @Roles(...ROLES_PROCESAMIENTO_ASIGNAR_OPERARIO)
+  @ApiOperation({ summary: 'Jefe asigna operario (permanece pendiente)' })
+  @ApiOkResponse({ type: SolicitudProcesamientoResponseDto })
+  asignarOperario(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AsignarOperarioDto,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<SolicitudProcesamientoResponse> {
+    return this.service.asignarOperario(id, dto, ctx);
+  }
+
+  @Post(':id/iniciar')
+  @Roles(...ROLES_PROCESAMIENTO_INICIAR)
+  @UseGuards(SensitiveWriteGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Operario pasa a en curso',
+    description:
+      'Descuenta primario del mapa, calcula sobranteKg y reasigna al procesador.',
+  })
+  @ApiOkResponse({ type: SolicitudProcesamientoResponseDto })
+  iniciar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: IniciarProcesamientoDto,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<SolicitudProcesamientoResponse> {
+    return this.service.iniciar(id, dto, ctx);
+  }
+
   @Patch(':id/asignar-procesador')
   @Roles(...ROLES_PROCESAMIENTO_ASIGNAR)
-  @ApiOperation({ summary: 'Asignar procesador y pasar a en_proceso' })
+  @ApiOperation({ summary: 'Pre-asignar procesador (sin cambiar estado)' })
   @ApiOkResponse({ type: SolicitudProcesamientoResponseDto })
   asignarProcesador(
     @Param('id', ParseUUIDPipe) id: string,
@@ -107,10 +161,7 @@ export class SolicitudProcesamientoController {
 
   @Patch(':id/estado')
   @Roles(...ROLES_PROCESAMIENTO_EJECUTAR)
-  @ApiOperation({
-    summary: 'Cambiar estado de procesamiento',
-    description: 'Transiciones: pendiente → en_proceso → pendiente_cierre → terminada.',
-  })
+  @ApiOperation({ summary: 'Transición manual con reglas frio' })
   @ApiOkResponse({ type: SolicitudProcesamientoResponseDto })
   cambiarEstado(
     @Param('id', ParseUUIDPipe) id: string,
@@ -125,9 +176,8 @@ export class SolicitudProcesamientoController {
   @UseGuards(SensitiveWriteGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Cerrar procesamiento con merma (procesador)',
-    description:
-      'Registra kilos secundario, merma y sobrante. Persiste RegistroMerma y movimiento de inventario.',
+    summary: 'Procesador cierra → pendiente_cierre',
+    description: 'Registra desperdicioKg (merma) como en frio.',
   })
   @ApiOkResponse({ type: SolicitudProcesamientoResponseDto })
   cerrar(
@@ -136,5 +186,46 @@ export class SolicitudProcesamientoController {
     @TenantCtx() ctx: TenantContext,
   ): Promise<SolicitudProcesamientoResponse> {
     return this.service.cerrar(id, dto, ctx);
+  }
+
+  @Post(':id/ordenes-post-cierre')
+  @Roles(...ROLES_PROCESAMIENTO_ASIGNAR)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Jefe crea OT procesado/sobrante hacia almacén',
+  })
+  crearOrdenesPostCierre(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateOrdenesPostCierreDto,
+    @TenantCtx() ctx: TenantContext,
+  ) {
+    return this.service.crearOrdenesPostCierre(id, dto, ctx);
+  }
+
+  @Post(':id/ordenes/:idOrden/aplicar')
+  @Roles(...ROLES_PROCESAMIENTO_INICIAR, ...ROLES_PROCESAMIENTO_EJECUTAR)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Operario aplica OT de procesado o sobrante al mapa',
+  })
+  async aplicarOrden(
+    @Param('idOrden', ParseUUIDPipe) idOrden: string,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<{ ok: true }> {
+    await this.repository.ejecutarOtProcesamiento(idOrden, ctx.idUsuario);
+    return { ok: true };
+  }
+
+  @Post(':id/terminar')
+  @Roles(...ROLES_PROCESAMIENTO_ASIGNAR)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Marcar terminada tras ubicar en mapa' })
+  @ApiOkResponse({ type: SolicitudProcesamientoResponseDto })
+  terminar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: TenantBodegaProcesamientoQueryDto,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<SolicitudProcesamientoResponse> {
+    return this.service.terminar(id, dto, ctx);
   }
 }

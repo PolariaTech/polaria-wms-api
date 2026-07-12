@@ -80,14 +80,14 @@ describe('SolicitudProcesamientoService', () => {
         },
         ctx,
       ),
-    ).rejects.toThrow('Solo se puede cerrar');
+    ).rejects.toThrow('Solo el procesador puede cerrar');
   });
 
   it('cerrar delega al repositorio', async () => {
     repository.findById.mockResolvedValue(solicitudMock as never);
     repository.cerrar.mockResolvedValue({
       ...solicitudMock,
-      estado: EstadoProcesamiento.terminada,
+      estado: EstadoProcesamiento.pendiente_cierre,
     } as never);
 
     await service.cerrar(

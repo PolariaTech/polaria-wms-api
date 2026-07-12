@@ -1,20 +1,25 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { EstadoProcesamiento } from '../../../generated/prisma/client';
 import {
   applyTenantFilter,
   assertOperationalTenantScope,
 } from '../../../core/database/tenant-scope.util';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
+import { desperdicioKgSugeridoDesdeMerma } from '../utils/desperdicio-kg-sugerido.util';
+import {
+  assertTransicionProcesamiento,
+  mensajeTransicionProcesamiento,
+} from '../utils/procesamiento-estado.util';
 import type {
+  AsignarOperarioDto,
   AsignarProcesadorDto,
   CambiarEstadoProcesamientoDto,
   CerrarSolicitudProcesamientoDto,
+  CreateOrdenesPostCierreDto,
   CreateSolicitudProcesamientoDto,
+  IniciarProcesamientoDto,
   ListSolicitudesProcesamientoQueryDto,
+  TenantBodegaProcesamientoQueryDto,
 } from '../dto/processing.dto';
 import { SolicitudProcesamientoRepository } from '../infrastructure/solicitud-procesamiento.repository';
 import type { SolicitudProcesamientoResponse } from '../interfaces/processing.interfaces';
@@ -77,8 +82,97 @@ export class SolicitudProcesamientoService {
       throw new BadRequestException('kilosPrimario debe ser mayor a 0');
     }
 
-    const row = await this.repository.create(dto, ctx.idUsuario);
-    return this.repository.toResponse(row);
+    try {
+      const row = await this.repository.create(dto, ctx.idUsuario);
+      return this.repository.toResponse(row);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'PRODUCTO_NOT_FOUND') {
+        throw new BadRequestException('Producto no encontrado en el catálogo');
+      }
+      throw error;
+    }
+  }
+
+  async asignarOperario(
+    id: string,
+    dto: AsignarOperarioDto,
+    ctx: TenantContext,
+  ): Promise<SolicitudProcesamientoResponse> {
+    assertOperationalTenantScope(ctx, {
+      codigoCuenta: dto.codigoCuenta,
+      idBodega: dto.idBodega,
+    });
+
+    const row = await this.repository.findById(id);
+    if (!row) {
+      throw new NotFoundException('Solicitud de procesamiento no encontrada');
+    }
+
+    if (row.estado !== EstadoProcesamiento.pendiente) {
+      throw new BadRequestException(
+        'Solo se puede asignar operario en estado pendiente (Iniciado)',
+      );
+    }
+
+    try {
+      const updated = await this.repository.asignarOperario(row, dto.idOperario);
+      return this.repository.toResponse(updated);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'TAREA_NOT_FOUND') {
+        throw new BadRequestException('No hay tarea de procesamiento vinculada');
+      }
+      throw error;
+    }
+  }
+
+  async iniciar(
+    id: string,
+    dto: IniciarProcesamientoDto,
+    ctx: TenantContext,
+  ): Promise<SolicitudProcesamientoResponse> {
+    assertOperationalTenantScope(ctx, {
+      codigoCuenta: dto.codigoCuenta,
+      idBodega: dto.idBodega,
+    });
+
+    const row = await this.repository.findById(id);
+    if (!row) {
+      throw new NotFoundException('Solicitud de procesamiento no encontrada');
+    }
+
+    const tarea = await this.repository.findTareaVinculada(
+      id,
+      dto.codigoCuenta,
+      dto.idBodega,
+    );
+
+    const transicionError = assertTransicionProcesamiento({
+      estadoActual: row.estado,
+      estadoSiguiente: EstadoProcesamiento.en_proceso,
+      idOperarioAsignado: tarea?.idAsignado ?? null,
+      idUsuario: ctx.idUsuario,
+    });
+
+    if (transicionError) {
+      throw new BadRequestException(mensajeTransicionProcesamiento(transicionError));
+    }
+
+    try {
+      const updated = await this.repository.iniciarEnCurso(
+        row,
+        tarea!.idAsignado!,
+        dto.idProcesador ?? null,
+        ctx.idUsuario,
+      );
+      return this.repository.toResponse(updated);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'STOCK_INSUFICIENTE') {
+        throw new BadRequestException(
+          'No hay stock suficiente del primario en almacenamiento para iniciar el procesamiento',
+        );
+      }
+      throw error;
+    }
   }
 
   async asignarProcesador(
@@ -92,7 +186,6 @@ export class SolicitudProcesamientoService {
     });
 
     const row = await this.repository.findById(id);
-
     if (!row) {
       throw new NotFoundException('Solicitud de procesamiento no encontrada');
     }
@@ -112,9 +205,26 @@ export class SolicitudProcesamientoService {
     });
 
     const row = await this.repository.findById(id);
-
     if (!row) {
       throw new NotFoundException('Solicitud de procesamiento no encontrada');
+    }
+
+    const tarea = await this.repository.findTareaVinculada(
+      id,
+      dto.codigoCuenta,
+      dto.idBodega,
+    );
+
+    const transicionError = assertTransicionProcesamiento({
+      estadoActual: row.estado,
+      estadoSiguiente: dto.estado as EstadoProcesamiento,
+      idOperarioAsignado: tarea?.idAsignado ?? null,
+      idUsuario: ctx.idUsuario,
+      desperdicioKg: dto.desperdicioKg,
+    });
+
+    if (transicionError) {
+      throw new BadRequestException(mensajeTransicionProcesamiento(transicionError));
     }
 
     const updated = await this.repository.cambiarEstado(
@@ -135,21 +245,93 @@ export class SolicitudProcesamientoService {
     });
 
     const row = await this.repository.findById(id);
-
     if (!row) {
       throw new NotFoundException('Solicitud de procesamiento no encontrada');
     }
 
-    if (
-      row.estado !== EstadoProcesamiento.en_proceso &&
-      row.estado !== EstadoProcesamiento.pendiente_cierre
-    ) {
+    if (row.estado !== EstadoProcesamiento.en_proceso) {
       throw new BadRequestException(
-        'Solo se puede cerrar una solicitud en proceso o pendiente de cierre',
+        'Solo el procesador puede cerrar una solicitud en curso',
       );
+    }
+
+    const transicionError = assertTransicionProcesamiento({
+      estadoActual: row.estado,
+      estadoSiguiente: EstadoProcesamiento.pendiente_cierre,
+      idOperarioAsignado: null,
+      idUsuario: ctx.idUsuario,
+      desperdicioKg: dto.kilosMerma,
+    });
+
+    if (transicionError) {
+      throw new BadRequestException(mensajeTransicionProcesamiento(transicionError));
     }
 
     const updated = await this.repository.cerrar(row, dto, ctx.idUsuario);
     return this.repository.toResponse(updated);
+  }
+
+  async terminar(
+    id: string,
+    dto: TenantBodegaProcesamientoQueryDto,
+    ctx: TenantContext,
+  ): Promise<SolicitudProcesamientoResponse> {
+    assertOperationalTenantScope(ctx, {
+      codigoCuenta: dto.codigoCuenta,
+      idBodega: dto.idBodega,
+    });
+
+    const row = await this.repository.findById(id);
+    if (!row) {
+      throw new NotFoundException('Solicitud de procesamiento no encontrada');
+    }
+
+    if (row.estado !== EstadoProcesamiento.pendiente_cierre) {
+      throw new BadRequestException(
+        'Solo se puede terminar una solicitud en pendiente de cierre',
+      );
+    }
+
+    const updated = await this.repository.terminar(row);
+    return this.repository.toResponse(updated);
+  }
+
+  async crearOrdenesPostCierre(
+    id: string,
+    dto: CreateOrdenesPostCierreDto,
+    ctx: TenantContext,
+  ) {
+    assertOperationalTenantScope(ctx, {
+      codigoCuenta: dto.codigoCuenta,
+      idBodega: dto.idBodega,
+    });
+
+    const row = await this.repository.findById(id);
+    if (!row) {
+      throw new NotFoundException('Solicitud de procesamiento no encontrada');
+    }
+
+    if (row.estado !== EstadoProcesamiento.pendiente_cierre) {
+      throw new BadRequestException(
+        'Las órdenes post-cierre solo aplican en pendiente de cierre',
+      );
+    }
+
+    return this.repository.crearOrdenesPostCierre(
+      row,
+      ctx.idUsuario,
+      dto.idUbicacionDestinoProcesado,
+      dto.idUbicacionDestinoDesperdicio,
+    );
+  }
+
+  getDesperdicioSugerido(row: SolicitudProcesamientoResponse): number | null {
+    return desperdicioKgSugeridoDesdeMerma({
+      cantidadPrimario: Number(row.kilosPrimario),
+      unidadPrimarioVisualizacion: 'peso',
+      perdidaProcesamientoPct: row.perdidaProcesamientoPct
+        ? Number(row.perdidaProcesamientoPct)
+        : null,
+    });
   }
 }

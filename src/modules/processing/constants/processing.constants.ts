@@ -18,6 +18,16 @@ export const ROLES_PROCESAMIENTO_CREAR = [
   WmsRol.jefe_bodega,
 ] as const;
 
+export const ROLES_PROCESAMIENTO_ASIGNAR_OPERARIO = [
+  WmsRol.configurador,
+  WmsRol.jefe_bodega,
+] as const;
+
+export const ROLES_PROCESAMIENTO_INICIAR = [
+  WmsRol.configurador,
+  WmsRol.operario,
+] as const;
+
 export const ROLES_PROCESAMIENTO_ASIGNAR = [
   WmsRol.configurador,
   WmsRol.jefe_bodega,
