@@ -22,6 +22,7 @@ export const ROLES_ESCRITURA_INVENTARIO = [
   WmsRol.configurador,
   WmsRol.administrador_bodega,
   WmsRol.jefe_bodega,
+  WmsRol.operario,
 ] as const;
 
 export type RolEscrituraInventario = (typeof ROLES_ESCRITURA_INVENTARIO)[number];
@@ -40,7 +41,7 @@ export function isRolEscrituraInventario(idRol: WmsRol): boolean {
  * | Dominio              | configurador | admin cuenta | operador cuenta | admin/jefe bodega | operario |
  * |----------------------|:------------:|:------------:|:---------------:|:-----------------:|:--------:|
  * | Catálogo plataforma  | RW           | R            | R               | R                 | R        |
- * | Escritura inventario | RW           | —            | —               | RW                | —        |
+ * | Escritura inventario | RW           | —            | —               | RW                | RW       |
  * | Lecturas operativas  | R            | R (tenant)   | R (cuenta)      | R (bodega)        | R        |
  */
 export const MATRIZ_ROL_DOMINIO = {

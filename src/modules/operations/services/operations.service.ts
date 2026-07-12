@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -34,6 +33,9 @@ import type {
 import { AlertaOperativaRepository } from '../infrastructure/alerta-operativa.repository';
 import { OrdenTrabajoRepository } from '../infrastructure/orden-trabajo.repository';
 import { TareaColaRepository } from '../infrastructure/tarea-cola.repository';
+import { OperariosService } from './operarios.service';
+import { mapEjecutarOrdenError } from '../utils/map-ejecutar-orden-error';
+import { mapOrdenVentaOvError } from '../../sales/utils/map-orden-venta-ov-error';
 import type {
   AlertaOperativaResponse,
   LlamadaOperativaResponse,
@@ -43,7 +45,10 @@ import type {
 
 @Injectable()
 export class OrdenTrabajoService {
-  constructor(private readonly repository: OrdenTrabajoRepository) {}
+  constructor(
+    private readonly repository: OrdenTrabajoRepository,
+    private readonly operariosService: OperariosService,
+  ) {}
 
   async list(
     query: ListOrdenesTrabajoQueryDto,
@@ -115,8 +120,20 @@ export class OrdenTrabajoService {
       );
     }
 
-    const orden = await this.repository.create(dto, ctx.idUsuario);
-    return this.repository.toResponse(orden);
+    if (dto.idAsignado) {
+      await this.operariosService.assertOperarioAsignable(
+        dto.idAsignado,
+        dto.codigoCuenta,
+        dto.idBodega,
+      );
+    }
+
+    try {
+      const orden = await this.repository.create(dto, ctx.idUsuario);
+      return this.repository.toResponse(orden);
+    } catch (error) {
+      mapOrdenVentaOvError(error);
+    }
   }
 
   async ejecutar(
@@ -150,15 +167,7 @@ export class OrdenTrabajoService {
       const updated = await this.repository.ejecutar(orden, dto, ctx.idUsuario);
       return this.repository.toResponse(updated);
     } catch (error) {
-      if (error instanceof Error) {
-        if (error.message === 'WAREHOUSE_STATE_NOT_FOUND') {
-          throw new NotFoundException('Posición de inventario no encontrada');
-        }
-        if (error.message === 'WAREHOUSE_STATE_VERSION_CONFLICT') {
-          throw new ConflictException('La posición fue modificada por otro usuario');
-        }
-      }
-      throw error;
+      mapEjecutarOrdenError(error);
     }
   }
 
@@ -194,7 +203,10 @@ export class OrdenTrabajoService {
 
 @Injectable()
 export class TareaColaService {
-  constructor(private readonly repository: TareaColaRepository) {}
+  constructor(
+    private readonly repository: TareaColaRepository,
+    private readonly ordenTrabajoRepository: OrdenTrabajoRepository,
+  ) {}
 
   async list(
     query: ListTareasQueryDto,
@@ -263,10 +275,76 @@ export class TareaColaService {
       throw new BadRequestException('La tarea ya está completada');
     }
 
-    this.assertPuedeCompletarTarea(tarea.tipo, ctx.idRol);
+    if (tarea.estado === EstadoTarea.cancelada) {
+      throw new BadRequestException('La tarea ya está cerrada');
+    }
 
-    const updated = await this.repository.completar(idTarea, ctx.idUsuario);
+    if (
+      tarea.codigoCuenta !== dto.codigoCuenta ||
+      tarea.idBodega !== dto.idBodega
+    ) {
+      throw new BadRequestException('La tarea no pertenece al tenant indicado');
+    }
+
+    this.assertPuedeCompletarTarea(tarea.tipo, ctx.idRol);
+    this.assertOperarioAsignadoATarea(tarea.idAsignado, ctx);
+
+    if (!tarea.idOrdenTrabajo) {
+      const updated = await this.repository.completar(idTarea, ctx.idUsuario);
+      return this.repository.toResponse(updated);
+    }
+
+    const orden = await this.ordenTrabajoRepository.findById(tarea.idOrdenTrabajo);
+
+    if (!orden) {
+      throw new NotFoundException('Orden de trabajo vinculada no encontrada');
+    }
+
+    if (
+      orden.codigoCuenta !== dto.codigoCuenta ||
+      orden.idBodega !== dto.idBodega
+    ) {
+      throw new BadRequestException('La orden no pertenece al tenant indicado');
+    }
+
+    if (
+      orden.estado !== EstadoOrdenTrabajo.planificada &&
+      orden.estado !== EstadoOrdenTrabajo.en_proceso
+    ) {
+      throw new BadRequestException('La orden no está pendiente de ejecución');
+    }
+
+    try {
+      await this.ordenTrabajoRepository.ejecutar(
+        orden,
+        { codigoCuenta: dto.codigoCuenta, idBodega: dto.idBodega },
+        ctx.idUsuario,
+        { autoResolverStock: true },
+      );
+    } catch (error) {
+      mapEjecutarOrdenError(error);
+    }
+
+    const updated = await this.repository.findById(idTarea);
+
+    if (!updated) {
+      throw new NotFoundException('Tarea no encontrada');
+    }
+
     return this.repository.toResponse(updated);
+  }
+
+  private assertOperarioAsignadoATarea(
+    idAsignado: string | null,
+    ctx: TenantContext,
+  ): void {
+    if (ctx.idRol === WmsRol.configurador) {
+      return;
+    }
+
+    if (idAsignado && idAsignado !== ctx.idUsuario) {
+      throw new ForbiddenException('Esta tarea está asignada a otro operario');
+    }
   }
 
   private assertPuedeCompletarTarea(tipo: TipoTarea, idRol: WmsRol): void {

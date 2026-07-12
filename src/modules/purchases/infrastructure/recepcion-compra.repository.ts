@@ -217,8 +217,11 @@ export class RecepcionCompraRepository {
               cantidad: entrada.cantidad,
               tipoMovimiento: TipoMovimiento.recepcion,
               idUsuario,
-              idReferencia: recepcion.idRecepcion,
+              idReferencia: input.idOrdenCompra,
               tipoReferencia: TIPO_REFERENCIA_RECEPCION,
+              metadata: {
+                idRecepcion: recepcion.idRecepcion,
+              },
             },
           });
         }

@@ -72,6 +72,22 @@ export const ROLES_LLAMADA_ATENDER = [
   WmsRol.jefe_bodega,
 ] as const;
 
+/** Jefe/admin listan operarios con carga y disponibilidad. */
+export const ROLES_OPERARIOS_DISPONIBLES = [
+  WmsRol.configurador,
+  WmsRol.administrador_bodega,
+  WmsRol.jefe_bodega,
+] as const;
+
+/** Operario reporta presencia en piso (heartbeat). */
+export const ROLES_PRESENCIA_PING = [
+  WmsRol.configurador,
+  WmsRol.operario,
+] as const;
+
+/** TTL de sesión operativa: disponible si expira_en > now(). */
+export const PRESENCIA_TTL_MS = 2 * 60 * 1000;
+
 export function formatCodigoOrdenTrabajo(valor: bigint): string {
   return `OT-${String(valor).padStart(6, '0')}`;
 }

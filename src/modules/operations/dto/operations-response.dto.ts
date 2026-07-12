@@ -58,6 +58,9 @@ export class OrdenTrabajoResponseDto {
   idSolicitudProcesamiento!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
+  idOrdenVenta!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   observaciones!: string | null;
 
   @ApiProperty()
@@ -179,4 +182,24 @@ export class LlamadaOperativaResponseDto {
 
   @ApiPropertyOptional({ nullable: true })
   atendidaAt!: Date | null;
+}
+
+export class OperarioDisponibleResponseDto {
+  @ApiProperty()
+  idUsuario!: string;
+
+  @ApiProperty()
+  nombre!: string;
+
+  @ApiProperty()
+  username!: string;
+
+  @ApiProperty()
+  tareasPendientes!: number;
+
+  @ApiProperty()
+  disponible!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  ultimoPing!: string | null;
 }

@@ -130,7 +130,7 @@ Swagger tag: **Compras · Recepción (ingreso)**
 
 - Una recepción por OC (`uq_recepcion_orden`)
 - `sinDiferencias=true` si cantidades coinciden exactamente con la OC y no hay líneas adicionales
-- Con `idUbicacionIngreso`: crea `lote`, `warehouse_state` y `movimiento_inventario` tipo `recepcion`
+- Con `idUbicacionIngreso`: crea `lote`, `warehouse_state` y `movimiento_inventario` tipo `recepcion` (`tipo_referencia=orden_compra`, `id_referencia` = OC; `metadata.idRecepcion` = recepción)
 
 ---
 

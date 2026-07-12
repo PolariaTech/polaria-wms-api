@@ -79,6 +79,11 @@ export class CreateOrdenTrabajoDto {
   @IsUUID()
   idAsignado?: string;
 
+  @ApiPropertyOptional({ description: 'OV vinculada (salida manual desde venta)' })
+  @IsOptional()
+  @IsUUID()
+  idOrdenVenta?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

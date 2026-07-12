@@ -35,6 +35,7 @@ export interface OrdenTrabajoResponse {
   idUbicacionOrigen: string | null;
   idUbicacionDestino: string | null;
   idSolicitudProcesamiento: string | null;
+  idOrdenVenta: string | null;
   observaciones: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -85,6 +86,15 @@ export interface LlamadaOperativaResponse {
   atendidaAt: Date | null;
 }
 
+export interface OperarioDisponibleResponse {
+  idUsuario: string;
+  nombre: string;
+  username: string;
+  tareasPendientes: number;
+  disponible: boolean;
+  ultimoPing: string | null;
+}
+
 export interface CreateOrdenTrabajoInput {
   codigoCuenta: string;
   idBodega: string;
@@ -96,6 +106,12 @@ export interface CreateOrdenTrabajoInput {
   cantidad?: number;
   idAsignado?: string;
   observaciones?: string;
+  idOrdenVenta?: string;
+}
+
+export interface CreateOrdenTrabajoOpciones {
+  /** Registro manual de salida por el jefe (transición OV + cancela OTs de emit). */
+  registrarSalidaOv?: boolean;
 }
 
 export interface EjecutarOrdenTrabajoInput {
@@ -103,4 +119,9 @@ export interface EjecutarOrdenTrabajoInput {
   idBodega: string;
   idWarehouseState?: string;
   version?: number;
+}
+
+export interface EjecutarOrdenOpciones {
+  /** Si true, resuelve warehouse_state origen y destino sin input del cliente. */
+  autoResolverStock?: boolean;
 }

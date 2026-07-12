@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   EstadoOrdenTrabajo,
+  EstadoOrdenVenta,
   EstadoSlot,
   EstadoTarea,
   Prisma,
@@ -15,12 +16,25 @@ import {
   TIPO_REFERENCIA_ORDEN_TRABAJO,
   formatCodigoOrdenTrabajo,
 } from '../constants/operations.constants';
+import {
+  cancelarOtsPendientesOv,
+  esUbicacionZonaSalida,
+  marcarOvEnPreparacion,
+  registrarDespachoOv,
+} from '../../sales/utils/orden-venta-estado.util';
 import type {
   CreateOrdenTrabajoInput,
+  CreateOrdenTrabajoOpciones,
+  EjecutarOrdenOpciones,
   EjecutarOrdenTrabajoInput,
   FlujoOrdenTrabajo,
   OrdenTrabajoResponse,
 } from '../interfaces/operations.interfaces';
+import {
+  buildObservacionesFlujo,
+  parseTipoFlujo,
+} from '../utils/orden-trabajo-flujo.util';
+import { resolveCantidadAMover } from '../utils/orden-trabajo-cantidad.util';
 
 const ordenInclude = {
   lineas: { orderBy: { idLineaOrdenTrabajo: 'asc' as const } },
@@ -29,6 +43,8 @@ const ordenInclude = {
 export type OrdenWithLineas = Prisma.OrdenTrabajoGetPayload<{
   include: typeof ordenInclude;
 }>;
+
+type WarehouseStateRow = Prisma.WarehouseStateGetPayload<object>;
 
 const FLUJO_TIPO_OT: Record<FlujoOrdenTrabajo, TipoOrdenTrabajo> = {
   a_bodega: TipoOrdenTrabajo.reabasto,
@@ -50,31 +66,6 @@ const FLUJO_TITULO: Record<FlujoOrdenTrabajo, string> = {
   revisar: 'Revisar',
   bodega_a_bodega: 'Bodega a bodega',
 };
-
-function parseTipoFlujo(observaciones: string | null): FlujoOrdenTrabajo | null {
-  if (!observaciones?.startsWith('flujo:')) {
-    return null;
-  }
-  const value = observaciones.slice('flujo:'.length).split('|')[0]?.trim();
-  if (
-    value === 'a_bodega' ||
-    value === 'a_salida' ||
-    value === 'revisar' ||
-    value === 'bodega_a_bodega'
-  ) {
-    return value;
-  }
-  return null;
-}
-
-function buildObservaciones(
-  tipoFlujo: FlujoOrdenTrabajo,
-  observaciones?: string,
-): string {
-  const base = `flujo:${tipoFlujo}`;
-  const extra = observaciones?.trim();
-  return extra ? `${base}|${extra}` : base;
-}
 
 @Injectable()
 export class OrdenTrabajoRepository {
@@ -99,147 +90,144 @@ export class OrdenTrabajoRepository {
     input: CreateOrdenTrabajoInput,
     idSolicitante: string,
   ): Promise<OrdenWithLineas> {
-    return this.prisma.$transaction(async (tx) => {
-      const codigo = await this.nextCodigo(tx, input.codigoCuenta, input.idBodega);
-      const tipo = FLUJO_TIPO_OT[input.tipoFlujo];
+    const registrarSalidaOv =
+      input.tipoFlujo === 'a_salida' && Boolean(input.idOrdenVenta);
 
-      const orden = await tx.ordenTrabajo.create({
-        data: {
-          codigoCuenta: input.codigoCuenta,
-          idBodega: input.idBodega,
-          codigo,
-          tipo,
-          estado: EstadoOrdenTrabajo.planificada,
-          idSolicitante,
-          idAsignado: input.idAsignado ?? null,
-          idLote: input.idLote ?? null,
-          idUbicacionOrigen: input.idUbicacionOrigen ?? null,
-          idUbicacionDestino: input.idUbicacionDestino ?? null,
-          observaciones: buildObservaciones(input.tipoFlujo, input.observaciones),
-          ...(input.idProducto && input.cantidad != null
-            ? {
-                lineas: {
-                  create: {
-                    idProducto: input.idProducto,
-                    idUbicacion: input.idUbicacionOrigen ?? null,
-                    tipoLinea: TipoLineaOt.salida,
-                    cantidad: new Prisma.Decimal(input.cantidad),
-                  },
+    return this.prisma.$transaction((tx) =>
+      this.createInTransaction(tx, input, idSolicitante, {
+        registrarSalidaOv,
+      }),
+    );
+  }
+
+  async createInTransaction(
+    tx: Prisma.TransactionClient,
+    input: CreateOrdenTrabajoInput,
+    idSolicitante: string,
+    opciones?: CreateOrdenTrabajoOpciones,
+  ): Promise<OrdenWithLineas> {
+    const codigo = await this.nextCodigo(tx, input.codigoCuenta, input.idBodega);
+    const tipo = FLUJO_TIPO_OT[input.tipoFlujo];
+
+    const orden = await tx.ordenTrabajo.create({
+      data: {
+        codigoCuenta: input.codigoCuenta,
+        idBodega: input.idBodega,
+        codigo,
+        tipo,
+        estado: EstadoOrdenTrabajo.planificada,
+        idSolicitante,
+        idAsignado: input.idAsignado ?? null,
+        idLote: input.idLote ?? null,
+        idUbicacionOrigen: input.idUbicacionOrigen ?? null,
+        idUbicacionDestino: input.idUbicacionDestino ?? null,
+        idOrdenVenta: input.idOrdenVenta ?? null,
+        observaciones: buildObservacionesFlujo(
+          input.tipoFlujo,
+          input.observaciones,
+        ),
+        ...(input.idProducto && input.cantidad != null
+          ? {
+              lineas: {
+                create: {
+                  idProducto: input.idProducto,
+                  idUbicacion: input.idUbicacionOrigen ?? null,
+                  tipoLinea: TipoLineaOt.salida,
+                  cantidad: new Prisma.Decimal(input.cantidad),
                 },
-              }
-            : {}),
-        },
-        include: ordenInclude,
-      });
-
-      await tx.tareaCola.create({
-        data: {
-          codigoCuenta: input.codigoCuenta,
-          idBodega: input.idBodega,
-          tipo: FLUJO_TIPO_TAREA[input.tipoFlujo],
-          estado: EstadoTarea.pendiente,
-          idAsignado: input.idAsignado ?? null,
-          idOrdenTrabajo: orden.idOrdenTrabajo,
-          titulo: `${FLUJO_TITULO[input.tipoFlujo]} · ${codigo}`,
-          descripcion: input.observaciones?.trim() || null,
-        },
-      });
-
-      return orden;
+              },
+            }
+          : {}),
+      },
+      include: ordenInclude,
     });
+
+    await tx.tareaCola.create({
+      data: {
+        codigoCuenta: input.codigoCuenta,
+        idBodega: input.idBodega,
+        tipo: FLUJO_TIPO_TAREA[input.tipoFlujo],
+        estado: EstadoTarea.pendiente,
+        idAsignado: input.idAsignado ?? null,
+        idOrdenTrabajo: orden.idOrdenTrabajo,
+        titulo: `${FLUJO_TITULO[input.tipoFlujo]} · ${codigo}`,
+        descripcion: input.observaciones?.trim() || null,
+      },
+    });
+
+    if (opciones?.registrarSalidaOv && input.idOrdenVenta) {
+      await marcarOvEnPreparacion(tx, input.idOrdenVenta);
+      await cancelarOtsPendientesOv(
+        tx,
+        input.idOrdenVenta,
+        orden.idOrdenTrabajo,
+      );
+    }
+
+    return orden;
   }
 
   async ejecutar(
     orden: OrdenWithLineas,
     input: EjecutarOrdenTrabajoInput,
     idUsuario: string,
+    opciones?: EjecutarOrdenOpciones,
   ): Promise<OrdenWithLineas> {
     const tipoFlujo = parseTipoFlujo(orden.observaciones);
+    const autoResolver =
+      opciones?.autoResolverStock === true ||
+      (!input.idWarehouseState && opciones?.autoResolverStock !== false);
 
     return this.prisma.$transaction(async (tx) => {
-      if (
-        input.idWarehouseState &&
-        tipoFlujo &&
-        tipoFlujo !== 'revisar' &&
-        orden.idUbicacionDestino
-      ) {
-        const ws = await tx.warehouseState.findUnique({
-          where: { idWarehouseState: input.idWarehouseState },
-        });
+      if (tipoFlujo && tipoFlujo !== 'revisar') {
+        const idUbicacionDestino = await this.resolveUbicacionDestino(
+          tx,
+          orden,
+          tipoFlujo,
+        );
 
-        if (!ws) {
-          throw new Error('WAREHOUSE_STATE_NOT_FOUND');
-        }
+        if (idUbicacionDestino) {
+          const ws = await this.resolveWarehouseStateOrigen(
+            tx,
+            orden,
+            input.idWarehouseState,
+            input.version,
+            autoResolver,
+          );
 
-        if (input.version != null && ws.version !== input.version) {
-          throw new Error('WAREHOUSE_STATE_VERSION_CONFLICT');
-        }
-
-        const cantidadMover = ws.cantidad;
-        const destinoExistente = await tx.warehouseState.findFirst({
-          where: {
-            idUbicacion: orden.idUbicacionDestino,
-            idProducto: ws.idProducto,
-            idLote: ws.idLote,
-          },
-        });
-
-        if (destinoExistente) {
-          await tx.warehouseState.update({
-            where: { idWarehouseState: destinoExistente.idWarehouseState },
-            data: {
-              cantidad: destinoExistente.cantidad.add(cantidadMover),
-              version: { increment: 1 },
-            },
-          });
-        } else {
-          await tx.warehouseState.create({
-            data: {
-              codigoCuenta: ws.codigoCuenta,
-              idBodega: ws.idBodega,
-              idUbicacion: orden.idUbicacionDestino,
-              idProducto: ws.idProducto,
-              idLote: ws.idLote,
-              cantidad: cantidadMover,
-              temperatura: ws.temperatura,
-            },
-          });
-        }
-
-        if (ws.cantidad.eq(cantidadMover)) {
-          await tx.warehouseState.delete({
-            where: { idWarehouseState: ws.idWarehouseState },
-          });
-        } else {
-          await tx.warehouseState.update({
-            where: { idWarehouseState: ws.idWarehouseState },
-            data: {
-              cantidad: ws.cantidad.sub(cantidadMover),
-              version: { increment: 1 },
-            },
-          });
-        }
-
-        await tx.movimientoInventario.create({
-          data: {
-            codigoCuenta: orden.codigoCuenta,
-            idBodega: orden.idBodega,
-            idUbicacionOrigen: ws.idUbicacion,
-            idUbicacionDestino: orden.idUbicacionDestino,
-            idProducto: ws.idProducto,
-            idLote: ws.idLote,
-            cantidad: cantidadMover,
-            tipoMovimiento: TipoMovimiento.transferencia,
+          const transferencia = await this.transferirStock(
+            tx,
+            ws,
+            idUbicacionDestino,
+            orden,
             idUsuario,
-            idReferencia: orden.idOrdenTrabajo,
-            tipoReferencia: TIPO_REFERENCIA_ORDEN_TRABAJO,
-          },
-        });
+          );
 
-        await tx.ubicacion.update({
-          where: { idUbicacion: orden.idUbicacionDestino },
-          data: { estadoSlot: EstadoSlot.ocupado },
-        });
+          if (
+            orden.idOrdenVenta &&
+            tipoFlujo === 'a_salida' &&
+            (await esUbicacionZonaSalida(tx, idUbicacionDestino))
+          ) {
+            const nuevoEstadoOv = await registrarDespachoOv(
+              tx,
+              orden.idOrdenVenta,
+              [
+                {
+                  idProducto: transferencia.idProducto,
+                  cantidad: transferencia.cantidad,
+                },
+              ],
+            );
+
+            if (nuevoEstadoOv === EstadoOrdenVenta.despachada) {
+              await cancelarOtsPendientesOv(
+                tx,
+                orden.idOrdenVenta,
+                orden.idOrdenTrabajo,
+              );
+            }
+          }
+        }
       }
 
       await tx.tareaCola.updateMany({
@@ -262,6 +250,208 @@ export class OrdenTrabajoRepository {
         include: ordenInclude,
       });
     });
+  }
+
+  private async resolveUbicacionDestino(
+    tx: Prisma.TransactionClient,
+    orden: OrdenWithLineas,
+    tipoFlujo: FlujoOrdenTrabajo,
+  ): Promise<string | null> {
+    if (orden.idUbicacionDestino) {
+      return orden.idUbicacionDestino;
+    }
+
+    if (tipoFlujo === 'revisar') {
+      return null;
+    }
+
+    if (tipoFlujo !== 'a_salida') {
+      throw new Error('UBICACION_DESTINO_REQUIRED');
+    }
+
+    const slot = await tx.ubicacion.findFirst({
+      where: {
+        idBodega: orden.idBodega,
+        codigoCuenta: orden.codigoCuenta,
+        estaActiva: true,
+        estadoSlot: EstadoSlot.libre,
+        tipoUbicacion: { esPicking: true },
+      },
+      orderBy: { codigo: 'asc' },
+    });
+
+    if (!slot) {
+      throw new Error('UBICACION_DESTINO_NOT_FOUND');
+    }
+
+    return slot.idUbicacion;
+  }
+
+  private async resolveWarehouseStateOrigen(
+    tx: Prisma.TransactionClient,
+    orden: OrdenWithLineas,
+    idWarehouseStateExplicito: string | undefined,
+    version: number | undefined,
+    autoResolver: boolean,
+  ): Promise<WarehouseStateRow> {
+    if (idWarehouseStateExplicito) {
+      const ws = await tx.warehouseState.findUnique({
+        where: { idWarehouseState: idWarehouseStateExplicito },
+      });
+
+      if (!ws) {
+        throw new Error('WAREHOUSE_STATE_NOT_FOUND');
+      }
+
+      if (version != null && ws.version !== version) {
+        throw new Error('WAREHOUSE_STATE_VERSION_CONFLICT');
+      }
+
+      return ws;
+    }
+
+    if (!autoResolver) {
+      throw new Error('WAREHOUSE_STATE_NOT_FOUND');
+    }
+
+    const idUbicacionOrigen =
+      orden.idUbicacionOrigen ?? orden.lineas[0]?.idUbicacion ?? null;
+
+    if (!idUbicacionOrigen) {
+      throw new Error('WAREHOUSE_STATE_NOT_FOUND');
+    }
+
+    const where: Prisma.WarehouseStateWhereInput = {
+      idBodega: orden.idBodega,
+      codigoCuenta: orden.codigoCuenta,
+      idUbicacion: idUbicacionOrigen,
+      cantidad: { gt: 0 },
+    };
+
+    if (orden.idLote) {
+      where.idLote = orden.idLote;
+    }
+
+    const primeraLinea = orden.lineas[0];
+    if (primeraLinea?.idProducto) {
+      where.idProducto = primeraLinea.idProducto;
+    }
+
+    const candidatos = await tx.warehouseState.findMany({ where });
+
+    if (candidatos.length === 0) {
+      throw new Error('WAREHOUSE_STATE_NOT_FOUND');
+    }
+
+    if (candidatos.length > 1) {
+      throw new Error('WAREHOUSE_STATE_AMBIGUOUS');
+    }
+
+    return candidatos[0]!;
+  }
+
+  private async transferirStock(
+    tx: Prisma.TransactionClient,
+    ws: WarehouseStateRow,
+    idUbicacionDestino: string,
+    orden: OrdenWithLineas,
+    idUsuario: string,
+  ): Promise<{ idProducto: string; cantidad: Prisma.Decimal }> {
+    const cantidadSolicitada = resolveCantidadAMover(orden.lineas);
+    const cantidadMover = cantidadSolicitada ?? ws.cantidad;
+
+    if (cantidadMover.lte(0)) {
+      throw new Error('CANTIDAD_INVALIDA');
+    }
+
+    if (cantidadMover.gt(ws.cantidad)) {
+      throw new Error('CANTIDAD_INSUFICIENTE_EN_SLOT');
+    }
+
+    const destinoExistente = await tx.warehouseState.findFirst({
+      where: {
+        idUbicacion: idUbicacionDestino,
+        idProducto: ws.idProducto,
+        idLote: ws.idLote,
+      },
+    });
+
+    if (destinoExistente) {
+      await tx.warehouseState.update({
+        where: { idWarehouseState: destinoExistente.idWarehouseState },
+        data: {
+          cantidad: destinoExistente.cantidad.add(cantidadMover),
+          version: { increment: 1 },
+        },
+      });
+    } else {
+      await tx.warehouseState.create({
+        data: {
+          codigoCuenta: ws.codigoCuenta,
+          idBodega: ws.idBodega,
+          idUbicacion: idUbicacionDestino,
+          idProducto: ws.idProducto,
+          idLote: ws.idLote,
+          cantidad: cantidadMover,
+          temperatura: ws.temperatura,
+        },
+      });
+    }
+
+    const idUbicacionOrigen = ws.idUbicacion;
+    const nuevaCantidad = ws.cantidad.sub(cantidadMover);
+    const nuevaReservada = ws.cantidadReservada.gt(cantidadMover)
+      ? ws.cantidadReservada.sub(cantidadMover)
+      : new Prisma.Decimal(0);
+
+    if (nuevaCantidad.lte(0)) {
+      await tx.warehouseState.delete({
+        where: { idWarehouseState: ws.idWarehouseState },
+      });
+    } else {
+      await tx.warehouseState.update({
+        where: { idWarehouseState: ws.idWarehouseState },
+        data: {
+          cantidad: nuevaCantidad,
+          cantidadReservada: nuevaReservada,
+          version: { increment: 1 },
+        },
+      });
+    }
+
+    await tx.movimientoInventario.create({
+      data: {
+        codigoCuenta: orden.codigoCuenta,
+        idBodega: orden.idBodega,
+        idUbicacionOrigen,
+        idUbicacionDestino,
+        idProducto: ws.idProducto,
+        idLote: ws.idLote,
+        cantidad: cantidadMover,
+        tipoMovimiento: TipoMovimiento.transferencia,
+        idUsuario,
+        idReferencia: orden.idOrdenTrabajo,
+        tipoReferencia: TIPO_REFERENCIA_ORDEN_TRABAJO,
+      },
+    });
+
+    await tx.ubicacion.update({
+      where: { idUbicacion: idUbicacionDestino },
+      data: { estadoSlot: EstadoSlot.ocupado },
+    });
+
+    const stockRestanteOrigen = await tx.warehouseState.count({
+      where: { idUbicacion: idUbicacionOrigen },
+    });
+
+    if (stockRestanteOrigen === 0) {
+      await tx.ubicacion.update({
+        where: { idUbicacion: idUbicacionOrigen },
+        data: { estadoSlot: EstadoSlot.libre },
+      });
+    }
+
+    return { idProducto: ws.idProducto, cantidad: cantidadMover };
   }
 
   private async nextCodigo(
@@ -318,6 +508,7 @@ export class OrdenTrabajoRepository {
       idUbicacionOrigen: orden.idUbicacionOrigen,
       idUbicacionDestino: orden.idUbicacionDestino,
       idSolicitudProcesamiento: orden.idSolicitudProcesamiento,
+      idOrdenVenta: orden.idOrdenVenta,
       observaciones: observacionesLimpia,
       createdAt: orden.createdAt,
       updatedAt: orden.updatedAt,

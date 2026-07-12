@@ -320,6 +320,7 @@ model Cuenta {
   registrosMerma          RegistroMerma[]
   alertasOperativas       AlertaOperativa[]
   tareasCola              TareaCola[]
+  sesionesOperativas      SesionOperativa[]
   solicitudesIntegracion  SolicitudIntegracion[]
   tareasCuenta            TareaCuenta[]
 
@@ -360,6 +361,7 @@ model Bodega {
   registrosMerma            RegistroMerma[]
   alertasOperativas         AlertaOperativa[]
   tareasCola                TareaCola[]
+  sesionesOperativas        SesionOperativa[]
   ordenesVentaDestino       OrdenVenta[]             @relation("OrdenVentaBodegaDestino")
   solicitudesAltaAtendidas  SolicitudAltaBodega[]    @relation("SolicitudBodegaCreada")
 
@@ -441,6 +443,7 @@ model Usuario {
   solicitudesProcesamientoAsignadas   SolicitudProcesamiento[] @relation("SolicitudProcProcesador")
   alertasResponsable       AlertaOperativa[]      @relation("AlertaResponsable")
   tareasAsignadas          TareaCola[]            @relation("TareaColaAsignado")
+  sesionesOperativas       SesionOperativa[]
   solicitudesIntegracion   SolicitudIntegracion[] @relation("SolicitudIntegracionSolicitante")
   tareasCuentaCreadas      TareaCuenta[]          @relation("TareaCuentaCreador")
 
@@ -881,6 +884,7 @@ model OrdenTrabajo {
   idUbicacionOrigen         String?                 @map("id_ubicacion_origen") @db.Uuid
   idUbicacionDestino        String?                 @map("id_ubicacion_destino") @db.Uuid
   idSolicitudProcesamiento  String?                 @map("id_solicitud_procesamiento") @db.Uuid
+  idOrdenVenta              String?                 @map("id_orden_venta") @db.Uuid
   observaciones             String?
   createdAt                 DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -892,6 +896,7 @@ model OrdenTrabajo {
   ubicacionOrigen           Ubicacion?              @relation("OrdenTrabajoUbicacionOrigen", fields: [idUbicacionOrigen], references: [idUbicacion])
   ubicacionDestino          Ubicacion?              @relation("OrdenTrabajoUbicacionDestino", fields: [idUbicacionDestino], references: [idUbicacion])
   solicitudProcesamiento    SolicitudProcesamiento? @relation(fields: [idSolicitudProcesamiento], references: [idSolicitudProcesamiento], onDelete: SetNull)
+  ordenVenta                OrdenVenta?             @relation(fields: [idOrdenVenta], references: [idOrdenVenta], onDelete: SetNull)
   lineas                    OrdenTrabajoLinea[]
   alertas                   AlertaOperativa[]
   tareasCola                TareaCola[]
@@ -938,6 +943,7 @@ model OrdenVenta {
   bodegaDestino    Bodega?          @relation("OrdenVentaBodegaDestino", fields: [idBodegaDestino], references: [idBodega])
   lineas           OrdenVentaLinea[]
   guiasEnvio       GuiaEnvio[]
+  ordenesTrabajo   OrdenTrabajo[]
 
   @@unique([codigoCuenta, codigo], map: "uq_orden_venta_cuenta_codigo")
   @@map("orden_venta")
@@ -1109,6 +1115,24 @@ model TareaCola {
   ordenTrabajo   OrdenTrabajo? @relation(fields: [idOrdenTrabajo], references: [idOrdenTrabajo], onDelete: SetNull)
 
   @@map("tarea_cola")
+}
+
+model SesionOperativa {
+  idSesion     String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_sesion") @db.Uuid
+  idUsuario    String   @map("id_usuario") @db.Uuid
+  codigoCuenta String   @map("codigo_cuenta") @db.VarChar(32)
+  idBodega     String   @map("id_bodega") @db.Uuid
+  ultimoPing   DateTime @map("ultimo_ping") @db.Timestamptz(6)
+  expiraEn     DateTime @map("expira_en") @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  usuario Usuario @relation(fields: [idUsuario], references: [idUsuario], onDelete: Cascade)
+  cuenta  Cuenta  @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega  Bodega  @relation(fields: [idBodega], references: [idBodega], onDelete: Cascade)
+
+  @@unique([idUsuario, codigoCuenta, idBodega], map: "uq_sesion_operativa_usuario_bodega")
+  @@map("sesion_operativa")
 }
 
 model SolicitudIntegracion {

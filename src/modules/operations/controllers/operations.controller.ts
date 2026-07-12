@@ -36,8 +36,10 @@ import {
   ROLES_LLAMADA_ATENDER,
   ROLES_LLAMADA_CREAR,
   ROLES_OPERACIONES_LECTURA,
+  ROLES_OPERARIOS_DISPONIBLES,
   ROLES_ORDEN_TRABAJO_CREAR,
   ROLES_ORDEN_TRABAJO_EJECUTAR,
+  ROLES_PRESENCIA_PING,
   ROLES_REPORTES_BODEGA,
   ROLES_TAREA_COLA_ASIGNAR,
   ROLES_TAREA_COLA_COMPLETAR,
@@ -62,12 +64,14 @@ import {
   AlertaOperativaResponseDto,
   LlamadaOperativaResponseDto,
   OrdenTrabajoResponseDto,
+  OperarioDisponibleResponseDto,
   TareaColaResponseDto,
 } from '../dto/operations-response.dto';
 import { AlertaOperativaRepository } from '../infrastructure/alerta-operativa.repository';
 import type {
   AlertaOperativaResponse,
   LlamadaOperativaResponse,
+  OperarioDisponibleResponse,
   OrdenTrabajoResponse,
   TareaColaResponse,
 } from '../interfaces/operations.interfaces';
@@ -77,6 +81,7 @@ import {
   OrdenTrabajoService,
   TareaColaService,
 } from '../services/operations.service';
+import { OperariosService } from '../services/operarios.service';
 import { BodegaReportesService } from '../services/bodega-reportes.service';
 import type { BodegaReportesResumen } from '../infrastructure/bodega-reportes.repository';
 
@@ -200,7 +205,10 @@ export class TareaColaController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Marcar tarea como completada',
-    description: 'Operario: movimiento/despacho/revisión. Procesador: procesamiento.',
+    description:
+      'Operario: movimiento/despacho/revisión. Si la tarea tiene orden de trabajo vinculada, ' +
+      'ejecuta la transferencia de inventario y completa la OT en una sola transacción. ' +
+      'Procesador: procesamiento (sin OT).',
   })
   @ApiOkResponse({ type: TareaColaResponseDto })
   completar(
@@ -338,5 +346,55 @@ export class BodegaReportesController {
     @TenantCtx() ctx: TenantContext,
   ): Promise<BodegaReportesResumen> {
     return this.reportesService.getResumen(query, ctx);
+  }
+}
+
+@ApiTags(SWAGGER_TAGS.OPERACIONES_OPERARIOS)
+@Controller('operaciones')
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+@ApiBearerAuth('access-token')
+export class OperariosController {
+  constructor(private readonly operariosService: OperariosService) {}
+
+  @Get('operarios-disponibles')
+  @Roles(...ROLES_OPERARIOS_DISPONIBLES)
+  @ApiOperation({
+    summary: 'Listar operarios de bodega con carga y disponibilidad',
+    description:
+      'Incluye todos los operarios asignados a la bodega, ordenados por menos tareas pendientes. ' +
+      '`disponible` refleja si la cuenta del operario está activa (`usuario.esta_activo`). ' +
+      '`ultimoPing` es informativo (presencia en app) y no determina disponibilidad.',
+  })
+  @ApiOkResponse({ type: OperarioDisponibleResponseDto, isArray: true })
+  @ApiForbiddenResponse()
+  listDisponibles(
+    @Query() query: TenantBodegaQueryDto,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<OperarioDisponibleResponse[]> {
+    return this.operariosService.listDisponibles(query, ctx);
+  }
+}
+
+@ApiTags(SWAGGER_TAGS.OPERACIONES_OPERARIOS)
+@Controller('operaciones/presencia')
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+@ApiBearerAuth('access-token')
+export class PresenciaController {
+  constructor(private readonly operariosService: OperariosService) {}
+
+  @Post('ping')
+  @Roles(...ROLES_PRESENCIA_PING)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Heartbeat de presencia operativa (operario)',
+    description:
+      'Mantiene al operario como disponible mientras la app envía pings periódicos (ventana de 2 minutos).',
+  })
+  @ApiForbiddenResponse()
+  ping(
+    @Body() dto: TenantBodegaBodyDto,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<void> {
+    return this.operariosService.ping(dto, ctx);
   }
 }

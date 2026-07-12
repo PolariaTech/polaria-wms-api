@@ -53,13 +53,13 @@ Flujos (`tipoFlujo`) equivalentes a frio:
 |--------|------|-------------|
 | GET | `/ordenes-trabajo` | Listar OT. Query: `estado`, `tipoFlujo` |
 | GET | `/ordenes-trabajo/:id` | Detalle |
-| POST | `/ordenes-trabajo` | Crear OT + tarea en cola. Código `OT-000001` por bodega |
+| POST | `/ordenes-trabajo` | Crear OT + tarea en cola. Body opcional: `idAsignado`, `idOrdenVenta` (vínculo OV) |
 | POST | `/ordenes-trabajo/:id/ejecutar` | Operario completa OT. Opcional `idWarehouseState` + `version` para transferencia |
 | POST | `/ordenes-trabajo/:id/reportar` | Crea alerta `orden_reportada` |
 
 Al ejecutar con `idWarehouseState`, el backend:
 
-1. Transfiere cantidad completa de la posición origen al `idUbicacionDestino` de la OT
+1. Transfiere la cantidad de `orden_trabajo_linea` (o el total de líneas) al `idUbicacionDestino`; si la OT no tiene líneas, mueve la posición completa
 2. Registra `movimiento_inventario` tipo `transferencia`
 3. Marca tarea y OT como completadas
 
@@ -69,7 +69,20 @@ Al ejecutar con `idWarehouseState`, el backend:
 |--------|------|-------------|
 | GET | `/tareas` | Listar. Query: `estado`, `idAsignado` |
 | PATCH | `/tareas/:id/asignar` | Asignar operario |
-| POST | `/tareas/:id/completar` | Marcar completada |
+| POST | `/tareas/:id/completar` | Marcar completada. Si la tarea tiene `idOrdenTrabajo`, ejecuta la OT en la misma transacción: mueve `warehouse_state`, registra `movimiento_inventario` tipo `transferencia`, completa OT y actualiza slots origen/destino. Body: `{ codigoCuenta, idBodega }` |
+
+## Operarios y presencia
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/operarios-disponibles` | Operarios de bodega con `tareasPendientes` y `disponible` (`usuario.esta_activo`). Roles: jefe/admin bodega |
+| POST | `/presencia/ping` | Heartbeat opcional del operario en app (solo metadata `ultimoPing`) |
+
+Al crear OT con `idAsignado` opcional:
+
+- Valida operario asignado a la bodega
+- Valida cuenta activa (`esta_activo`)
+- Propaga `id_asignado` a `orden_trabajo` y `tarea_cola`
 
 ## Alertas operativas
 
@@ -96,6 +109,7 @@ Persistidas en `alerta_operativa` con `metadata.subtipo = llamada_jefe` (sin mig
 
 - `OrdenTrabajo`, `OrdenTrabajoLinea`
 - `TareaCola`
+- `SesionOperativa` (presencia operativa / heartbeat)
 - `AlertaOperativa`
 - `MovimientoInventario` (en ejecución de OT)
 - `Contador` clave `orden_trabajo` por bodega

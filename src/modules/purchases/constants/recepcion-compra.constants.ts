@@ -15,4 +15,8 @@ export const ROLES_RECEPCION_LECTURA = [
   WmsRol.operario,
 ] as const;
 
-export const TIPO_REFERENCIA_RECEPCION = 'recepcion_compra';
+/**
+ * Valores permitidos por `chk_movimiento_tipo_referencia` (migración 024):
+ * orden_compra | orden_trabajo | orden_venta | solicitud_compra | manual
+ */
+export const TIPO_REFERENCIA_RECEPCION = 'orden_compra';
