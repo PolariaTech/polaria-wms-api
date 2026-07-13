@@ -441,6 +441,7 @@ model Usuario {
   recepcionesCerradas      RecepcionCompra[]      @relation("RecepcionCerradaPor")
   solicitudesProcesamientoSolicitadas SolicitudProcesamiento[] @relation("SolicitudProcSolicitante")
   solicitudesProcesamientoAsignadas   SolicitudProcesamiento[] @relation("SolicitudProcProcesador")
+  solicitudesProcesamientoOperario    SolicitudProcesamiento[] @relation("SolicitudProcOperario")
   alertasResponsable       AlertaOperativa[]      @relation("AlertaResponsable")
   tareasAsignadas          TareaCola[]            @relation("TareaColaAsignado")
   sesionesOperativas       SesionOperativa[]
@@ -1029,6 +1030,7 @@ model SolicitudProcesamiento {
   idProductoPrimario                String              @map("id_producto_primario") @db.Uuid
   idProductoSecundario              String              @map("id_producto_secundario") @db.Uuid
   idSolicitante                     String              @map("id_solicitante") @db.Uuid
+  idOperario                        String?             @map("id_operario") @db.Uuid
   idProcesador                      String?             @map("id_procesador") @db.Uuid
   estado                            EstadoProcesamiento @default(borrador)
   kilosPrimario                     Decimal             @map("kilos_primario") @db.Decimal(18, 4)
@@ -1050,9 +1052,11 @@ model SolicitudProcesamiento {
   productoPrimario                  Producto            @relation("SolicitudProcPrimario", fields: [idProductoPrimario], references: [idProducto])
   productoSecundario                Producto            @relation("SolicitudProcSecundario", fields: [idProductoSecundario], references: [idProducto])
   solicitante                       Usuario             @relation("SolicitudProcSolicitante", fields: [idSolicitante], references: [idUsuario])
+  operario                          Usuario?            @relation("SolicitudProcOperario", fields: [idOperario], references: [idUsuario])
   procesador                        Usuario?            @relation("SolicitudProcProcesador", fields: [idProcesador], references: [idUsuario])
   registrosMerma                    RegistroMerma[]
   ordenesTrabajo                    OrdenTrabajo[]
+  tareasCola                        TareaCola[]
 
   @@unique([codigoCuenta, codigo], map: "uq_solicitud_procesamiento_cuenta_codigo")
   @@map("solicitud_procesamiento")
@@ -1103,16 +1107,18 @@ model TareaCola {
   idBodega       String        @map("id_bodega") @db.Uuid
   tipo           TipoTarea     @default(otro)
   estado         EstadoTarea   @default(pendiente)
-  idAsignado     String?       @map("id_asignado") @db.Uuid
-  idOrdenTrabajo String?       @map("id_orden_trabajo") @db.Uuid
-  titulo         String?       @db.VarChar(255)
-  descripcion    String?
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  cuenta         Cuenta        @relation(fields: [codigoCuenta], references: [codigoCuenta])
-  bodega         Bodega        @relation(fields: [idBodega], references: [idBodega])
-  asignado       Usuario?      @relation("TareaColaAsignado", fields: [idAsignado], references: [idUsuario])
-  ordenTrabajo   OrdenTrabajo? @relation(fields: [idOrdenTrabajo], references: [idOrdenTrabajo], onDelete: SetNull)
+  idAsignado               String?                 @map("id_asignado") @db.Uuid
+  idOrdenTrabajo           String?                 @map("id_orden_trabajo") @db.Uuid
+  idSolicitudProcesamiento String?                 @map("id_solicitud_procesamiento") @db.Uuid
+  titulo                   String?                 @db.VarChar(255)
+  descripcion              String?
+  createdAt                DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cuenta                   Cuenta                  @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  bodega                   Bodega                  @relation(fields: [idBodega], references: [idBodega])
+  asignado                 Usuario?                @relation("TareaColaAsignado", fields: [idAsignado], references: [idUsuario])
+  ordenTrabajo             OrdenTrabajo?           @relation(fields: [idOrdenTrabajo], references: [idOrdenTrabajo], onDelete: SetNull)
+  solicitudProcesamiento   SolicitudProcesamiento? @relation(fields: [idSolicitudProcesamiento], references: [idSolicitudProcesamiento], onDelete: SetNull)
 
   @@map("tarea_cola")
 }

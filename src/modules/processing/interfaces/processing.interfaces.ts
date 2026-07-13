@@ -9,6 +9,7 @@ export interface SolicitudProcesamientoResponse {
   idProductoPrimario: string;
   idProductoSecundario: string;
   idSolicitante: string;
+  idOperario: string | null;
   idProcesador: string | null;
   estado: EstadoProcesamiento;
   kilosPrimario: string;

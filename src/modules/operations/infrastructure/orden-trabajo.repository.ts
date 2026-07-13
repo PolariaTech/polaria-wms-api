@@ -51,6 +51,7 @@ const FLUJO_TIPO_OT: Record<FlujoOrdenTrabajo, TipoOrdenTrabajo> = {
   a_salida: TipoOrdenTrabajo.picking,
   revisar: TipoOrdenTrabajo.conteo,
   bodega_a_bodega: TipoOrdenTrabajo.reabasto,
+  a_procesamiento: TipoOrdenTrabajo.transformacion,
 };
 
 const FLUJO_TIPO_TAREA: Record<FlujoOrdenTrabajo, TipoTarea> = {
@@ -58,6 +59,7 @@ const FLUJO_TIPO_TAREA: Record<FlujoOrdenTrabajo, TipoTarea> = {
   a_salida: TipoTarea.despacho,
   revisar: TipoTarea.revision,
   bodega_a_bodega: TipoTarea.movimiento,
+  a_procesamiento: TipoTarea.procesamiento,
 };
 
 const FLUJO_TITULO: Record<FlujoOrdenTrabajo, string> = {
@@ -65,6 +67,7 @@ const FLUJO_TITULO: Record<FlujoOrdenTrabajo, string> = {
   a_salida: 'A salida',
   revisar: 'Revisar',
   bodega_a_bodega: 'Bodega a bodega',
+  a_procesamiento: 'Procesamiento',
 };
 
 @Injectable()
@@ -230,16 +233,18 @@ export class OrdenTrabajoRepository {
         }
       }
 
-      await tx.tareaCola.updateMany({
-        where: {
-          idOrdenTrabajo: orden.idOrdenTrabajo,
-          estado: { in: [EstadoTarea.pendiente, EstadoTarea.en_proceso] },
-        },
-        data: {
-          estado: EstadoTarea.completada,
-          idAsignado: idUsuario,
-        },
-      });
+      if (!opciones?.skipCompletarTarea) {
+        await tx.tareaCola.updateMany({
+          where: {
+            idOrdenTrabajo: orden.idOrdenTrabajo,
+            estado: { in: [EstadoTarea.pendiente, EstadoTarea.en_proceso] },
+          },
+          data: {
+            estado: EstadoTarea.completada,
+            idAsignado: idUsuario,
+          },
+        });
+      }
 
       return tx.ordenTrabajo.update({
         where: { idOrdenTrabajo: orden.idOrdenTrabajo },

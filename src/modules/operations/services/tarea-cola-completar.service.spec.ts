@@ -71,6 +71,7 @@ describe('TareaColaService.completar', () => {
         estado: row.estado,
         idAsignado: row.idAsignado,
         idOrdenTrabajo: row.idOrdenTrabajo,
+        idSolicitudProcesamiento: row.idSolicitudProcesamiento ?? null,
         titulo: row.titulo,
         descripcion: row.descripcion,
         createdAt: row.createdAt,
@@ -139,6 +140,28 @@ describe('TareaColaService.completar', () => {
       expect(result.estado).toBe(EstadoTarea.completada);
     },
   );
+
+  it('completar tarea procesamiento con OT solo marca completada (stock en iniciar)', async () => {
+    const tarea = {
+      ...tareaConOt,
+      tipo: TipoTarea.procesamiento,
+    };
+
+    tareaRepository.findById.mockResolvedValue(tarea as never);
+    tareaRepository.completar.mockResolvedValue({
+      ...tarea,
+      estado: EstadoTarea.completada,
+    } as never);
+
+    await service.completar(
+      'tarea-1',
+      { codigoCuenta: 'CTA001', idBodega: 'bodega-1' },
+      operarioCtx,
+    );
+
+    expect(ordenRepository.ejecutar).not.toHaveBeenCalled();
+    expect(tareaRepository.completar).toHaveBeenCalledWith('tarea-1', 'operario-1');
+  });
 
   it('completar sin OT delega al repositorio de tarea', async () => {
     const tarea = {

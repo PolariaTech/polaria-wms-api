@@ -89,6 +89,11 @@ export class SolicitudProcesamientoService {
       if (error instanceof Error && error.message === 'PRODUCTO_NOT_FOUND') {
         throw new BadRequestException('Producto no encontrado en el catálogo');
       }
+      if (error instanceof Error && error.message === 'STOCK_INSUFICIENTE') {
+        throw new BadRequestException(
+          'No hay stock suficiente del primario en almacenamiento para crear la solicitud',
+        );
+      }
       throw error;
     }
   }
@@ -114,12 +119,35 @@ export class SolicitudProcesamientoService {
       );
     }
 
+    if (row.idOperario) {
+      throw new BadRequestException('La solicitud ya tiene un operario asignado');
+    }
+
     try {
-      const updated = await this.repository.asignarOperario(row, dto.idOperario);
+      const updated = await this.repository.asignarOperario(
+        row,
+        dto.idOperario,
+        ctx.idUsuario,
+      );
       return this.repository.toResponse(updated);
     } catch (error) {
-      if (error instanceof Error && error.message === 'TAREA_NOT_FOUND') {
-        throw new BadRequestException('No hay tarea de procesamiento vinculada');
+      if (error instanceof Error && error.message === 'TAREA_YA_EXISTE') {
+        throw new BadRequestException(
+          'Ya existe una tarea de procesamiento vinculada a esta solicitud',
+        );
+      }
+      if (error instanceof Error && error.message === 'STOCK_INSUFICIENTE') {
+        throw new BadRequestException(
+          'No hay stock suficiente del primario en almacenamiento para asignar',
+        );
+      }
+      if (
+        error instanceof Error &&
+        error.message === 'SLOT_PROCESAMIENTO_NO_DISPONIBLE'
+      ) {
+        throw new BadRequestException(
+          'No hay slots libres en la zona de procesamiento',
+        );
       }
       throw error;
     }
@@ -146,10 +174,16 @@ export class SolicitudProcesamientoService {
       dto.idBodega,
     );
 
+    if (!tarea?.idOrdenTrabajo) {
+      throw new BadRequestException(
+        'No hay tarea de movimiento vinculada; el jefe debe asignar operario primero',
+      );
+    }
+
     const transicionError = assertTransicionProcesamiento({
       estadoActual: row.estado,
       estadoSiguiente: EstadoProcesamiento.en_proceso,
-      idOperarioAsignado: tarea?.idAsignado ?? null,
+      idOperarioAsignado: row.idOperario ?? tarea.idAsignado ?? null,
       idUsuario: ctx.idUsuario,
     });
 
@@ -160,13 +194,16 @@ export class SolicitudProcesamientoService {
     try {
       const updated = await this.repository.iniciarEnCurso(
         row,
-        tarea!.idAsignado!,
+        tarea.idOrdenTrabajo,
         dto.idProcesador ?? null,
         ctx.idUsuario,
       );
       return this.repository.toResponse(updated);
     } catch (error) {
-      if (error instanceof Error && error.message === 'STOCK_INSUFICIENTE') {
+      if (
+        error instanceof Error &&
+        (error.message === 'STOCK_INSUFICIENTE' || error.message === 'OT_NOT_FOUND')
+      ) {
         throw new BadRequestException(
           'No hay stock suficiente del primario en almacenamiento para iniciar el procesamiento',
         );
@@ -218,7 +255,7 @@ export class SolicitudProcesamientoService {
     const transicionError = assertTransicionProcesamiento({
       estadoActual: row.estado,
       estadoSiguiente: dto.estado as EstadoProcesamiento,
-      idOperarioAsignado: tarea?.idAsignado ?? null,
+      idOperarioAsignado: row.idOperario ?? tarea?.idAsignado ?? null,
       idUsuario: ctx.idUsuario,
       desperdicioKg: dto.desperdicioKg,
     });
@@ -267,8 +304,28 @@ export class SolicitudProcesamientoService {
       throw new BadRequestException(mensajeTransicionProcesamiento(transicionError));
     }
 
-    const updated = await this.repository.cerrar(row, dto, ctx.idUsuario);
-    return this.repository.toResponse(updated);
+    try {
+      const updated = await this.repository.cerrar(row, dto, ctx.idUsuario);
+      return this.repository.toResponse(updated);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'STOCK_PROCESAMIENTO_NO_ENCONTRADO'
+      ) {
+        throw new BadRequestException(
+          'No hay stock del primario en zona de procesamiento para registrar la merma',
+        );
+      }
+      if (
+        error instanceof Error &&
+        error.message === 'STOCK_INSUFICIENTE_MERMA'
+      ) {
+        throw new BadRequestException(
+          'Stock insuficiente en procesamiento para la merma declarada',
+        );
+      }
+      throw error;
+    }
   }
 
   async terminar(

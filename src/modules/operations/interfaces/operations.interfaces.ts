@@ -11,7 +11,8 @@ export type FlujoOrdenTrabajo =
   | 'a_bodega'
   | 'a_salida'
   | 'revisar'
-  | 'bodega_a_bodega';
+  | 'bodega_a_bodega'
+  | 'a_procesamiento';
 
 export interface OrdenTrabajoLineaResponse {
   idLineaOrdenTrabajo: string;
@@ -50,6 +51,7 @@ export interface TareaColaResponse {
   estado: EstadoTarea;
   idAsignado: string | null;
   idOrdenTrabajo: string | null;
+  idSolicitudProcesamiento: string | null;
   titulo: string | null;
   descripcion: string | null;
   createdAt: Date;
@@ -124,4 +126,6 @@ export interface EjecutarOrdenTrabajoInput {
 export interface EjecutarOrdenOpciones {
   /** Si true, resuelve warehouse_state origen y destino sin input del cliente. */
   autoResolverStock?: boolean;
+  /** Si true, no marca la tarea cola como completada (p. ej. flujo procesamiento). */
+  skipCompletarTarea?: boolean;
 }

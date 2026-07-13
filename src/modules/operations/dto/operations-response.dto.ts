@@ -96,6 +96,9 @@ export class TareaColaResponseDto {
   idOrdenTrabajo!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
+  idSolicitudProcesamiento!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   titulo!: string | null;
 
   @ApiPropertyOptional({ nullable: true })

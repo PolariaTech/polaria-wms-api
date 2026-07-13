@@ -5,7 +5,10 @@ import {
   TipoMovimiento,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
-import { TIPO_REFERENCIA_PROCESAMIENTO } from '../constants/processing.constants';
+import {
+  metadataMovimientoProcesamiento,
+  TIPO_REFERENCIA_PROCESAMIENTO,
+} from '../constants/processing.constants';
 
 export interface DescuentoPrimarioResult {
   kgDescontado: number;
@@ -16,6 +19,173 @@ export interface DescuentoPrimarioResult {
 @Injectable()
 export class ProcesamientoInventarioRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  async sumDisponibleAlmacenamiento(params: {
+    codigoCuenta: string;
+    idBodega: string;
+    idProducto: string;
+  }): Promise<number> {
+    const rows = await this.prisma.warehouseState.findMany({
+      where: {
+        codigoCuenta: params.codigoCuenta,
+        idBodega: params.idBodega,
+        idProducto: params.idProducto,
+        cantidad: { gt: 0 },
+        ubicacion: {
+          estaActiva: true,
+          tipoUbicacion: { esAlmacenamiento: true },
+        },
+      },
+      select: { cantidad: true, cantidadReservada: true },
+    });
+
+    return rows.reduce((acc, row) => {
+      const disponible = row.cantidad.sub(row.cantidadReservada);
+      return acc + Math.max(0, Number(disponible.toString()));
+    }, 0);
+  }
+
+  async resolverSlotOrigenFifo(
+    tx: Prisma.TransactionClient,
+    params: {
+      codigoCuenta: string;
+      idBodega: string;
+      idProducto: string;
+      kilosRequeridos: number;
+    },
+  ): Promise<{ idUbicacion: string; idWarehouseState: string } | null> {
+    const candidatos = await tx.warehouseState.findMany({
+      where: {
+        codigoCuenta: params.codigoCuenta,
+        idBodega: params.idBodega,
+        idProducto: params.idProducto,
+        cantidad: { gt: 0 },
+        ubicacion: {
+          estaActiva: true,
+          tipoUbicacion: { esAlmacenamiento: true },
+        },
+      },
+      orderBy: [{ ubicacion: { codigo: 'asc' } }, { updatedAt: 'asc' }],
+    });
+
+    const objetivo = new Prisma.Decimal(params.kilosRequeridos);
+
+    for (const ws of candidatos) {
+      const disponible = ws.cantidad.sub(ws.cantidadReservada);
+      if (disponible.gte(objetivo)) {
+        return {
+          idUbicacion: ws.idUbicacion,
+          idWarehouseState: ws.idWarehouseState,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  async resolverSlotProcesamientoLibre(
+    tx: Prisma.TransactionClient,
+    params: { codigoCuenta: string; idBodega: string },
+  ): Promise<string | null> {
+    const slot = await tx.ubicacion.findFirst({
+      where: {
+        codigoCuenta: params.codigoCuenta,
+        idBodega: params.idBodega,
+        estaActiva: true,
+        estadoSlot: EstadoSlot.libre,
+        tipoUbicacion: { codigo: 'PROCESAMIENTO' },
+      },
+      orderBy: { codigo: 'asc' },
+    });
+
+    return slot?.idUbicacion ?? null;
+  }
+
+  async registrarMermaProcesamiento(
+    tx: Prisma.TransactionClient,
+    params: {
+      codigoCuenta: string;
+      idBodega: string;
+      idProductoPrimario: string;
+      kilosMerma: number;
+      idSolicitudProcesamiento: string;
+      idUsuario: string;
+    },
+  ): Promise<void> {
+    if (params.kilosMerma <= 0) {
+      return;
+    }
+
+    const candidatos = await tx.warehouseState.findMany({
+      where: {
+        codigoCuenta: params.codigoCuenta,
+        idBodega: params.idBodega,
+        idProducto: params.idProductoPrimario,
+        cantidad: { gt: 0 },
+        ubicacion: {
+          estaActiva: true,
+          tipoUbicacion: { codigo: 'PROCESAMIENTO' },
+        },
+      },
+      orderBy: [{ ubicacion: { codigo: 'asc' } }, { updatedAt: 'asc' }],
+    });
+
+    if (candidatos.length === 0) {
+      throw new Error('STOCK_PROCESAMIENTO_NO_ENCONTRADO');
+    }
+
+    let restante = new Prisma.Decimal(params.kilosMerma);
+
+    for (const ws of candidatos) {
+      if (restante.lte(0)) {
+        break;
+      }
+
+      const disponible = ws.cantidad.sub(ws.cantidadReservada);
+      if (disponible.lte(0)) {
+        continue;
+      }
+
+      const aplicar = Prisma.Decimal.min(disponible, restante);
+      const nuevaCantidad = ws.cantidad.sub(aplicar);
+
+      await tx.warehouseState.update({
+        where: { idWarehouseState: ws.idWarehouseState },
+        data: {
+          cantidad: nuevaCantidad,
+          version: { increment: 1 },
+        },
+      });
+
+      await tx.movimientoInventario.create({
+        data: {
+          codigoCuenta: params.codigoCuenta,
+          idBodega: params.idBodega,
+          idProducto: params.idProductoPrimario,
+          idUbicacionOrigen: ws.idUbicacion,
+          cantidad: aplicar,
+          tipoMovimiento: TipoMovimiento.merma,
+          idUsuario: params.idUsuario,
+          idReferencia: params.idSolicitudProcesamiento,
+          tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
+          metadata: metadataMovimientoProcesamiento('merma_procesamiento'),
+        },
+      });
+
+      if (nuevaCantidad.lte(0)) {
+        await tx.ubicacion.update({
+          where: { idUbicacion: ws.idUbicacion },
+          data: { estadoSlot: EstadoSlot.libre },
+        });
+      }
+
+      restante = restante.sub(aplicar);
+    }
+
+    if (restante.gt(0)) {
+      throw new Error('STOCK_INSUFICIENTE_MERMA');
+    }
+  }
 
   async descontarPrimarioEnCurso(
     tx: Prisma.TransactionClient,
@@ -80,7 +250,7 @@ export class ProcesamientoInventarioRepository {
           idUsuario: params.idUsuario,
           idReferencia: params.idSolicitudProcesamiento,
           tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
-          metadata: { fase: 'iniciar_en_curso' },
+          metadata: metadataMovimientoProcesamiento('iniciar_en_curso'),
         },
       });
 
@@ -167,7 +337,7 @@ export class ProcesamientoInventarioRepository {
         idUsuario: params.idUsuario,
         idReferencia: params.idSolicitudProcesamiento,
         tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
-        metadata: { fase: 'ubicar_procesado' },
+        metadata: metadataMovimientoProcesamiento('ubicar_procesado'),
       },
     });
   }
@@ -232,7 +402,7 @@ export class ProcesamientoInventarioRepository {
         idUsuario: params.idUsuario,
         idReferencia: params.idSolicitudProcesamiento,
         tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
-        metadata: { fase: 'devolver_sobrante' },
+        metadata: metadataMovimientoProcesamiento('devolver_sobrante'),
       },
     });
   }

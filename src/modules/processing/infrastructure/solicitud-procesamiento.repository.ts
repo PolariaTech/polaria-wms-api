@@ -5,19 +5,19 @@ import {
   EstadoOrdenTrabajo,
   Prisma,
   TipoLineaOt,
-  TipoMovimiento,
   TipoOrdenTrabajo,
   TipoTarea,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 import {
   buildObservacionesOtProcesamiento,
+  buildObservacionesOtAProcesamiento,
+  buildTareaProcesamientoDescripcion,
   buildTareaSolicitudDescripcion,
   parseObservacionesOtProcesamiento,
 } from '../constants/procesamiento-tarea.constants';
 import {
   CONTADOR_CLAVE_SOLICITUD_PROCESAMIENTO,
-  TIPO_REFERENCIA_PROCESAMIENTO,
   formatCodigoSolicitudProcesamiento,
 } from '../constants/processing.constants';
 import type {
@@ -26,6 +26,7 @@ import type {
   SolicitudProcesamientoResponse,
 } from '../interfaces/processing.interfaces';
 import { ProcesamientoInventarioRepository } from './procesamiento-inventario.repository';
+import { OrdenTrabajoRepository } from '../../operations/infrastructure/orden-trabajo.repository';
 import {
   estimadoSecundarioAplicarPerdidaPct,
   normalizePerdidaPct,
@@ -49,6 +50,7 @@ export class SolicitudProcesamientoRepository {
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventario: ProcesamientoInventarioRepository,
+    private readonly ordenTrabajoRepository: OrdenTrabajoRepository,
   ) {}
 
   list(where: Prisma.SolicitudProcesamientoWhereInput): Promise<SolicitudRow[]> {
@@ -74,8 +76,17 @@ export class SolicitudProcesamientoRepository {
         codigoCuenta,
         idBodega,
         tipo: TipoTarea.procesamiento,
-        descripcion: buildTareaSolicitudDescripcion(idSolicitud),
+        OR: [
+          { idSolicitudProcesamiento: idSolicitud },
+          {
+            descripcion: {
+              contains: `solicitudProcesamiento:${idSolicitud}`,
+            },
+          },
+          { descripcion: buildTareaSolicitudDescripcion(idSolicitud) },
+        ],
       },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -105,10 +116,20 @@ export class SolicitudProcesamientoRepository {
     );
     const estimado = estimadoSecundarioAplicarPerdidaPct(teorico, perdidaPct);
 
+    const stockDisponible = await this.inventario.sumDisponibleAlmacenamiento({
+      codigoCuenta: input.codigoCuenta,
+      idBodega: input.idBodega,
+      idProducto: input.idProductoPrimario,
+    });
+
+    if (stockDisponible < input.kilosPrimario) {
+      throw new Error('STOCK_INSUFICIENTE');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const codigo = await this.nextCodigo(tx, input.codigoCuenta, input.idBodega);
 
-      const solicitud = await tx.solicitudProcesamiento.create({
+      return tx.solicitudProcesamiento.create({
         data: {
           codigoCuenta: input.codigoCuenta,
           idBodega: input.idBodega,
@@ -127,49 +148,121 @@ export class SolicitudProcesamientoRepository {
           observaciones: input.observaciones?.trim() || null,
         },
       });
-
-      await tx.tareaCola.create({
-        data: {
-          codigoCuenta: input.codigoCuenta,
-          idBodega: input.idBodega,
-          tipo: TipoTarea.procesamiento,
-          estado: EstadoTarea.pendiente,
-          titulo: `Procesamiento · ${codigo}`,
-          descripcion: buildTareaSolicitudDescripcion(
-            solicitud.idSolicitudProcesamiento,
-          ),
-        },
-      });
-
-      return solicitud;
     });
   }
 
   async asignarOperario(
     solicitud: SolicitudRow,
     idOperario: string,
+    idSolicitante: string,
   ): Promise<SolicitudRow> {
-    const tarea = await this.findTareaVinculada(
+    const existingTarea = await this.findTareaVinculada(
       solicitud.idSolicitudProcesamiento,
       solicitud.codigoCuenta,
       solicitud.idBodega,
     );
 
-    if (!tarea) {
-      throw new Error('TAREA_NOT_FOUND');
+    if (existingTarea) {
+      throw new Error('TAREA_YA_EXISTE');
     }
 
-    await this.prisma.tareaCola.update({
-      where: { idTarea: tarea.idTarea },
-      data: { idAsignado: idOperario, estado: EstadoTarea.pendiente },
+    const kilosPrimario = Number(solicitud.kilosPrimario.toString());
+    const productoPrimario = await this.prisma.producto.findFirst({
+      where: {
+        idProducto: solicitud.idProductoPrimario,
+        codigoCuenta: solicitud.codigoCuenta,
+      },
+      select: { descripcion: true },
     });
 
-    return solicitud;
+    return this.prisma.$transaction(async (tx) => {
+      const origen = await this.inventario.resolverSlotOrigenFifo(tx, {
+        codigoCuenta: solicitud.codigoCuenta,
+        idBodega: solicitud.idBodega,
+        idProducto: solicitud.idProductoPrimario,
+        kilosRequeridos: kilosPrimario,
+      });
+
+      if (!origen) {
+        throw new Error('STOCK_INSUFICIENTE');
+      }
+
+      const idUbicacionDestino = await this.inventario.resolverSlotProcesamientoLibre(
+        tx,
+        {
+          codigoCuenta: solicitud.codigoCuenta,
+          idBodega: solicitud.idBodega,
+        },
+      );
+
+      if (!idUbicacionDestino) {
+        throw new Error('SLOT_PROCESAMIENTO_NO_DISPONIBLE');
+      }
+
+      const codigoOt = await this.nextCodigoOt(
+        tx,
+        solicitud.codigoCuenta,
+        solicitud.idBodega,
+      );
+
+      const observaciones = buildObservacionesOtAProcesamiento(
+        solicitud.idSolicitudProcesamiento,
+      );
+
+      const orden = await tx.ordenTrabajo.create({
+        data: {
+          codigoCuenta: solicitud.codigoCuenta,
+          idBodega: solicitud.idBodega,
+          codigo: codigoOt,
+          tipo: TipoOrdenTrabajo.transformacion,
+          estado: EstadoOrdenTrabajo.planificada,
+          idSolicitante,
+          idAsignado: idOperario,
+          idUbicacionOrigen: origen.idUbicacion,
+          idUbicacionDestino,
+          idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+          observaciones,
+          lineas: {
+            create: {
+              idProducto: solicitud.idProductoPrimario,
+              idUbicacion: origen.idUbicacion,
+              tipoLinea: TipoLineaOt.salida,
+              cantidad: new Prisma.Decimal(kilosPrimario),
+            },
+          },
+        },
+      });
+
+      const titulo = `${solicitud.codigo} · ${productoPrimario?.descripcion ?? 'Primario'}`;
+      const descripcion = buildTareaProcesamientoDescripcion(
+        solicitud.idSolicitudProcesamiento,
+        kilosPrimario,
+      );
+
+      await tx.tareaCola.create({
+        data: {
+          codigoCuenta: solicitud.codigoCuenta,
+          idBodega: solicitud.idBodega,
+          tipo: TipoTarea.procesamiento,
+          estado: EstadoTarea.pendiente,
+          idAsignado: idOperario,
+          idOrdenTrabajo: orden.idOrdenTrabajo,
+          idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+          titulo,
+          descripcion,
+        },
+      });
+
+      return tx.solicitudProcesamiento.update({
+        where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
+        data: { idOperario },
+      });
+    });
   }
 
   async iniciarEnCurso(
     solicitud: SolicitudRow,
-    idOperario: string,
+    idOrdenTrabajo: string,
     idProcesador: string | null,
     idUsuario: string,
   ): Promise<SolicitudRow> {
@@ -180,60 +273,64 @@ export class SolicitudProcesamientoRepository {
     const kilosPrimario = Number(solicitud.kilosPrimario.toString());
     const unidad = primario.unidadVisualizacion;
 
-    return this.prisma.$transaction(async (tx) => {
-      const descuento = await this.inventario.descontarPrimarioEnCurso(tx, {
-        codigoCuenta: solicitud.codigoCuenta,
-        idBodega: solicitud.idBodega,
-        idProductoPrimario: solicitud.idProductoPrimario,
-        kilosADescontar: kilosPrimario,
-        idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
-        idUsuario,
-      });
+    const orden = await this.ordenTrabajoRepository.findById(idOrdenTrabajo);
 
-      if (descuento.kgDescontado <= 0) {
+    if (!orden) {
+      throw new Error('OT_NOT_FOUND');
+    }
+
+    let kgDescontado = solicitud.kgPrimarioDescontado
+      ? Number(solicitud.kgPrimarioDescontado.toString())
+      : 0;
+
+    if (orden.estado !== EstadoOrdenTrabajo.completada) {
+      try {
+        await this.ordenTrabajoRepository.ejecutar(
+          orden,
+          {
+            codigoCuenta: solicitud.codigoCuenta,
+            idBodega: solicitud.idBodega,
+          },
+          idUsuario,
+          { autoResolverStock: true, skipCompletarTarea: true },
+        );
+        kgDescontado = kilosPrimario;
+      } catch {
         throw new Error('STOCK_INSUFICIENTE');
       }
+    } else if (kgDescontado <= 0) {
+      kgDescontado = kilosPrimario;
+    }
 
-      const estimado = solicitud.estimadoUnidadesSecundario
-        ? Number(solicitud.estimadoUnidadesSecundario.toString())
-        : null;
+    if (kgDescontado <= 0) {
+      throw new Error('STOCK_INSUFICIENTE');
+    }
 
-      const sobrante = sobranteKgTotalTrasEnCurso({
-        unidadPrimarioVisualizacion: unidad,
-        cantidadPrimario: kilosPrimario,
-        deductedKg: descuento.kgDescontado,
-        estimadoUnidadesSecundario: estimado,
-        reglaCantidadPrimario: Number(
-          solicitud.reglaConversionCantidadPrimario?.toString() ?? 1,
-        ),
-        reglaUnidadesSecundario: Number(
-          solicitud.reglaConversionUnidadesSecundario?.toString() ?? 0,
-        ),
-      });
+    const estimado = solicitud.estimadoUnidadesSecundario
+      ? Number(solicitud.estimadoUnidadesSecundario.toString())
+      : null;
 
-      const updated = await tx.solicitudProcesamiento.update({
-        where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
-        data: {
-          estado: EstadoProcesamiento.en_proceso,
-          idProcesador: idProcesador,
-          kgPrimarioDescontado: new Prisma.Decimal(descuento.kgDescontado),
-          sobranteKg: new Prisma.Decimal(sobrante),
-        },
-      });
+    const sobrante = sobranteKgTotalTrasEnCurso({
+      unidadPrimarioVisualizacion: unidad,
+      cantidadPrimario: kilosPrimario,
+      deductedKg: kgDescontado,
+      estimadoUnidadesSecundario: estimado,
+      reglaCantidadPrimario: Number(
+        solicitud.reglaConversionCantidadPrimario?.toString() ?? 1,
+      ),
+      reglaUnidadesSecundario: Number(
+        solicitud.reglaConversionUnidadesSecundario?.toString() ?? 0,
+      ),
+    });
 
-      await tx.tareaCola.updateMany({
-        where: {
-          descripcion: buildTareaSolicitudDescripcion(
-            solicitud.idSolicitudProcesamiento,
-          ),
-        },
-        data: {
-          estado: EstadoTarea.en_proceso,
-          idAsignado: idProcesador,
-        },
-      });
-
-      return updated;
+    return this.prisma.solicitudProcesamiento.update({
+      where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
+      data: {
+        estado: EstadoProcesamiento.en_proceso,
+        idProcesador: idProcesador,
+        kgPrimarioDescontado: new Prisma.Decimal(kgDescontado),
+        sobranteKg: new Prisma.Decimal(sobrante),
+      },
     });
   }
 
@@ -291,26 +388,31 @@ export class SolicitudProcesamientoRepository {
       });
 
       if (input.kilosMerma > 0) {
-        await tx.movimientoInventario.create({
-          data: {
-            codigoCuenta: solicitud.codigoCuenta,
-            idBodega: solicitud.idBodega,
-            idProducto: solicitud.idProductoPrimario,
-            cantidad: new Prisma.Decimal(input.kilosMerma),
-            tipoMovimiento: TipoMovimiento.merma,
-            idUsuario,
-            idReferencia: solicitud.idSolicitudProcesamiento,
-            tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
-            metadata: { tipo: 'merma_procesamiento' },
-          },
+        await this.inventario.registrarMermaProcesamiento(tx, {
+          codigoCuenta: solicitud.codigoCuenta,
+          idBodega: solicitud.idBodega,
+          idProductoPrimario: solicitud.idProductoPrimario,
+          kilosMerma: input.kilosMerma,
+          idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+          idUsuario,
         });
       }
 
       await tx.tareaCola.updateMany({
         where: {
-          descripcion: buildTareaSolicitudDescripcion(
-            solicitud.idSolicitudProcesamiento,
-          ),
+          OR: [
+            { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
+            {
+              descripcion: buildTareaSolicitudDescripcion(
+                solicitud.idSolicitudProcesamiento,
+              ),
+            },
+            {
+              descripcion: {
+                contains: `solicitudProcesamiento:${solicitud.idSolicitudProcesamiento}`,
+              },
+            },
+          ],
           estado: EstadoTarea.en_proceso,
         },
         data: { estado: EstadoTarea.completada, idAsignado: idUsuario },
@@ -657,6 +759,7 @@ export class SolicitudProcesamientoRepository {
       idProductoPrimario: row.idProductoPrimario,
       idProductoSecundario: row.idProductoSecundario,
       idSolicitante: row.idSolicitante,
+      idOperario: row.idOperario,
       idProcesador: row.idProcesador,
       estado: row.estado,
       kilosPrimario: row.kilosPrimario.toString(),

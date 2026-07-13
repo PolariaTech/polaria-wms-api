@@ -35,6 +35,7 @@ import {
   ROLES_PROCESAMIENTO_EJECUTAR,
   ROLES_PROCESAMIENTO_INICIAR,
   ROLES_PROCESAMIENTO_LECTURA,
+  ROLES_PROCESAMIENTO_POST_CIERRE,
 } from '../constants/processing.constants';
 import {
   AsignarOperarioDto,
@@ -173,7 +174,6 @@ export class SolicitudProcesamientoController {
 
   @Post(':id/cerrar')
   @Roles(...ROLES_PROCESAMIENTO_EJECUTAR)
-  @UseGuards(SensitiveWriteGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Procesador cierra → pendiente_cierre',
@@ -189,10 +189,10 @@ export class SolicitudProcesamientoController {
   }
 
   @Post(':id/ordenes-post-cierre')
-  @Roles(...ROLES_PROCESAMIENTO_ASIGNAR)
+  @Roles(...ROLES_PROCESAMIENTO_POST_CIERRE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Jefe crea OT procesado/sobrante hacia almacén',
+    summary: 'Crea OT procesado/sobrante hacia almacén (procesador o jefe)',
   })
   crearOrdenesPostCierre(
     @Param('id', ParseUUIDPipe) id: string,

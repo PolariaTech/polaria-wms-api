@@ -22,10 +22,11 @@ Flujo: `pendiente` → `en_proceso` → `pendiente_cierre` → `terminada`
 | Acción | Roles |
 |--------|-------|
 | Lectura | configurador, admin cuenta, admin/jefe bodega, procesador, operario |
-| Crear | configurador, admin bodega, jefe bodega, procesador |
-| Asignar operario / procesador / OT post-cierre / terminar | configurador, admin bodega, jefe bodega |
+| Crear | configurador, jefe bodega |
+| Asignar operario / procesador / terminar | configurador, jefe bodega |
+| Cerrar con merma | configurador, procesador (sin `inventory:write`; no usa `SensitiveWriteGuard`) |
+| OT post-cierre (tras cerrar) | configurador, jefe bodega, procesador |
 | Iniciar / aplicar OT | operario, procesador |
-| Cerrar con merma | procesador |
 
 ## Endpoints
 
@@ -40,19 +41,20 @@ Flujo: `pendiente` → `en_proceso` → `pendiente_cierre` → `terminada`
 | PATCH | `/:id/asignar-procesador` | Pre-asigna procesador sin cambiar estado |
 | PATCH | `/:id/estado` | Transición manual con reglas frio |
 | POST | `/:id/cerrar` | Procesador → `pendiente_cierre` con `kilosMerma` |
-| POST | `/:id/ordenes-post-cierre` | Jefe crea OT procesado + sobrante hacia almacén |
+| POST | `/:id/ordenes-post-cierre` | Procesador o jefe crea OT procesado + sobrante hacia almacén |
 | POST | `/:id/ordenes/:idOrden/aplicar` | Operario ubica stock en mapa |
 | POST | `/:id/terminar` | Jefe marca `terminada` tras ubicar |
 
 ## Flujo operativo
 
-1. Cuenta/jefe crea solicitud (`pendiente`) + tarea cola `procesamiento`
-2. Jefe asigna operario (`PATCH asignar-operario`)
-3. Operario inicia (`POST iniciar`): descuenta primario del mapa, calcula `sobranteKg`, pasa a `en_proceso`
-4. Procesador cierra (`POST cerrar`) con `kilosMerma` → `pendiente_cierre`
-5. Jefe crea OT post-cierre (`POST ordenes-post-cierre`) con ubicaciones destino
-6. Operario aplica cada OT (`POST ordenes/:idOrden/aplicar`)
-7. Jefe o auto-cierre marca `terminada` cuando stock ubicado y OT completas
+1. Operador/jefe crea solicitud (`pendiente`) — valida stock en almacenamiento, **sin** tarea cola
+2. Jefe asigna operario (`PATCH asignar-operario`): persiste `idOperario`, crea OT `a_procesamiento` y tarea `procesamiento`
+3. Operario inicia (`POST iniciar`): ejecuta movimiento almacenamiento → procesamiento, solicitud `en_proceso`
+4. Operario completa tarea (`POST /operaciones/tareas/:id/completar`) — solo cierra la tarea (el stock ya se movió en `iniciar`)
+5. Procesador cierra (`POST cerrar`) con `kilosMerma` → `pendiente_cierre`
+6. Jefe crea OT post-cierre (`POST ordenes-post-cierre`) con ubicaciones destino
+7. Operario aplica cada OT (`POST ordenes/:idOrden/aplicar`)
+8. Jefe o auto-cierre marca `terminada` cuando stock ubicado y OT completas
 
 ## Cálculos (frio)
 

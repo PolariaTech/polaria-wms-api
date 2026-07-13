@@ -289,6 +289,11 @@ export class TareaColaService {
     this.assertPuedeCompletarTarea(tarea.tipo, ctx.idRol);
     this.assertOperarioAsignadoATarea(tarea.idAsignado, ctx);
 
+    if (tarea.tipo === TipoTarea.procesamiento) {
+      const updated = await this.repository.completar(idTarea, ctx.idUsuario);
+      return this.repository.toResponse(updated);
+    }
+
     if (!tarea.idOrdenTrabajo) {
       const updated = await this.repository.completar(idTarea, ctx.idUsuario);
       return this.repository.toResponse(updated);

@@ -5,6 +5,7 @@ const FLUJOS_VALIDOS: readonly FlujoOrdenTrabajo[] = [
   'a_salida',
   'revisar',
   'bodega_a_bodega',
+  'a_procesamiento',
 ];
 
 export function parseTipoFlujo(

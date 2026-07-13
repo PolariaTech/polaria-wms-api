@@ -58,6 +58,7 @@ export class TareaColaRepository {
     codigoCuenta: string;
     idBodega: string;
     idOrdenTrabajo?: string;
+    idSolicitudProcesamiento?: string;
     titulo: string;
     descripcion?: string;
     idAsignado?: string;
@@ -69,6 +70,7 @@ export class TareaColaRepository {
         tipo: TipoTarea.procesamiento,
         estado: EstadoTarea.pendiente,
         idOrdenTrabajo: input.idOrdenTrabajo ?? null,
+        idSolicitudProcesamiento: input.idSolicitudProcesamiento ?? null,
         titulo: input.titulo,
         descripcion: input.descripcion ?? null,
         idAsignado: input.idAsignado ?? null,
@@ -85,6 +87,7 @@ export class TareaColaRepository {
       estado: row.estado,
       idAsignado: row.idAsignado,
       idOrdenTrabajo: row.idOrdenTrabajo,
+      idSolicitudProcesamiento: row.idSolicitudProcesamiento,
       titulo: row.titulo,
       descripcion: row.descripcion,
       createdAt: row.createdAt,

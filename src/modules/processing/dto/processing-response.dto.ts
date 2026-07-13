@@ -28,6 +28,9 @@ export class SolicitudProcesamientoResponseDto {
   @ApiPropertyOptional({ nullable: true })
   idProcesador!: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  idOperario!: string | null;
+
   @ApiProperty()
   estado!: string;
 
