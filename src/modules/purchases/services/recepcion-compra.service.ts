@@ -19,6 +19,7 @@ import type {
   RecepcionCompraResponse,
   RecepcionLineaInput,
 } from '../interfaces/recepcion-compra.interfaces';
+import { validarTemperaturaProducto } from '../utils/validar-temperatura-producto.util';
 
 @Injectable()
 export class RecepcionCompraService {
@@ -181,6 +182,40 @@ export class RecepcionCompraService {
           }>;
         }
       | undefined;
+
+    if (entradas.length > 0) {
+      const productoIds = [...new Set(entradas.map((e) => e.idProducto))];
+      const productos = await this.repository.findProductosRangoTemperatura(
+        productoIds,
+      );
+      const productoMap = new Map(
+        productos.map((p) => [p.idProducto, p] as const),
+      );
+
+      for (const entrada of entradas) {
+        if (entrada.temperatura == null) {
+          throw new BadRequestException(
+            'La temperatura es obligatoria para registrar inventario en recepción',
+          );
+        }
+
+        const producto = productoMap.get(entrada.idProducto);
+        if (!producto) {
+          throw new BadRequestException('Producto no encontrado en el catálogo');
+        }
+
+        const tempError = validarTemperaturaProducto(
+          Number(entrada.temperatura.toString()),
+          producto,
+        );
+
+        if (tempError) {
+          throw new BadRequestException(
+            `${producto.sku}: ${tempError}`,
+          );
+        }
+      }
+    }
 
     if (entradas.length > 0) {
       if (!idUbicacionIngreso) {

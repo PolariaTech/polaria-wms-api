@@ -42,6 +42,14 @@ export function mapEjecutarOrdenError(error: unknown): never {
         throw new BadRequestException(
           'La orden no tiene una cantidad válida para mover',
         );
+      case 'LOCK_REQUIRED':
+        throw new BadRequestException(
+          'Debe bloquear la posición del mapa antes de ejecutar la orden',
+        );
+      case 'LOCK_HELD_BY_OTHER':
+        throw new ConflictException(
+          'La posición está bloqueada por otro operario',
+        );
     }
   }
   throw error;

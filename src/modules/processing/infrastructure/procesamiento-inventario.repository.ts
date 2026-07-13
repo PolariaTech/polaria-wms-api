@@ -5,6 +5,7 @@ import {
   TipoMovimiento,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
+import { syncUbicacionEstadoSlot } from '../../inventory/utils/sync-ubicacion-estado-slot.util';
 import {
   metadataMovimientoProcesamiento,
   TIPO_REFERENCIA_PROCESAMIENTO,
@@ -173,10 +174,7 @@ export class ProcesamientoInventarioRepository {
       });
 
       if (nuevaCantidad.lte(0)) {
-        await tx.ubicacion.update({
-          where: { idUbicacion: ws.idUbicacion },
-          data: { estadoSlot: EstadoSlot.libre },
-        });
+        await syncUbicacionEstadoSlot(tx, ws.idUbicacion);
       }
 
       restante = restante.sub(aplicar);
@@ -255,10 +253,7 @@ export class ProcesamientoInventarioRepository {
       });
 
       if (nuevaCantidad.lte(0)) {
-        await tx.ubicacion.update({
-          where: { idUbicacion: ws.idUbicacion },
-          data: { estadoSlot: EstadoSlot.libre },
-        });
+        await syncUbicacionEstadoSlot(tx, ws.idUbicacion);
       } else {
         await tx.ubicacion.update({
           where: { idUbicacion: ws.idUbicacion },
@@ -321,10 +316,7 @@ export class ProcesamientoInventarioRepository {
       });
     }
 
-    await tx.ubicacion.update({
-      where: { idUbicacion: params.idUbicacionDestino },
-      data: { estadoSlot: EstadoSlot.ocupado },
-    });
+    await syncUbicacionEstadoSlot(tx, params.idUbicacionDestino);
 
     await tx.movimientoInventario.create({
       data: {
@@ -386,10 +378,7 @@ export class ProcesamientoInventarioRepository {
       });
     }
 
-    await tx.ubicacion.update({
-      where: { idUbicacion: params.idUbicacionDestino },
-      data: { estadoSlot: EstadoSlot.ocupado },
-    });
+    await syncUbicacionEstadoSlot(tx, params.idUbicacionDestino);
 
     await tx.movimientoInventario.create({
       data: {
