@@ -31,7 +31,14 @@ const ordenInclude = {
   },
   comprador: { select: { idComprador: true, nombre: true, estaActivo: true } },
   cliente: { select: { idCliente: true, nombre: true, estaActivo: true } },
-  bodega: { select: { idBodega: true, nombre: true, estaActiva: true, codigoCuenta: true } },
+  bodega: {
+    select: {
+      idBodega: true,
+      nombre: true,
+      estaActiva: true,
+      codigoCuenta: true,
+    },
+  },
   bodegaDestino: { select: { idBodega: true, nombre: true, estaActiva: true } },
 } satisfies Prisma.OrdenVentaInclude;
 
@@ -53,9 +60,7 @@ export class OrdenVentaRepository {
     });
   }
 
-  list(
-    where: Prisma.OrdenVentaWhereInput,
-  ): Promise<OrdenVentaWithRelations[]> {
+  list(where: Prisma.OrdenVentaWhereInput): Promise<OrdenVentaWithRelations[]> {
     return this.prisma.ordenVenta.findMany({
       where,
       include: ordenInclude,
@@ -160,10 +165,7 @@ export class OrdenVentaRepository {
   }
 
   private resolveTipoFlujo(orden: OrdenVentaWithRelations): FlujoOrdenTrabajo {
-    if (
-      orden.idBodegaDestino &&
-      orden.idBodegaDestino !== orden.idBodega
-    ) {
+    if (orden.idBodegaDestino && orden.idBodegaDestino !== orden.idBodega) {
       return 'bodega_a_bodega';
     }
     return 'a_salida';
@@ -228,10 +230,7 @@ export class OrdenVentaRepository {
         },
       },
       include: { lote: true },
-      orderBy: [
-        { lote: { fechaVencimiento: 'asc' } },
-        { updatedAt: 'asc' },
-      ],
+      orderBy: [{ lote: { fechaVencimiento: 'asc' } }, { updatedAt: 'asc' }],
     });
 
     let restante = cantidadRequerida;
@@ -269,9 +268,7 @@ export class OrdenVentaRepository {
       });
       const nombre = producto?.descripcion ?? producto?.sku ?? idProducto;
       const disponibleTotal = cantidadRequerida.sub(restante).toNumber();
-      throw new Error(
-        `STOCK_INSUFICIENTE|${nombre}|${disponibleTotal}`,
-      );
+      throw new Error(`STOCK_INSUFICIENTE|${nombre}|${disponibleTotal}`);
     }
 
     return allocations;
@@ -319,9 +316,7 @@ export class OrdenVentaRepository {
         : `${orden.lineas.length} productos`;
 
     const destino =
-      orden.bodegaDestino?.nombre ??
-      orden.bodega.nombre ??
-      'Salida interna';
+      orden.bodegaDestino?.nombre ?? orden.bodega.nombre ?? 'Salida interna';
 
     return {
       idOrdenVenta: orden.idOrdenVenta,
@@ -338,7 +333,11 @@ export class OrdenVentaRepository {
   }
 
   private extractPrecio(metadatos: Prisma.JsonValue | null): Prisma.Decimal {
-    if (!metadatos || typeof metadatos !== 'object' || Array.isArray(metadatos)) {
+    if (
+      !metadatos ||
+      typeof metadatos !== 'object' ||
+      Array.isArray(metadatos)
+    ) {
       return new Prisma.Decimal(0);
     }
 

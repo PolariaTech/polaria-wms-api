@@ -32,8 +32,12 @@ export class SupabaseAuthService {
       auth: { autoRefreshToken: false, persistSession: false },
     };
 
-    this.anonClient = createClient(url, anonKey, authOptions);
-    this.adminClient = createClient(url, serviceRoleKey, authOptions);
+    this.anonClient = createClient(url, anonKey, authOptions) as SupabaseClient;
+    this.adminClient = createClient(
+      url,
+      serviceRoleKey,
+      authOptions,
+    ) as SupabaseClient;
   }
 
   async signInWithPassword(

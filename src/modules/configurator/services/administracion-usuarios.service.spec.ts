@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { RolNivel, WmsRol } from '../../../generated/prisma/client';
 import { AdministracionUsuariosService } from './administracion-usuarios.service';
@@ -93,10 +90,7 @@ describe('AdministracionUsuariosService', () => {
 
   it('rechaza rol no permitido para administración', async () => {
     await expect(
-      service.create(
-        { ...baseDto, idRol: WmsRol.transportista },
-        adminContext,
-      ),
+      service.create({ ...baseDto, idRol: WmsRol.transportista }, adminContext),
     ).rejects.toThrow(BadRequestException);
   });
 

@@ -44,7 +44,9 @@ describe('ConfiguradorUsuariosController (e2e)', () => {
         {
           provide: SupabaseAuthService,
           useValue: {
-            getUserFromToken: jest.fn().mockResolvedValue({ id: 'auth-config' }),
+            getUserFromToken: jest
+              .fn()
+              .mockResolvedValue({ id: 'auth-config' }),
           },
         },
         {

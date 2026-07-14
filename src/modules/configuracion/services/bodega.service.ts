@@ -33,7 +33,10 @@ export class BodegaService {
       throw new BadRequestException('El nombre de la bodega es obligatorio');
     }
 
-    const capacidadSlots = this.resolveCapacidadSlots(dto.tipo, dto.capacidadSlots);
+    const capacidadSlots = this.resolveCapacidadSlots(
+      dto.tipo,
+      dto.capacidadSlots,
+    );
 
     await this.assertCuentaActiva(codigoCuenta);
     this.assertTenantAccess(codigoCuenta, ctx);
@@ -83,9 +86,7 @@ export class BodegaService {
       }
 
       if (codigoCuentaBody && codigoCuentaBody !== ctx.codigoCuenta) {
-        throw new ForbiddenException(
-          'No puede crear bodegas para otra cuenta',
-        );
+        throw new ForbiddenException('No puede crear bodegas para otra cuenta');
       }
 
       return ctx.codigoCuenta;

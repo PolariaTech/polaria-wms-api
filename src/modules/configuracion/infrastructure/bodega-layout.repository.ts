@@ -96,13 +96,16 @@ export class BodegaLayoutRepository {
         zonaIngreso.idZona,
       );
 
-      const almacenRows = Array.from({ length: capacidadSlots }, (_, index) => ({
-        codigoCuenta: bodega.codigoCuenta,
-        idBodega: bodega.idBodega,
-        idZona: zonaAlmacen.idZona,
-        idTipoUbicacion: tipoAlmacen.idTipoUbicacion,
-        codigo: formatSlotCodigo(index + 1, capacidadSlots),
-      }));
+      const almacenRows = Array.from(
+        { length: capacidadSlots },
+        (_, index) => ({
+          codigoCuenta: bodega.codigoCuenta,
+          idBodega: bodega.idBodega,
+          idZona: zonaAlmacen.idZona,
+          idTipoUbicacion: tipoAlmacen.idTipoUbicacion,
+          codigo: formatSlotCodigo(index + 1, capacidadSlots),
+        }),
+      );
 
       const salidaRows = this.buildSalidaUbicaciones(
         bodega,

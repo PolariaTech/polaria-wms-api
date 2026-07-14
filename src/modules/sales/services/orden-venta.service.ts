@@ -52,16 +52,14 @@ export class OrdenVentaService {
     const orden = await this.getAccessibleOrden(idOrdenVenta, ctx);
 
     if (orden.estado !== EstadoOrdenVenta.borrador) {
-      throw new ConflictException(
-        'Solo se pueden emitir ventas en borrador',
-      );
+      throw new ConflictException('Solo se pueden emitir ventas en borrador');
     }
 
     if (orden.lineas.length === 0) {
       throw new ConflictException('La venta no tiene productos');
     }
 
-    await this.validateEntidades(orden);
+    this.validateEntidades(orden);
 
     const demandaPorProducto = new Map<string, number>();
     for (const linea of orden.lineas) {
@@ -96,10 +94,7 @@ export class OrdenVentaService {
     }
   }
 
-  private async getAccessibleOrden(
-    idOrdenVenta: string,
-    ctx: TenantContext,
-  ) {
+  private async getAccessibleOrden(idOrdenVenta: string, ctx: TenantContext) {
     const orden = await this.repository.findById(idOrdenVenta);
 
     if (!orden) {
@@ -114,9 +109,9 @@ export class OrdenVentaService {
     return orden;
   }
 
-  private async validateEntidades(
+  private validateEntidades(
     orden: NonNullable<Awaited<ReturnType<OrdenVentaRepository['findById']>>>,
-  ): Promise<void> {
+  ): void {
     if (!orden.bodega.estaActiva) {
       throw new ForbiddenException('La bodega está inactiva');
     }
@@ -129,7 +124,11 @@ export class OrdenVentaService {
       throw new BadRequestException('El comprador no está activo');
     }
 
-    if (orden.idBodegaDestino && orden.bodegaDestino && !orden.bodegaDestino.estaActiva) {
+    if (
+      orden.idBodegaDestino &&
+      orden.bodegaDestino &&
+      !orden.bodegaDestino.estaActiva
+    ) {
       throw new BadRequestException('La bodega destino no está activa');
     }
 
@@ -145,9 +144,7 @@ export class OrdenVentaService {
   private mapEmitirError(error: unknown): never {
     if (error instanceof Error) {
       if (error.message === 'OV_ESTADO_INVALIDO') {
-        throw new ConflictException(
-          'Solo se pueden emitir ventas en borrador',
-        );
+        throw new ConflictException('Solo se pueden emitir ventas en borrador');
       }
 
       if (error.message === 'UBICACION_DESTINO_NOT_FOUND') {

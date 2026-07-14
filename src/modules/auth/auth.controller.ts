@@ -121,7 +121,6 @@ export class AuthController {
   @ApiNotFoundResponse({ description: 'Usuario no encontrado o inactivo' })
   createMateoHandoff(
     @CurrentSupabaseUser() user: User,
-    @TenantCtx() _ctx: TenantContext,
   ): Promise<MateoHandoffResponse> {
     return this.authService.createMateoHandoff(user.id);
   }

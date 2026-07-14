@@ -67,7 +67,9 @@ export class WarehouseStateService {
       existing.codigoCuenta !== dto.codigoCuenta ||
       existing.idBodega !== dto.idBodega
     ) {
-      throw new ForbiddenException('La posición no pertenece al tenant indicado');
+      throw new ForbiddenException(
+        'La posición no pertenece al tenant indicado',
+      );
     }
 
     if (
@@ -82,8 +84,7 @@ export class WarehouseStateService {
     }
 
     const allowTakeover =
-      this.canForceUnlock(ctx.idRol) ||
-      this.isLockStale(existing.lockedAt);
+      this.canForceUnlock(ctx.idRol) || this.isLockStale(existing.lockedAt);
 
     const updated = await this.repository.lock(
       idWarehouseState,
@@ -119,7 +120,9 @@ export class WarehouseStateService {
       existing.codigoCuenta !== dto.codigoCuenta ||
       existing.idBodega !== dto.idBodega
     ) {
-      throw new ForbiddenException('La posición no pertenece al tenant indicado');
+      throw new ForbiddenException(
+        'La posición no pertenece al tenant indicado',
+      );
     }
 
     const force = this.canForceUnlock(ctx.idRol);

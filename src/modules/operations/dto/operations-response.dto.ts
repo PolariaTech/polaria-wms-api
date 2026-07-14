@@ -36,7 +36,10 @@ export class OrdenTrabajoResponseDto {
   @ApiProperty()
   tipo!: string;
 
-  @ApiPropertyOptional({ enum: ['a_bodega', 'a_salida', 'revisar'], nullable: true })
+  @ApiPropertyOptional({
+    enum: ['a_bodega', 'a_salida', 'revisar'],
+    nullable: true,
+  })
   tipoFlujo!: string | null;
 
   @ApiPropertyOptional({ nullable: true })

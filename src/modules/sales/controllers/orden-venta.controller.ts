@@ -26,7 +26,10 @@ import { Roles } from '../../../core/guards/roles.decorator';
 import { RolesGuard } from '../../../core/guards/roles.guard';
 import { TenantGuard } from '../../../core/guards/tenant.guard';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
-import { ROLES_OV_ESCRITURA, ROLES_OV_LECTURA } from '../constants/orden-venta.constants';
+import {
+  ROLES_OV_ESCRITURA,
+  ROLES_OV_LECTURA,
+} from '../constants/orden-venta.constants';
 import { ListOrdenesVentaQueryDto } from '../dto/list-ordenes-venta-query.dto';
 import { OrdenVentaEmitirResponseDto } from '../dto/orden-venta-response.dto';
 import type { OrdenVentaEmitirResponse } from '../interfaces/orden-venta.interfaces';

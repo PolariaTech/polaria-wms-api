@@ -36,7 +36,9 @@ export class MovimientoInventarioService {
         ...(tipo ? { tipoMovimiento: tipo } : {}),
         ...(query.idReferencia ? { idReferencia: query.idReferencia } : {}),
         ...(query.idUbicacion
-          ? MovimientoInventarioRepository.buildWhereUbicacion(query.idUbicacion)
+          ? MovimientoInventarioRepository.buildWhereUbicacion(
+              query.idUbicacion,
+            )
           : {}),
       },
       ctx,

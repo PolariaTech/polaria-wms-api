@@ -112,7 +112,11 @@ export class OrdenTrabajoRepository {
     idSolicitante: string,
     opciones?: CreateOrdenTrabajoOpciones,
   ): Promise<OrdenWithLineas> {
-    const codigo = await this.nextCodigo(tx, input.codigoCuenta, input.idBodega);
+    const codigo = await this.nextCodigo(
+      tx,
+      input.codigoCuenta,
+      input.idBodega,
+    );
     const tipo = FLUJO_TIPO_OT[input.tipoFlujo];
 
     const orden = await tx.ordenTrabajo.create({

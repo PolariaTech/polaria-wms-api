@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
-  BodegaTipo,
   EstadoIntegracion,
   RolNivel,
   WmsRol,

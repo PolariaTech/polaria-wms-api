@@ -64,7 +64,9 @@ export function kgSobranteParaDevolucionMapa(params: {
   sobranteKg?: number | null;
   unidadPrimarioVisualizacion?: string;
 }): number {
-  if (unidadPrimarioNormalizada(params.unidadPrimarioVisualizacion) !== 'peso') {
+  if (
+    unidadPrimarioNormalizada(params.unidadPrimarioVisualizacion) !== 'peso'
+  ) {
     return 0;
   }
   const s = Number(params.sobranteKg);

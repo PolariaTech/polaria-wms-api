@@ -55,15 +55,13 @@ describe('BodegaDestinoService', () => {
             listActivasByCuentaYTipo: jest.fn(),
             findById: jest.fn(),
             countSlotsLibresAlmacenamientoByBodega: jest.fn(),
-            resolveSlotsLibres: jest.fn(
-              (bodega, libres: number) => {
-                if (libres > 0) return libres;
-                if (bodega.tipo === BodegaTipo.externa) {
-                  return bodega.capacidadSlots ?? 1;
-                }
-                return 0;
-              },
-            ),
+            resolveSlotsLibres: jest.fn((bodega, libres: number) => {
+              if (libres > 0) return libres;
+              if (bodega.tipo === BodegaTipo.externa) {
+                return bodega.capacidadSlots ?? 1;
+              }
+              return 0;
+            }),
           },
         },
       ],

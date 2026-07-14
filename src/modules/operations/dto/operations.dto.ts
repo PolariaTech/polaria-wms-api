@@ -23,14 +23,30 @@ export class TenantBodegaQueryDto {
 }
 
 export class ListOrdenesTrabajoQueryDto extends TenantBodegaQueryDto {
-  @ApiPropertyOptional({ enum: ['planificada', 'en_proceso', 'pausada', 'completada', 'cancelada'] })
+  @ApiPropertyOptional({
+    enum: ['planificada', 'en_proceso', 'pausada', 'completada', 'cancelada'],
+  })
   @IsOptional()
   @IsString()
   estado?: string;
 
-  @ApiPropertyOptional({ enum: ['a_bodega', 'a_salida', 'revisar', 'bodega_a_bodega', 'a_procesamiento'] })
+  @ApiPropertyOptional({
+    enum: [
+      'a_bodega',
+      'a_salida',
+      'revisar',
+      'bodega_a_bodega',
+      'a_procesamiento',
+    ],
+  })
   @IsOptional()
-  @IsEnum(['a_bodega', 'a_salida', 'revisar', 'bodega_a_bodega', 'a_procesamiento'] as const)
+  @IsEnum([
+    'a_bodega',
+    'a_salida',
+    'revisar',
+    'bodega_a_bodega',
+    'a_procesamiento',
+  ] as const)
   tipoFlujo?: FlujoOrdenTrabajo;
 }
 
@@ -44,8 +60,22 @@ export class CreateOrdenTrabajoDto {
   @IsUUID()
   idBodega!: string;
 
-  @ApiProperty({ enum: ['a_bodega', 'a_salida', 'revisar', 'bodega_a_bodega', 'a_procesamiento'] })
-  @IsEnum(['a_bodega', 'a_salida', 'revisar', 'bodega_a_bodega', 'a_procesamiento'] as const)
+  @ApiProperty({
+    enum: [
+      'a_bodega',
+      'a_salida',
+      'revisar',
+      'bodega_a_bodega',
+      'a_procesamiento',
+    ],
+  })
+  @IsEnum([
+    'a_bodega',
+    'a_salida',
+    'revisar',
+    'bodega_a_bodega',
+    'a_procesamiento',
+  ] as const)
   tipoFlujo!: FlujoOrdenTrabajo;
 
   @ApiPropertyOptional()
@@ -79,7 +109,9 @@ export class CreateOrdenTrabajoDto {
   @IsUUID()
   idAsignado?: string;
 
-  @ApiPropertyOptional({ description: 'OV vinculada (salida manual desde venta)' })
+  @ApiPropertyOptional({
+    description: 'OV vinculada (salida manual desde venta)',
+  })
   @IsOptional()
   @IsUUID()
   idOrdenVenta?: string;
@@ -100,12 +132,16 @@ export class EjecutarOrdenTrabajoDto {
   @IsUUID()
   idBodega!: string;
 
-  @ApiPropertyOptional({ description: 'Posición warehouse_state a mover (opcional en revisar)' })
+  @ApiPropertyOptional({
+    description: 'Posición warehouse_state a mover (opcional en revisar)',
+  })
   @IsOptional()
   @IsUUID()
   idWarehouseState?: string;
 
-  @ApiPropertyOptional({ description: 'Versión optimistic lock de warehouse_state' })
+  @ApiPropertyOptional({
+    description: 'Versión optimistic lock de warehouse_state',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -134,7 +170,9 @@ export class ReportarOrdenTrabajoDto {
 }
 
 export class ListTareasQueryDto extends TenantBodegaQueryDto {
-  @ApiPropertyOptional({ enum: ['pendiente', 'en_proceso', 'completada', 'cancelada'] })
+  @ApiPropertyOptional({
+    enum: ['pendiente', 'en_proceso', 'completada', 'cancelada'],
+  })
   @IsOptional()
   @IsString()
   estado?: string;
@@ -178,7 +216,9 @@ export class ListAlertasQueryDto extends TenantBodegaQueryDto {
   @IsString()
   estado?: string;
 
-  @ApiPropertyOptional({ enum: ['temperatura', 'demora', 'orden_reportada', 'otro'] })
+  @ApiPropertyOptional({
+    enum: ['temperatura', 'demora', 'orden_reportada', 'otro'],
+  })
   @IsOptional()
   @IsString()
   tipo?: string;

@@ -21,9 +21,7 @@ export class RequireTenantContextInterceptor implements NestInterceptor {
     );
 
     if (required) {
-      const request = context
-        .switchToHttp()
-        .getRequest<AuthenticatedRequest>();
+      const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
       if (!request.tenantContext) {
         throw new ForbiddenException('Contexto de tenant inválido o ausente');

@@ -2,11 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { WmsRol } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 
-export type UsuarioWithRelations = Awaited<
-  ReturnType<UsuarioRepository['findActiveByIdentificador']>
-> extends infer U
-  ? Exclude<U, null>
-  : never;
+export type UsuarioWithRelations =
+  Awaited<
+    ReturnType<UsuarioRepository['findActiveByIdentificador']>
+  > extends infer U
+    ? Exclude<U, null>
+    : never;
 
 @Injectable()
 export class UsuarioRepository {
@@ -71,7 +72,7 @@ export class UsuarioRepository {
     });
   }
 
-  isConfigurador(idRol: WmsRol | string): boolean {
+  isConfigurador(idRol: WmsRol): boolean {
     return idRol === WmsRol.configurador;
   }
 }

@@ -6,7 +6,10 @@ import { AdministracionUsuariosService } from './services/administracion-usuario
 import { ConfiguradorUsuariosService } from './services/configurador-usuarios.service';
 
 @Module({
-  controllers: [ConfiguradorUsuariosController, AdministracionUsuariosController],
+  controllers: [
+    ConfiguradorUsuariosController,
+    AdministracionUsuariosController,
+  ],
   providers: [
     ConfiguradorUsuariosService,
     AdministracionUsuariosService,

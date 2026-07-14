@@ -32,7 +32,8 @@ export const AuthClientParam = createParamDecorator(
     return (
       parseAuthClient(
         Array.isArray(headerValue) ? headerValue[0] : headerValue,
-      ) ?? parseAuthClient(Array.isArray(queryValue) ? queryValue[0] : queryValue)
+      ) ??
+      parseAuthClient(Array.isArray(queryValue) ? queryValue[0] : queryValue)
     );
   },
 );

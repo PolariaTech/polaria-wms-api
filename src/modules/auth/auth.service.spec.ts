@@ -73,7 +73,9 @@ describe('AuthService', () => {
             findActiveByCorreo: jest.fn(),
             findActiveByIdAuth: jest.fn(),
             findActiveByIdUsuario: jest.fn(),
-            isConfigurador: jest.fn((idRol: string) => idRol === WmsRol.configurador),
+            isConfigurador: jest.fn(
+              (idRol: string) => idRol === WmsRol.configurador,
+            ),
           },
         },
         {
@@ -141,10 +143,7 @@ describe('AuthService', () => {
 
     it('client=wms rechaza username sin @', async () => {
       await expect(
-        service.prelogin(
-          { identificador: 'admin.cuenta' },
-          AUTH_CLIENT.WMS,
-        ),
+        service.prelogin({ identificador: 'admin.cuenta' }, AUTH_CLIENT.WMS),
       ).rejects.toThrow(BadRequestException);
 
       expect(usuarioRepository.findActiveByCorreo).not.toHaveBeenCalled();

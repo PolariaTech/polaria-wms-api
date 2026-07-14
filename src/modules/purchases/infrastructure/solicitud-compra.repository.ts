@@ -10,8 +10,6 @@ import {
 } from '../constants/solicitud-compra.constants';
 import type {
   CreateSolicitudCompraInput,
-  ListSolicitudesFilters,
-  SolicitudCompraLineaInput,
   SolicitudCompraResponse,
   UpdateSolicitudCompraInput,
 } from '../interfaces/solicitud-compra.interfaces';

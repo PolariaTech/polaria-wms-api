@@ -59,7 +59,9 @@ export class CreateRecepcionCompraDto {
   @IsUUID()
   idBodega!: string;
 
-  @ApiProperty({ description: 'Líneas recibidas contra la OC (conciliación ciega)' })
+  @ApiProperty({
+    description: 'Líneas recibidas contra la OC (conciliación ciega)',
+  })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
@@ -74,7 +76,8 @@ export class CreateRecepcionCompraDto {
   lineasAdicionales?: RecepcionLineaAdicionalDto[];
 
   @ApiPropertyOptional({
-    description: 'Slot de zona ingreso; si se indica, crea warehouse_state y movimiento',
+    description:
+      'Slot de zona ingreso; si se indica, crea warehouse_state y movimiento',
   })
   @IsOptional()
   @IsUUID()

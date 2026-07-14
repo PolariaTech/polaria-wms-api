@@ -111,9 +111,7 @@ export class AuthService {
       usuario.correo,
     );
 
-    this.logger.log(
-      `Exchange Mateo exitoso: usuario=${usuario.idUsuario}`,
-    );
+    this.logger.log(`Exchange Mateo exitoso: usuario=${usuario.idUsuario}`);
 
     return {
       accessToken: tokens.accessToken,

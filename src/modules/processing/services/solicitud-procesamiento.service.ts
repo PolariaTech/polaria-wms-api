@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { EstadoProcesamiento } from '../../../generated/prisma/client';
 import {
   applyTenantFilter,
@@ -41,7 +45,9 @@ export class SolicitudProcesamientoService {
       {
         codigoCuenta: query.codigoCuenta,
         idBodega: query.idBodega,
-        ...(query.estado ? { estado: query.estado as EstadoProcesamiento } : {}),
+        ...(query.estado
+          ? { estado: query.estado as EstadoProcesamiento }
+          : {}),
         ...(query.idProcesador ? { idProcesador: query.idProcesador } : {}),
       },
       ctx,
@@ -120,7 +126,9 @@ export class SolicitudProcesamientoService {
     }
 
     if (row.idOperario) {
-      throw new BadRequestException('La solicitud ya tiene un operario asignado');
+      throw new BadRequestException(
+        'La solicitud ya tiene un operario asignado',
+      );
     }
 
     try {
@@ -188,7 +196,9 @@ export class SolicitudProcesamientoService {
     });
 
     if (transicionError) {
-      throw new BadRequestException(mensajeTransicionProcesamiento(transicionError));
+      throw new BadRequestException(
+        mensajeTransicionProcesamiento(transicionError),
+      );
     }
 
     try {
@@ -202,7 +212,8 @@ export class SolicitudProcesamientoService {
     } catch (error) {
       if (
         error instanceof Error &&
-        (error.message === 'STOCK_INSUFICIENTE' || error.message === 'OT_NOT_FOUND')
+        (error.message === 'STOCK_INSUFICIENTE' ||
+          error.message === 'OT_NOT_FOUND')
       ) {
         throw new BadRequestException(
           'No hay stock suficiente del primario en almacenamiento para iniciar el procesamiento',
@@ -227,7 +238,10 @@ export class SolicitudProcesamientoService {
       throw new NotFoundException('Solicitud de procesamiento no encontrada');
     }
 
-    const updated = await this.repository.asignarProcesador(id, dto.idProcesador);
+    const updated = await this.repository.asignarProcesador(
+      id,
+      dto.idProcesador,
+    );
     return this.repository.toResponse(updated);
   }
 
@@ -254,20 +268,19 @@ export class SolicitudProcesamientoService {
 
     const transicionError = assertTransicionProcesamiento({
       estadoActual: row.estado,
-      estadoSiguiente: dto.estado as EstadoProcesamiento,
+      estadoSiguiente: dto.estado,
       idOperarioAsignado: row.idOperario ?? tarea?.idAsignado ?? null,
       idUsuario: ctx.idUsuario,
       desperdicioKg: dto.desperdicioKg,
     });
 
     if (transicionError) {
-      throw new BadRequestException(mensajeTransicionProcesamiento(transicionError));
+      throw new BadRequestException(
+        mensajeTransicionProcesamiento(transicionError),
+      );
     }
 
-    const updated = await this.repository.cambiarEstado(
-      id,
-      dto.estado as EstadoProcesamiento,
-    );
+    const updated = await this.repository.cambiarEstado(id, dto.estado);
     return this.repository.toResponse(updated);
   }
 
@@ -301,7 +314,9 @@ export class SolicitudProcesamientoService {
     });
 
     if (transicionError) {
-      throw new BadRequestException(mensajeTransicionProcesamiento(transicionError));
+      throw new BadRequestException(
+        mensajeTransicionProcesamiento(transicionError),
+      );
     }
 
     try {

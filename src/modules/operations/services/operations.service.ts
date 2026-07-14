@@ -75,7 +75,10 @@ export class OrdenTrabajoService {
     return rows.map((row) => this.repository.toResponse(row));
   }
 
-  async findById(id: string, ctx: TenantContext): Promise<OrdenTrabajoResponse> {
+  async findById(
+    id: string,
+    ctx: TenantContext,
+  ): Promise<OrdenTrabajoResponse> {
     const orden = await this.repository.findById(id);
 
     if (!orden) {
@@ -152,7 +155,10 @@ export class OrdenTrabajoService {
       throw new NotFoundException('Orden de trabajo no encontrada');
     }
 
-    if (orden.codigoCuenta !== dto.codigoCuenta || orden.idBodega !== dto.idBodega) {
+    if (
+      orden.codigoCuenta !== dto.codigoCuenta ||
+      orden.idBodega !== dto.idBodega
+    ) {
       throw new BadRequestException('La orden no pertenece al tenant indicado');
     }
 
@@ -247,11 +253,17 @@ export class TareaColaService {
       throw new NotFoundException('Tarea no encontrada');
     }
 
-    if (tarea.estado === EstadoTarea.completada || tarea.estado === EstadoTarea.cancelada) {
+    if (
+      tarea.estado === EstadoTarea.completada ||
+      tarea.estado === EstadoTarea.cancelada
+    ) {
       throw new BadRequestException('La tarea ya está cerrada');
     }
 
-    const updated = await this.repository.asignar(idTarea, dto.idAsignado ?? ctx.idUsuario);
+    const updated = await this.repository.asignar(
+      idTarea,
+      dto.idAsignado ?? ctx.idUsuario,
+    );
     return this.repository.toResponse(updated);
   }
 
@@ -299,7 +311,9 @@ export class TareaColaService {
       return this.repository.toResponse(updated);
     }
 
-    const orden = await this.ordenTrabajoRepository.findById(tarea.idOrdenTrabajo);
+    const orden = await this.ordenTrabajoRepository.findById(
+      tarea.idOrdenTrabajo,
+    );
 
     if (!orden) {
       throw new NotFoundException('Orden de trabajo vinculada no encontrada');
@@ -358,10 +372,7 @@ export class TareaColaService {
     }
 
     if (tipo === TipoTarea.procesamiento) {
-      if (
-        idRol !== WmsRol.procesador &&
-        idRol !== WmsRol.operario
-      ) {
+      if (idRol !== WmsRol.procesador && idRol !== WmsRol.operario) {
         throw new ForbiddenException(
           'Solo el procesador u operario puede completar tareas de procesamiento',
         );
@@ -394,7 +405,9 @@ export class AlertaOperativaService {
       {
         codigoCuenta: query.codigoCuenta,
         idBodega: query.idBodega,
-        ...(query.estado ? { estado: query.estado as 'abierta' | 'cerrada' } : {}),
+        ...(query.estado
+          ? { estado: query.estado as 'abierta' | 'cerrada' }
+          : {}),
         ...(query.tipo ? { tipo: query.tipo as TipoAlerta } : {}),
       },
       ctx,
@@ -508,7 +521,9 @@ export class LlamadaOperativaService {
 
     const fromRol = ctx.idRol;
     const defaultMessage =
-      fromRol === 'procesador' ? 'Llamado del procesador' : 'Llamado del operario';
+      fromRol === 'procesador'
+        ? 'Llamado del procesador'
+        : 'Llamado del operario';
 
     const row = await this.repository.crearLlamada({
       codigoCuenta: dto.codigoCuenta,
@@ -532,7 +547,10 @@ export class LlamadaOperativaService {
     });
 
     try {
-      const updated = await this.repository.atenderLlamada(idLlamada, ctx.idUsuario);
+      const updated = await this.repository.atenderLlamada(
+        idLlamada,
+        ctx.idUsuario,
+      );
       return this.repository.toLlamadaResponse(updated);
     } catch (error) {
       if (error instanceof Error && error.message === 'LLAMADA_NOT_FOUND') {

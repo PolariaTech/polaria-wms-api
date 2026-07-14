@@ -42,9 +42,7 @@ export class AdministracionUsuariosService {
       );
     }
 
-    if (
-      !(ROLES_PERMITIDOS_ADMINISTRACION as readonly WmsRol[]).includes(idRol)
-    ) {
+    if (!ROLES_PERMITIDOS_ADMINISTRACION.includes(idRol)) {
       throw new BadRequestException(
         'Rol no permitido para administración de cuenta',
       );

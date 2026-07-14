@@ -102,16 +102,16 @@ describe('WarehouseStateService', () => {
       lockedAt: new Date(),
     } as never);
 
-    await expect(service.lock(idWs, dto, operarioContext)).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(
+      service.lock(idWs, dto, operarioContext),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('rechaza unlock de posición inexistente', async () => {
     repository.findById.mockResolvedValue(null);
 
-    await expect(service.unlock(idWs, dto, operarioContext)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      service.unlock(idWs, dto, operarioContext),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

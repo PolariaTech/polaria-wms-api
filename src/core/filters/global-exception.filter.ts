@@ -48,7 +48,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    this.logger.error('Error no controlado', exception instanceof Error ? exception.stack : undefined);
+    this.logger.error(
+      'Error no controlado',
+      exception instanceof Error ? exception.stack : undefined,
+    );
 
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,

@@ -9,7 +9,11 @@ import { RolesGuard } from '../src/core/guards/roles.guard';
 import { SensitiveWriteGuard } from '../src/core/guards/sensitive-write.guard';
 import { TenantGuard } from '../src/core/guards/tenant.guard';
 import { TenantService } from '../src/core/tenant/tenant.service';
-import { EstadoProcesamiento, RolNivel, WmsRol } from '../src/generated/prisma/client';
+import {
+  EstadoProcesamiento,
+  RolNivel,
+  WmsRol,
+} from '../src/generated/prisma/client';
 import { TareaColaController } from '../src/modules/operations/controllers/operations.controller';
 import { TareaColaService } from '../src/modules/operations/services/operations.service';
 import { SolicitudProcesamientoController } from '../src/modules/processing/controllers/solicitud-procesamiento.controller';

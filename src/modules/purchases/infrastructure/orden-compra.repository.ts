@@ -295,7 +295,10 @@ export class OrdenCompraRepository {
     tx: Prisma.TransactionClient,
     codigoCuenta: string,
   ): Promise<string> {
-    const maxExistente = await this.maxSecuenciaOrdenExistente(tx, codigoCuenta);
+    const maxExistente = await this.maxSecuenciaOrdenExistente(
+      tx,
+      codigoCuenta,
+    );
     const contador = await this.ensureContadorOrden(
       tx,
       codigoCuenta,

@@ -97,7 +97,10 @@ export class OrdenTrabajoController {
 
   @Get()
   @Roles(...ROLES_OPERACIONES_LECTURA)
-  @ApiOperation({ summary: 'Listar órdenes de trabajo de bodega (a bodega / salida / revisar)' })
+  @ApiOperation({
+    summary:
+      'Listar órdenes de trabajo de bodega (a bodega / salida / revisar)',
+  })
   @ApiOkResponse({ type: OrdenTrabajoResponseDto, isArray: true })
   list(
     @Query() query: ListOrdenesTrabajoQueryDto,
@@ -146,7 +149,9 @@ export class OrdenTrabajoController {
       'Marca la orden y su tarea como completadas. Si se envía `idWarehouseState`, transfiere inventario al destino.',
   })
   @ApiOkResponse({ type: OrdenTrabajoResponseDto })
-  @ApiConflictResponse({ description: 'Versión de warehouse_state desactualizada' })
+  @ApiConflictResponse({
+    description: 'Versión de warehouse_state desactualizada',
+  })
   ejecutar(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: EjecutarOrdenTrabajoDto,
@@ -189,7 +194,9 @@ export class TareaColaController {
 
   @Patch(':id/asignar')
   @Roles(...ROLES_TAREA_COLA_ASIGNAR)
-  @ApiOperation({ summary: 'Asignar tarea a operario o procesador (jefe de bodega)' })
+  @ApiOperation({
+    summary: 'Asignar tarea a operario o procesador (jefe de bodega)',
+  })
   @ApiOkResponse({ type: TareaColaResponseDto })
   asignar(
     @Param('id', ParseUUIDPipe) id: string,
@@ -229,7 +236,9 @@ export class AlertaOperativaController {
 
   @Get()
   @Roles(...ROLES_OPERACIONES_LECTURA)
-  @ApiOperation({ summary: 'Listar alertas operativas (temperatura, demora, orden reportada)' })
+  @ApiOperation({
+    summary: 'Listar alertas operativas (temperatura, demora, orden reportada)',
+  })
   @ApiOkResponse({ type: AlertaOperativaResponseDto, isArray: true })
   list(
     @Query() query: ListAlertasQueryDto,
@@ -299,7 +308,8 @@ export class LlamadaOperativaController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Llamar al jefe de bodega (operario o procesador)',
-    description: 'Persiste la llamada como alerta operativa con subtipo `llamada_jefe`.',
+    description:
+      'Persiste la llamada como alerta operativa con subtipo `llamada_jefe`.',
   })
   @ApiCreatedResponse({ type: LlamadaOperativaResponseDto })
   @ApiUnauthorizedResponse()

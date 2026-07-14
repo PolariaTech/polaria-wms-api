@@ -11,7 +11,6 @@ import type {
   CerrarRecepcionInput,
   RecepcionCompraResponse,
   RecepcionLineaAdicionalInput,
-  RecepcionLineaInput,
 } from '../interfaces/recepcion-compra.interfaces';
 
 const recepcionInclude = {
@@ -45,7 +44,9 @@ export class RecepcionCompraRepository {
     });
   }
 
-  list(where: Prisma.RecepcionCompraWhereInput): Promise<RecepcionWithLineas[]> {
+  list(
+    where: Prisma.RecepcionCompraWhereInput,
+  ): Promise<RecepcionWithLineas[]> {
     return this.prisma.recepcionCompra.findMany({
       where,
       include: recepcionInclude,
@@ -107,7 +108,14 @@ export class RecepcionCompraRepository {
     });
   }
 
-  findProductosRangoTemperatura(ids: string[]) {
+  findProductosRangoTemperatura(ids: string[]): Promise<
+    Array<{
+      idProducto: string;
+      sku: string;
+      rangoTemperaturaMin: Prisma.Decimal | null;
+      rangoTemperaturaMax: Prisma.Decimal | null;
+    }>
+  > {
     if (ids.length === 0) {
       return Promise.resolve([]);
     }

@@ -60,10 +60,7 @@ describe('ConfiguradorUsuariosService', () => {
 
   it('rechaza creación de rol configurador', async () => {
     await expect(
-      service.create(
-        { ...baseDto, idRol: WmsRol.configurador },
-        idCreador,
-      ),
+      service.create({ ...baseDto, idRol: WmsRol.configurador }, idCreador),
     ).rejects.toThrow(BadRequestException);
   });
 

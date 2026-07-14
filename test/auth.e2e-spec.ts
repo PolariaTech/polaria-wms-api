@@ -48,7 +48,9 @@ describe('AuthController (e2e)', () => {
         {
           provide: SupabaseAuthService,
           useValue: {
-            getUserFromToken: jest.fn().mockResolvedValue({ id: 'auth-tenant' }),
+            getUserFromToken: jest
+              .fn()
+              .mockResolvedValue({ id: 'auth-tenant' }),
             signOut: jest.fn(),
           },
         },
@@ -200,9 +202,7 @@ describe('AuthController (e2e)', () => {
   });
 
   it('POST /auth/mateo-handoff responde 401 sin token', async () => {
-    await request(app.getHttpServer())
-      .post('/auth/mateo-handoff')
-      .expect(401);
+    await request(app.getHttpServer()).post('/auth/mateo-handoff').expect(401);
   });
 
   it('POST /auth/mateo-exchange responde 200 con código válido', async () => {

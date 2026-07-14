@@ -22,7 +22,9 @@ export function desperdicioKgSugeridoDesdeMerma(params: {
   if (p <= 0) return null;
   const qty = Number(params.cantidadPrimario) || 0;
   if (qty <= 0) return null;
-  if (unidadPrimarioNormalizada(params.unidadPrimarioVisualizacion) !== 'peso') {
+  if (
+    unidadPrimarioNormalizada(params.unidadPrimarioVisualizacion) !== 'peso'
+  ) {
     return null;
   }
   const kg = (qty * p) / 100;

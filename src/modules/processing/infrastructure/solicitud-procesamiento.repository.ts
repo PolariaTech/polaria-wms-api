@@ -33,7 +33,10 @@ import {
   unidadesSecundarioEnterasParaMapa,
   unidadesSecundarioPorRegla,
 } from '../utils/catalogo-procesamiento.util';
-import { kgSobranteParaDevolucionMapa, sobranteKgTotalTrasEnCurso } from '../utils/sobrante-kg.util';
+import {
+  kgSobranteParaDevolucionMapa,
+  sobranteKgTotalTrasEnCurso,
+} from '../utils/sobrante-kg.util';
 
 export type SolicitudRow = Prisma.SolicitudProcesamientoGetPayload<object>;
 
@@ -53,7 +56,9 @@ export class SolicitudProcesamientoRepository {
     private readonly ordenTrabajoRepository: OrdenTrabajoRepository,
   ) {}
 
-  list(where: Prisma.SolicitudProcesamientoWhereInput): Promise<SolicitudRow[]> {
+  list(
+    where: Prisma.SolicitudProcesamientoWhereInput,
+  ): Promise<SolicitudRow[]> {
     return this.prisma.solicitudProcesamiento.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -94,7 +99,7 @@ export class SolicitudProcesamientoRepository {
     input: CreateSolicitudProcesamientoInput,
     idSolicitante: string,
   ): Promise<SolicitudRow> {
-    const [primario, secundario] = await Promise.all([
+    const [, secundario] = await Promise.all([
       this.loadProducto(input.idProductoPrimario, input.codigoCuenta),
       this.loadProducto(input.idProductoSecundario, input.codigoCuenta),
     ]);
@@ -127,7 +132,11 @@ export class SolicitudProcesamientoRepository {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const codigo = await this.nextCodigo(tx, input.codigoCuenta, input.idBodega);
+      const codigo = await this.nextCodigo(
+        tx,
+        input.codigoCuenta,
+        input.idBodega,
+      );
 
       return tx.solicitudProcesamiento.create({
         data: {
@@ -187,13 +196,11 @@ export class SolicitudProcesamientoRepository {
         throw new Error('STOCK_INSUFICIENTE');
       }
 
-      const idUbicacionDestino = await this.inventario.resolverSlotProcesamientoLibre(
-        tx,
-        {
+      const idUbicacionDestino =
+        await this.inventario.resolverSlotProcesamientoLibre(tx, {
           codigoCuenta: solicitud.codigoCuenta,
           idBodega: solicitud.idBodega,
-        },
-      );
+        });
 
       if (!idUbicacionDestino) {
         throw new Error('SLOT_PROCESAMIENTO_NO_DISPONIBLE');
@@ -334,10 +341,7 @@ export class SolicitudProcesamientoRepository {
     });
   }
 
-  asignarProcesador(
-    id: string,
-    idProcesador: string,
-  ): Promise<SolicitudRow> {
+  asignarProcesador(id: string, idProcesador: string): Promise<SolicitudRow> {
     return this.prisma.solicitudProcesamiento.update({
       where: { idSolicitudProcesamiento: id },
       data: { idProcesador },
@@ -363,8 +367,7 @@ export class SolicitudProcesamientoRepository {
       ? Number(solicitud.estimadoUnidadesSecundario.toString())
       : 0;
     const kilosSecundario =
-      input.kilosSecundario ??
-      unidadesSecundarioEnterasParaMapa(estimado);
+      input.kilosSecundario ?? unidadesSecundarioEnterasParaMapa(estimado);
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.solicitudProcesamiento.update({
@@ -453,7 +456,10 @@ export class SolicitudProcesamientoRepository {
     idSolicitante: string,
     idUbicacionDestinoProcesado?: string,
     idUbicacionDestinoDesperdicio?: string,
-  ): Promise<{ ordenProcesadoId: string | null; ordenDesperdicioId: string | null }> {
+  ): Promise<{
+    ordenProcesadoId: string | null;
+    ordenDesperdicioId: string | null;
+  }> {
     const primario = await this.loadProducto(
       solicitud.idProductoPrimario,
       solicitud.codigoCuenta,
@@ -873,7 +879,8 @@ export class SolicitudProcesamientoRepository {
       reglaConversionUnidadesSecundario:
         row.reglaConversionUnidadesSecundario?.toString() ?? null,
       perdidaProcesamientoPct: row.perdidaProcesamientoPct?.toString() ?? null,
-      estimadoUnidadesSecundario: row.estimadoUnidadesSecundario?.toString() ?? null,
+      estimadoUnidadesSecundario:
+        row.estimadoUnidadesSecundario?.toString() ?? null,
       kgPrimarioDescontado: row.kgPrimarioDescontado?.toString() ?? null,
       cierreDesdeProcesador: row.cierreDesdeProcesador,
       observaciones: row.observaciones,

@@ -16,7 +16,6 @@ import type { RechazarSolicitudDto } from '../dto/rechazar-solicitud.dto';
 import type { UpdateSolicitudCompraDto } from '../dto/update-solicitud-compra.dto';
 import { SolicitudCompraRepository } from '../infrastructure/solicitud-compra.repository';
 import type {
-  CreateSolicitudCompraInput,
   SolicitudCompraLineaInput,
   SolicitudCompraResponse,
   UpdateSolicitudCompraInput,
@@ -211,7 +210,10 @@ export class SolicitudCompraService {
     return this.repository.toResponse(updated);
   }
 
-  private async getAccessibleSolicitud(idSolicitudCompra: string, ctx: TenantContext) {
+  private async getAccessibleSolicitud(
+    idSolicitudCompra: string,
+    ctx: TenantContext,
+  ) {
     const solicitud = await this.repository.findById(idSolicitudCompra);
 
     if (!solicitud) {

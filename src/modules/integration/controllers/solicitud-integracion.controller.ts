@@ -48,7 +48,9 @@ export class SolicitudIntegracionController {
   })
   @ApiCreatedResponse({ type: SolicitudIntegracionResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
-  @ApiForbiddenResponse({ description: 'Sin permisos o cuenta fuera del tenant' })
+  @ApiForbiddenResponse({
+    description: 'Sin permisos o cuenta fuera del tenant',
+  })
   create(
     @Body() dto: CreateSolicitudIntegracionDto,
     @TenantCtx() ctx: TenantContext,

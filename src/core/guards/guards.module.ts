@@ -20,6 +20,12 @@ import { TenantGuard } from './tenant.guard';
       useClass: RequireTenantContextInterceptor,
     },
   ],
-  exports: [JwtAuthGuard, RolesGuard, TenantGuard, SensitiveWriteGuard, TenantModule],
+  exports: [
+    JwtAuthGuard,
+    RolesGuard,
+    TenantGuard,
+    SensitiveWriteGuard,
+    TenantModule,
+  ],
 })
 export class GuardsModule {}

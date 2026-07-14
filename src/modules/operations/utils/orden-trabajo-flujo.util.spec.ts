@@ -9,9 +9,9 @@ describe('orden-trabajo-flujo.util', () => {
     expect(parseTipoFlujo('flujo:bodega_a_bodega')).toBe('bodega_a_bodega');
     expect(parseTipoFlujo('flujo:a_salida')).toBe('a_salida');
     expect(parseTipoFlujo('flujo:revisar')).toBe('revisar');
-    expect(parseTipoFlujo('flujo:a_procesamiento|solicitudProcesamiento:uuid')).toBe(
-      'a_procesamiento',
-    );
+    expect(
+      parseTipoFlujo('flujo:a_procesamiento|solicitudProcesamiento:uuid'),
+    ).toBe('a_procesamiento');
     expect(parseTipoFlujo('otro texto')).toBeNull();
   });
 

@@ -10,7 +10,10 @@ import { ROL_PLATAFORMA } from '../../../shared/constants/roles';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import { resolveCapacidadSlots } from '../constants/warehouse-layout.constants';
 import { BodegaLayoutRepository } from '../infrastructure/bodega-layout.repository';
-import type { BootstrapLayoutResult, EnsureOperationalZonesResult } from '../interfaces/bodega-layout.interfaces';
+import type {
+  BootstrapLayoutResult,
+  EnsureOperationalZonesResult,
+} from '../interfaces/bodega-layout.interfaces';
 
 @Injectable()
 export class BodegaLayoutBootstrapService {

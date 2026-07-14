@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { EstadoTarea, Prisma, TipoTarea } from '../../../generated/prisma/client';
+import {
+  EstadoTarea,
+  Prisma,
+  TipoTarea,
+} from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 import type { TareaColaResponse } from '../interfaces/operations.interfaces';
 
-const tareaInclude = {} satisfies Prisma.TareaColaInclude;
-
-export type TareaColaRow = Prisma.TareaColaGetPayload<{
-  include: typeof tareaInclude;
-}>;
+export type TareaColaRow = Prisma.TareaColaGetPayload<object>;
 
 @Injectable()
 export class TareaColaRepository {
@@ -24,10 +24,7 @@ export class TareaColaRepository {
     return this.prisma.tareaCola.findUnique({ where: { idTarea } });
   }
 
-  asignar(
-    idTarea: string,
-    idAsignado: string | null,
-  ): Promise<TareaColaRow> {
+  asignar(idTarea: string, idAsignado: string | null): Promise<TareaColaRow> {
     return this.prisma.tareaCola.update({
       where: { idTarea },
       data: {

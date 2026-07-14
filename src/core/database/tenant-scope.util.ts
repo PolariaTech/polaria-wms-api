@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { RolNivel, WmsRol } from '../../generated/prisma/client';
+import { RolNivel } from '../../generated/prisma/client';
 import type { TenantContext } from '../tenant/tenant-context.interface';
 import { isConfigurador } from '../../shared/constants/roles';
 
@@ -31,9 +31,7 @@ export function applyTenantFilter<W extends PrismaWhere>(
 
   if (ctx.nivelRol === RolNivel.bodega && ctx.idBodegas.length > 0) {
     scoped.idBodega =
-      ctx.idBodegas.length === 1
-        ? ctx.idBodegas[0]
-        : { in: ctx.idBodegas };
+      ctx.idBodegas.length === 1 ? ctx.idBodegas[0] : { in: ctx.idBodegas };
   }
 
   return scoped as W;

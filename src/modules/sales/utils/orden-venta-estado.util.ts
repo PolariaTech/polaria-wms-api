@@ -114,7 +114,7 @@ export async function registrarDespachoOv(
       throw new OrdenVentaEstadoError('OV_LINEA_NO_ENCONTRADA');
     }
 
-    const linea = orden.lineas[idx]!;
+    const linea = orden.lineas[idx];
     const nuevaCantidad = linea.cantidadDespachada.add(despacho.cantidad);
 
     if (nuevaCantidad.gt(linea.cantidadPedida)) {

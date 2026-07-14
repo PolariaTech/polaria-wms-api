@@ -1,4 +1,8 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   EstadoOrdenTrabajo,
@@ -160,7 +164,10 @@ describe('TareaColaService.completar', () => {
     );
 
     expect(ordenRepository.ejecutar).not.toHaveBeenCalled();
-    expect(tareaRepository.completar).toHaveBeenCalledWith('tarea-1', 'operario-1');
+    expect(tareaRepository.completar).toHaveBeenCalledWith(
+      'tarea-1',
+      'operario-1',
+    );
   });
 
   it('completar sin OT delega al repositorio de tarea', async () => {
@@ -183,7 +190,10 @@ describe('TareaColaService.completar', () => {
     );
 
     expect(ordenRepository.ejecutar).not.toHaveBeenCalled();
-    expect(tareaRepository.completar).toHaveBeenCalledWith('tarea-1', 'operario-1');
+    expect(tareaRepository.completar).toHaveBeenCalledWith(
+      'tarea-1',
+      'operario-1',
+    );
   });
 
   it('completar rechaza operario no asignado', async () => {

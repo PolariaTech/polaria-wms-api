@@ -62,7 +62,9 @@ export class WarehouseStateController {
   @Roles(...ROLES_INVENTARIO_LOCK)
   @UseGuards(SensitiveWriteGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Bloquear posición del mapa (locking en tiempo real)' })
+  @ApiOperation({
+    summary: 'Bloquear posición del mapa (locking en tiempo real)',
+  })
   @ApiOkResponse({ type: WarehouseStateResponseDto })
   @ApiConflictResponse({ description: 'Ya bloqueada o versión desactualizada' })
   @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
@@ -81,7 +83,8 @@ export class WarehouseStateController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Liberar bloqueo de posición',
-    description: 'El titular del lock o jefe/admin/configurador puede forzar unlock.',
+    description:
+      'El titular del lock o jefe/admin/configurador puede forzar unlock.',
   })
   @ApiOkResponse({ type: WarehouseStateResponseDto })
   @ApiNotFoundResponse({ description: 'Posición no encontrada' })

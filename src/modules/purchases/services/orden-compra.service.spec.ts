@@ -394,8 +394,8 @@ describe('OrdenCompraService', () => {
   it('retorna 404 si OC no existe', async () => {
     repository.findById.mockResolvedValue(null);
 
-    await expect(
-      service.findById(idOrden, operadorContext),
-    ).rejects.toThrow(NotFoundException);
+    await expect(service.findById(idOrden, operadorContext)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });

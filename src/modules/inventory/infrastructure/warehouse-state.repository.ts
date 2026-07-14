@@ -39,10 +39,7 @@ export class WarehouseStateRepository {
         return null;
       }
 
-      if (
-        expectedVersion != null &&
-        current.version !== expectedVersion
-      ) {
+      if (expectedVersion != null && current.version !== expectedVersion) {
         throw new ConflictException(
           'La posición cambió; recargue el mapa e intente de nuevo',
         );
@@ -69,11 +66,7 @@ export class WarehouseStateRepository {
     });
   }
 
-  async unlock(
-    idWarehouseState: string,
-    idUsuario: string,
-    force: boolean,
-  ) {
+  async unlock(idWarehouseState: string, idUsuario: string, force: boolean) {
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.warehouseState.findUnique({
         where: { idWarehouseState },

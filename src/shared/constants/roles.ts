@@ -25,7 +25,8 @@ export const ROLES_ESCRITURA_INVENTARIO = [
   WmsRol.operario,
 ] as const;
 
-export type RolEscrituraInventario = (typeof ROLES_ESCRITURA_INVENTARIO)[number];
+export type RolEscrituraInventario =
+  (typeof ROLES_ESCRITURA_INVENTARIO)[number];
 
 export function isConfigurador(idRol: WmsRol): boolean {
   return idRol === WmsRol.configurador;

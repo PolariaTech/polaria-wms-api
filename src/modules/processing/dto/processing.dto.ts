@@ -22,7 +22,14 @@ export class TenantBodegaProcesamientoQueryDto {
 
 export class ListSolicitudesProcesamientoQueryDto extends TenantBodegaProcesamientoQueryDto {
   @ApiPropertyOptional({
-    enum: ['borrador', 'pendiente', 'en_proceso', 'pendiente_cierre', 'terminada', 'cancelada'],
+    enum: [
+      'borrador',
+      'pendiente',
+      'en_proceso',
+      'pendiente_cierre',
+      'terminada',
+      'cancelada',
+    ],
   })
   @IsOptional()
   @IsString()
@@ -94,10 +101,27 @@ export class AsignarProcesadorDto extends TenantBodegaProcesamientoQueryDto {
 
 export class CambiarEstadoProcesamientoDto extends TenantBodegaProcesamientoQueryDto {
   @ApiProperty({
-    enum: ['pendiente', 'en_proceso', 'pendiente_cierre', 'terminada', 'cancelada'],
+    enum: [
+      'pendiente',
+      'en_proceso',
+      'pendiente_cierre',
+      'terminada',
+      'cancelada',
+    ],
   })
-  @IsEnum(['pendiente', 'en_proceso', 'pendiente_cierre', 'terminada', 'cancelada'] as const)
-  estado!: 'pendiente' | 'en_proceso' | 'pendiente_cierre' | 'terminada' | 'cancelada';
+  @IsEnum([
+    'pendiente',
+    'en_proceso',
+    'pendiente_cierre',
+    'terminada',
+    'cancelada',
+  ] as const)
+  estado!:
+    | 'pendiente'
+    | 'en_proceso'
+    | 'pendiente_cierre'
+    | 'terminada'
+    | 'cancelada';
 
   @ApiPropertyOptional({ description: 'Kg merma al pasar a pendiente_cierre' })
   @IsOptional()
@@ -116,7 +140,10 @@ export class CerrarSolicitudProcesamientoDto extends TenantBodegaProcesamientoQu
   @Min(0)
   kilosSecundario?: number;
 
-  @ApiProperty({ example: 25, description: 'Kg merma operativa (desperdicioKg frio)' })
+  @ApiProperty({
+    example: 25,
+    description: 'Kg merma operativa (desperdicioKg frio)',
+  })
   @IsNumber()
   @Min(0)
   kilosMerma!: number;
@@ -129,7 +156,9 @@ export class AsignarOperarioDto extends TenantBodegaProcesamientoQueryDto {
 }
 
 export class IniciarProcesamientoDto extends TenantBodegaProcesamientoQueryDto {
-  @ApiPropertyOptional({ description: 'Procesador a asignar al pasar a en curso' })
+  @ApiPropertyOptional({
+    description: 'Procesador a asignar al pasar a en curso',
+  })
   @IsOptional()
   @IsUUID()
   idProcesador?: string;

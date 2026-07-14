@@ -60,7 +60,9 @@ export class SolicitudCompraController {
   @ApiOperation({ summary: 'Crear solicitud de compra en borrador' })
   @ApiCreatedResponse({ type: SolicitudCompraResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
-  @ApiForbiddenResponse({ description: 'Sin permisos o entidades fuera del tenant' })
+  @ApiForbiddenResponse({
+    description: 'Sin permisos o entidades fuera del tenant',
+  })
   create(
     @Body() dto: CreateSolicitudCompraDto,
     @TenantCtx() ctx: TenantContext,

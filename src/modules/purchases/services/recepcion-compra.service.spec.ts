@@ -155,9 +155,9 @@ describe('RecepcionCompraService', () => {
   it('rechaza OC inexistente', async () => {
     repository.findOrdenCompra.mockResolvedValue(null);
 
-    await expect(service.cerrar(idOrden, dto, custodioContext)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      service.cerrar(idOrden, dto, custodioContext),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('rechaza OC ya recepcionada', async () => {
@@ -170,9 +170,9 @@ describe('RecepcionCompraService', () => {
       lineas: [],
     } as never);
 
-    await expect(service.cerrar(idOrden, dto, custodioContext)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.cerrar(idOrden, dto, custodioContext),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('valida tenant contra la OC, no solo contra el body', async () => {

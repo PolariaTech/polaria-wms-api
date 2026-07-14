@@ -47,7 +47,9 @@ export function parseSolicitudProcesamientoId(
 }
 
 /** @deprecated Usar parseSolicitudProcesamientoId */
-export function parseTareaSolicitudId(descripcion: string | null): string | null {
+export function parseTareaSolicitudId(
+  descripcion: string | null,
+): string | null {
   return parseSolicitudProcesamientoId(descripcion);
 }
 
@@ -74,10 +76,7 @@ export function parseObservacionesOtProcesamiento(
   if (observaciones.startsWith(OT_PROCESAMIENTO_META_PREFIX)) {
     const rest = observaciones.slice(OT_PROCESAMIENTO_META_PREFIX.length);
     const [rol, idSolicitud] = rest.split(':');
-    if (
-      (rol === 'procesado' || rol === 'desperdicio') &&
-      idSolicitud?.trim()
-    ) {
+    if ((rol === 'procesado' || rol === 'desperdicio') && idSolicitud?.trim()) {
       return { rol, idSolicitud: idSolicitud.trim() };
     }
   }
@@ -96,10 +95,7 @@ export function parseObservacionesOtProcesamiento(
     .split(/[\s|,;]/)[0]
     ?.trim();
 
-  if (
-    (rol === 'procesado' || rol === 'desperdicio') &&
-    idSolicitud
-  ) {
+  if ((rol === 'procesado' || rol === 'desperdicio') && idSolicitud) {
     return { rol, idSolicitud };
   }
 

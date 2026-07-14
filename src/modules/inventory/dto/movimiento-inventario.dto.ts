@@ -20,7 +20,9 @@ export class ListMovimientosInventarioQueryDto {
   @IsUUID()
   idUbicacion?: string;
 
-  @ApiPropertyOptional({ description: 'Tipo: recepcion, transferencia, merma, reserva' })
+  @ApiPropertyOptional({
+    description: 'Tipo: recepcion, transferencia, merma, reserva',
+  })
   @IsOptional()
   @IsString()
   tipoMovimiento?: string;

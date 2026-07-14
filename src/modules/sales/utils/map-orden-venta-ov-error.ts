@@ -9,7 +9,9 @@ export function mapOrdenVentaOvError(error: unknown): never {
   if (error instanceof OrdenVentaEstadoError) {
     switch (error.message) {
       case 'OV_NOT_FOUND':
-        throw new NotFoundException('No se encontró la orden de venta vinculada');
+        throw new NotFoundException(
+          'No se encontró la orden de venta vinculada',
+        );
       case 'OV_ESTADO_INVALIDO':
         throw new ConflictException(
           'La orden de venta no está en un estado válido para esta operación',

@@ -46,7 +46,9 @@ export class BodegaReportesRepository {
         where: {
           codigoCuenta,
           idBodega,
-          estado: { in: [EstadoOrdenVenta.despachada, EstadoOrdenVenta.cerrada] },
+          estado: {
+            in: [EstadoOrdenVenta.despachada, EstadoOrdenVenta.cerrada],
+          },
         },
       }),
       this.prisma.movimientoInventario.count({

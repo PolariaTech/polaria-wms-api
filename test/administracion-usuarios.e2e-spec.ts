@@ -96,7 +96,9 @@ describe('AdministracionUsuariosController (e2e)', () => {
 
   it('POST /administracion/usuarios responde 403 para operador sin permiso', async () => {
     const tenantService = app.get(TenantService);
-    (tenantService.buildContext as jest.Mock).mockResolvedValue(operadorContext);
+    (tenantService.buildContext as jest.Mock).mockResolvedValue(
+      operadorContext,
+    );
 
     await request(app.getHttpServer())
       .post('/administracion/usuarios')

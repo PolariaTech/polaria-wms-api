@@ -8,7 +8,9 @@ import { OperariosService } from '../services/operarios.service';
 describe('OrdenTrabajoService', () => {
   let service: OrdenTrabajoService;
   let repository: jest.Mocked<OrdenTrabajoRepository>;
-  let operariosService: jest.Mocked<Pick<OperariosService, 'assertOperarioAsignable'>>;
+  let operariosService: jest.Mocked<
+    Pick<OperariosService, 'assertOperarioAsignable'>
+  >;
 
   const ctx: TenantContext = {
     idUsuario: 'user-1',
@@ -111,11 +113,14 @@ describe('OrdenTrabajoService', () => {
   });
 
   it.each([
-  ['a_bodega', { idUbicacionDestino: 'ubic-dest' }],
-  ['a_salida', { idUbicacionOrigen: 'ubic-orig' }],
-  ['revisar', {}],
-  ['bodega_a_bodega', { idUbicacionOrigen: 'ubic-orig', idUbicacionDestino: 'ubic-dest' }],
-] as const)(
+    ['a_bodega', { idUbicacionDestino: 'ubic-dest' }],
+    ['a_salida', { idUbicacionOrigen: 'ubic-orig' }],
+    ['revisar', {}],
+    [
+      'bodega_a_bodega',
+      { idUbicacionOrigen: 'ubic-orig', idUbicacionDestino: 'ubic-dest' },
+    ],
+  ] as const)(
     'create con idAsignado valida operario para tipoFlujo %s',
     async (tipoFlujo, extra) => {
       repository.create.mockResolvedValue({

@@ -65,7 +65,7 @@ describe('SolicitudCompraService', () => {
     ],
   };
 
-  const solicitudResponse = {
+  const _solicitudResponse = {
     idSolicitudCompra: idSolicitud,
     codigoCuenta: 'CTA001',
     idBodega,
@@ -191,10 +191,7 @@ describe('SolicitudCompraService', () => {
 
   it('rechaza cuenta distinta al tenant', async () => {
     await expect(
-      service.create(
-        { ...createDto, codigoCuenta: 'CTA999' },
-        operadorContext,
-      ),
+      service.create({ ...createDto, codigoCuenta: 'CTA999' }, operadorContext),
     ).rejects.toThrow(ForbiddenException);
   });
 

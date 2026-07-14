@@ -7,7 +7,10 @@ import { SolicitudIntegracionRepository } from './infrastructure/solicitud-integ
 import { SolicitudIntegracionService } from './services/solicitud-integracion.service';
 
 @Module({
-  controllers: [SolicitudIntegracionController, ConfiguradorIntegracionController],
+  controllers: [
+    SolicitudIntegracionController,
+    ConfiguradorIntegracionController,
+  ],
   providers: [SolicitudIntegracionService, SolicitudIntegracionRepository],
 })
 export class IntegrationModule {}

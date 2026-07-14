@@ -59,9 +59,7 @@ export class BodegaDestinoRepository {
       _count: { _all: true },
     });
 
-    return new Map(
-      grouped.map((row) => [row.idBodega, row._count._all]),
-    );
+    return new Map(grouped.map((row) => [row.idBodega, row._count._all]));
   }
 
   resolveSlotsLibres(

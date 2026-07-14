@@ -1,4 +1,7 @@
-import type { AuthFlow, AuthScope } from '../../../shared/constants/auth.constants';
+import type {
+  AuthFlow,
+  AuthScope,
+} from '../../../shared/constants/auth.constants';
 import type { UsuarioWithRelations } from '../infrastructure/usuario.repository';
 
 export interface UserPreview {

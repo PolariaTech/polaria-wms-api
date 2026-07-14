@@ -16,7 +16,6 @@ import {
   PresenciaController,
 } from '../src/modules/operations/controllers/operations.controller';
 import { AlertaOperativaRepository } from '../src/modules/operations/infrastructure/alerta-operativa.repository';
-import { OrdenTrabajoRepository } from '../src/modules/operations/infrastructure/orden-trabajo.repository';
 import { OrdenTrabajoService } from '../src/modules/operations/services/operations.service';
 import { OperariosService } from '../src/modules/operations/services/operarios.service';
 
@@ -74,7 +73,11 @@ describe('Operaciones operarios y asignación (e2e)', () => {
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [OperariosController, PresenciaController, OrdenTrabajoController],
+      controllers: [
+        OperariosController,
+        PresenciaController,
+        OrdenTrabajoController,
+      ],
       providers: [
         { provide: OperariosService, useValue: operariosService },
         { provide: OrdenTrabajoService, useValue: ordenService },

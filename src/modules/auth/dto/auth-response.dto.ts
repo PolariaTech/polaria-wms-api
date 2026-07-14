@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AUTH_FLOW, AUTH_SCOPE } from '../../../shared/constants/auth.constants';
+import {
+  AUTH_FLOW,
+  AUTH_SCOPE,
+} from '../../../shared/constants/auth.constants';
 
 export class UserPreviewDto {
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })

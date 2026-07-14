@@ -3,10 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  EstadoOrdenCompra,
-  Prisma,
-} from '../../../generated/prisma/client';
+import { EstadoOrdenCompra, Prisma } from '../../../generated/prisma/client';
 import {
   applyTenantFilter,
   assertOperationalTenantScope,
@@ -31,7 +28,9 @@ export class RecepcionCompraService {
     ctx: TenantContext,
   ): Promise<RecepcionCompraResponse> {
     if (dto.lineas.some((linea) => linea.cantidadRecibida < 0)) {
-      throw new BadRequestException('Las cantidades recibidas no pueden ser negativas');
+      throw new BadRequestException(
+        'Las cantidades recibidas no pueden ser negativas',
+      );
     }
 
     const orden = await this.repository.findOrdenCompra(idOrdenCompra);
@@ -55,7 +54,9 @@ export class RecepcionCompraService {
     }
 
     if (orden.recepcion) {
-      throw new BadRequestException('Esta orden de compra ya tiene recepción cerrada');
+      throw new BadRequestException(
+        'Esta orden de compra ya tiene recepción cerrada',
+      );
     }
 
     if (
@@ -85,7 +86,9 @@ export class RecepcionCompraService {
       lineasNormalizadas.push(linea);
     }
 
-    const idsRecibidos = new Set(lineasNormalizadas.map((l) => l.idLineaOrdenCompra));
+    const idsRecibidos = new Set(
+      lineasNormalizadas.map((l) => l.idLineaOrdenCompra),
+    );
 
     if (idsRecibidos.size !== lineasNormalizadas.length) {
       throw new BadRequestException('Hay líneas de recepción duplicadas');
@@ -185,9 +188,8 @@ export class RecepcionCompraService {
 
     if (entradas.length > 0) {
       const productoIds = [...new Set(entradas.map((e) => e.idProducto))];
-      const productos = await this.repository.findProductosRangoTemperatura(
-        productoIds,
-      );
+      const productos =
+        await this.repository.findProductosRangoTemperatura(productoIds);
       const productoMap = new Map(
         productos.map((p) => [p.idProducto, p] as const),
       );
@@ -201,7 +203,9 @@ export class RecepcionCompraService {
 
         const producto = productoMap.get(entrada.idProducto);
         if (!producto) {
-          throw new BadRequestException('Producto no encontrado en el catálogo');
+          throw new BadRequestException(
+            'Producto no encontrado en el catálogo',
+          );
         }
 
         const tempError = validarTemperaturaProducto(
@@ -210,9 +214,7 @@ export class RecepcionCompraService {
         );
 
         if (tempError) {
-          throw new BadRequestException(
-            `${producto.sku}: ${tempError}`,
-          );
+          throw new BadRequestException(`${producto.sku}: ${tempError}`);
         }
       }
     }

@@ -211,7 +211,7 @@ La API escucha en `http://localhost:3000` (o el `PORT` definido en `.env`).
 |---|---|
 | `npm run start:dev` | Desarrollo con watch (SWC) |
 | `npm run start:debug` | Desarrollo con inspector Node |
-| `npm run start:prod` | Ejecuta `dist/main.js` |
+| `npm run start:prod` | Ejecuta `dist/src/main.js` |
 | `npm run build` | Prisma generate + compilación SWC + tipos Prisma |
 | `npm run prisma:generate` | Regenera cliente Prisma |
 | `npm run test` | Tests unitarios |

@@ -48,10 +48,7 @@ export class SolicitudIntegracionService {
       );
     }
 
-    const idCliente = await this.resolveClienteId(
-      dto.idCliente,
-      codigoCuenta,
-    );
+    const idCliente = await this.resolveClienteId(dto.idCliente, codigoCuenta);
 
     const flags = mapTipoIntegracionToFlags(dto.tipoIntegracion);
 

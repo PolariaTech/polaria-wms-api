@@ -4,7 +4,10 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { PERMISSION, canInventoryWrite } from '../../shared/constants/permissions';
+import {
+  PERMISSION,
+  canInventoryWrite,
+} from '../../shared/constants/permissions';
 import type { AuthenticatedRequest } from '../tenant/tenant-context.interface';
 
 /**

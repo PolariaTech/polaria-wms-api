@@ -124,8 +124,9 @@ export class BodegaDestinoService {
       return 0;
     }
 
-    const counts =
-      await this.repository.countSlotsLibresAlmacenamientoByBodega([idBodega]);
+    const counts = await this.repository.countSlotsLibresAlmacenamientoByBodega(
+      [idBodega],
+    );
     return this.repository.resolveSlotsLibres(
       bodega,
       counts.get(idBodega) ?? 0,

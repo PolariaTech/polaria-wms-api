@@ -5,7 +5,10 @@ import {
 } from '@nestjs/common';
 import { assertOperationalTenantScope } from '../../../core/database/tenant-scope.util';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
-import type { TenantBodegaBodyDto, TenantBodegaQueryDto } from '../dto/operations.dto';
+import type {
+  TenantBodegaBodyDto,
+  TenantBodegaQueryDto,
+} from '../dto/operations.dto';
 import type { OperarioDisponibleResponse } from '../interfaces/operations.interfaces';
 import { OperariosRepository } from '../infrastructure/operarios.repository';
 import { SesionOperativaRepository } from '../infrastructure/sesion-operativa.repository';
@@ -47,9 +50,7 @@ export class OperariosService {
       ),
     ]);
 
-    const sesionesPorUsuario = new Map(
-      sesiones.map((s) => [s.idUsuario, s]),
-    );
+    const sesionesPorUsuario = new Map(sesiones.map((s) => [s.idUsuario, s]));
 
     const result = operarios.map((operario) => {
       const sesion = sesionesPorUsuario.get(operario.idUsuario);

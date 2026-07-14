@@ -69,10 +69,7 @@ export class AlertaOperativaRepository {
     });
   }
 
-  cerrar(
-    idAlerta: string,
-    motivoCierre?: string,
-  ): Promise<AlertaRow> {
+  cerrar(idAlerta: string, motivoCierre?: string): Promise<AlertaRow> {
     return this.prisma.alertaOperativa.update({
       where: { idAlerta },
       data: {
@@ -121,8 +118,9 @@ export class AlertaOperativaRepository {
   }
 
   atenderLlamada(idAlerta: string, idAtendidoPor: string): Promise<AlertaRow> {
-    return this.prisma.alertaOperativa.findUnique({ where: { idAlerta } }).then(
-      async (row) => {
+    return this.prisma.alertaOperativa
+      .findUnique({ where: { idAlerta } })
+      .then(async (row) => {
         if (!row) {
           throw new Error('LLAMADA_NOT_FOUND');
         }
@@ -141,8 +139,7 @@ export class AlertaOperativaRepository {
             },
           },
         });
-      },
-    );
+      });
   }
 
   toResponse(row: AlertaRow): AlertaOperativaResponse {
@@ -170,13 +167,20 @@ export class AlertaOperativaRepository {
       idLlamada: row.idAlerta,
       codigoCuenta: row.codigoCuenta,
       idBodega: row.idBodega,
-      fromRol: String(meta.fromRol ?? 'operario'),
+      fromRol: this.metaString(meta.fromRol, 'operario'),
       message: row.titulo,
-      idSolicitante: String(meta.idSolicitante ?? ''),
+      idSolicitante: this.metaString(meta.idSolicitante, ''),
       atendida: Boolean(meta.atendida) || row.estado === EstadoAlerta.cerrada,
-      idAtendidoPor: (meta.idAtendidoPor as string | undefined) ?? row.idResponsable,
+      idAtendidoPor:
+        typeof meta.idAtendidoPor === 'string'
+          ? meta.idAtendidoPor
+          : row.idResponsable,
       createdAt: row.createdAt,
       atendidaAt: row.cerradaAt,
     };
+  }
+
+  private metaString(value: unknown, fallback: string): string {
+    return typeof value === 'string' ? value : fallback;
   }
 }

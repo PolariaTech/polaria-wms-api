@@ -1,4 +1,11 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -26,9 +33,7 @@ import { ConfiguradorUsuariosService } from '../services/configurador-usuarios.s
 @Roles(WmsRol.configurador)
 @ApiBearerAuth('access-token')
 export class ConfiguradorUsuariosController {
-  constructor(
-    private readonly usuariosService: ConfiguradorUsuariosService,
-  ) {}
+  constructor(private readonly usuariosService: ConfiguradorUsuariosService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -39,7 +44,9 @@ export class ConfiguradorUsuariosController {
   })
   @ApiCreatedResponse({ type: CreateUsuarioResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
-  @ApiForbiddenResponse({ description: 'Solo configurador puede crear usuarios' })
+  @ApiForbiddenResponse({
+    description: 'Solo configurador puede crear usuarios',
+  })
   create(
     @Body() dto: CreateUsuarioDto,
     @TenantCtx() ctx: TenantContext,

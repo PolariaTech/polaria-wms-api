@@ -17,7 +17,10 @@ export class SolicitudIntegracionResponseDto {
   @ApiProperty({ example: 'Bodega Externa Norte' })
   bodegaNombre!: string;
 
-  @ApiPropertyOptional({ enum: ['scraping', 'api', 'csv_plano'], nullable: true })
+  @ApiPropertyOptional({
+    enum: ['scraping', 'api', 'csv_plano'],
+    nullable: true,
+  })
   tipoIntegracion!: string | null;
 
   @ApiProperty({ enum: EstadoIntegracion, example: EstadoIntegracion.activo })

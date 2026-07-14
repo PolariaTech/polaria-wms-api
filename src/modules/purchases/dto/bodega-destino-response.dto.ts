@@ -22,7 +22,8 @@ export class BodegaDestinoResponseDto {
 
   @ApiProperty({
     example: 12,
-    description: 'Slots de almacenamiento libres (o capacidad declarada en externas sin layout)',
+    description:
+      'Slots de almacenamiento libres (o capacidad declarada en externas sin layout)',
   })
   slotsLibres!: number;
 }
