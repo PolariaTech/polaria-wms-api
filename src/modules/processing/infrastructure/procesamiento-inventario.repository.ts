@@ -287,6 +287,8 @@ export class ProcesamientoInventarioRepository {
     },
   ): Promise<void> {
     const cantidad = new Prisma.Decimal(params.unidades);
+    /** Por ahora todo resultado procesado se asume a 0 °C. */
+    const temperaturaResultado = new Prisma.Decimal(0);
 
     const existente = await tx.warehouseState.findFirst({
       where: {
@@ -301,6 +303,7 @@ export class ProcesamientoInventarioRepository {
         where: { idWarehouseState: existente.idWarehouseState },
         data: {
           cantidad: existente.cantidad.add(cantidad),
+          temperatura: temperaturaResultado,
           version: { increment: 1 },
         },
       });
@@ -312,6 +315,7 @@ export class ProcesamientoInventarioRepository {
           idUbicacion: params.idUbicacionDestino,
           idProducto: params.idProductoSecundario,
           cantidad,
+          temperatura: temperaturaResultado,
         },
       });
     }
@@ -334,6 +338,89 @@ export class ProcesamientoInventarioRepository {
     });
   }
 
+  /**
+   * Deja solo `dejarKg` del primario en zona de procesamiento
+   * (el resto se consume al ubicar el resultado).
+   */
+  async consumirPrimarioEnZonaProcesamiento(
+    tx: Prisma.TransactionClient,
+    params: {
+      codigoCuenta: string;
+      idBodega: string;
+      idProductoPrimario: string;
+      dejarKg: number;
+      idSolicitudProcesamiento: string;
+      idUsuario: string;
+    },
+  ): Promise<number> {
+    const candidatos = await tx.warehouseState.findMany({
+      where: {
+        codigoCuenta: params.codigoCuenta,
+        idBodega: params.idBodega,
+        idProducto: params.idProductoPrimario,
+        cantidad: { gt: 0 },
+        ubicacion: {
+          estaActiva: true,
+          tipoUbicacion: { codigo: 'PROCESAMIENTO' },
+        },
+      },
+      orderBy: [{ ubicacion: { codigo: 'asc' } }, { updatedAt: 'asc' }],
+    });
+
+    const total = candidatos.reduce(
+      (acc, row) => acc + Number(row.cantidad.toString()),
+      0,
+    );
+    const dejar = Math.max(0, Number(params.dejarKg) || 0);
+    let aConsumir = new Prisma.Decimal(Math.max(0, total - dejar));
+    if (aConsumir.lte(0)) return 0;
+
+    let consumido = new Prisma.Decimal(0);
+
+    for (const ws of candidatos) {
+      if (aConsumir.lte(0)) break;
+
+      const aplicar = Prisma.Decimal.min(ws.cantidad, aConsumir);
+      const nuevaCantidad = ws.cantidad.sub(aplicar);
+
+      await tx.warehouseState.update({
+        where: { idWarehouseState: ws.idWarehouseState },
+        data: {
+          cantidad: nuevaCantidad,
+          version: { increment: 1 },
+        },
+      });
+
+      await tx.movimientoInventario.create({
+        data: {
+          codigoCuenta: params.codigoCuenta,
+          idBodega: params.idBodega,
+          idProducto: params.idProductoPrimario,
+          idUbicacionOrigen: ws.idUbicacion,
+          cantidad: aplicar,
+          tipoMovimiento: TipoMovimiento.consumo_ot,
+          idUsuario: params.idUsuario,
+          idReferencia: params.idSolicitudProcesamiento,
+          tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
+          metadata: metadataMovimientoProcesamiento('consumo_resultado'),
+        },
+      });
+
+      if (nuevaCantidad.lte(0)) {
+        await syncUbicacionEstadoSlot(tx, ws.idUbicacion);
+      }
+
+      aConsumir = aConsumir.sub(aplicar);
+      consumido = consumido.add(aplicar);
+    }
+
+    return Number(consumido.toString());
+  }
+
+  /**
+   * Retira primario de procesamiento y lo ubica en almacenamiento (movimiento real).
+   * Si el stock ya no está en PROC (p. ej. Bodega→Bodega previo), no inventa kilos.
+   */
   async devolverSobrantePrimario(
     tx: Prisma.TransactionClient,
     params: {
@@ -348,7 +435,63 @@ export class ProcesamientoInventarioRepository {
   ): Promise<void> {
     if (params.sobranteKg <= 0) return;
 
-    const cantidad = new Prisma.Decimal(params.sobranteKg);
+    const objetivo = new Prisma.Decimal(params.sobranteKg);
+    const candidatos = await tx.warehouseState.findMany({
+      where: {
+        codigoCuenta: params.codigoCuenta,
+        idBodega: params.idBodega,
+        idProducto: params.idProductoPrimario,
+        cantidad: { gt: 0 },
+        ubicacion: {
+          estaActiva: true,
+          tipoUbicacion: { codigo: 'PROCESAMIENTO' },
+        },
+      },
+      orderBy: [{ ubicacion: { codigo: 'asc' } }, { updatedAt: 'asc' }],
+    });
+
+    let restante = objetivo;
+    let retirado = new Prisma.Decimal(0);
+
+    for (const ws of candidatos) {
+      if (restante.lte(0)) break;
+
+      const aplicar = Prisma.Decimal.min(ws.cantidad, restante);
+      const nuevaCantidad = ws.cantidad.sub(aplicar);
+
+      await tx.warehouseState.update({
+        where: { idWarehouseState: ws.idWarehouseState },
+        data: {
+          cantidad: nuevaCantidad,
+          version: { increment: 1 },
+        },
+      });
+
+      await tx.movimientoInventario.create({
+        data: {
+          codigoCuenta: params.codigoCuenta,
+          idBodega: params.idBodega,
+          idProducto: params.idProductoPrimario,
+          idUbicacionOrigen: ws.idUbicacion,
+          idUbicacionDestino: params.idUbicacionDestino,
+          cantidad: aplicar,
+          tipoMovimiento: TipoMovimiento.transferencia,
+          idUsuario: params.idUsuario,
+          idReferencia: params.idSolicitudProcesamiento,
+          tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
+          metadata: metadataMovimientoProcesamiento('devolver_sobrante'),
+        },
+      });
+
+      if (nuevaCantidad.lte(0)) {
+        await syncUbicacionEstadoSlot(tx, ws.idUbicacion);
+      }
+
+      restante = restante.sub(aplicar);
+      retirado = retirado.add(aplicar);
+    }
+
+    if (retirado.lte(0)) return;
 
     const existente = await tx.warehouseState.findFirst({
       where: {
@@ -362,7 +505,7 @@ export class ProcesamientoInventarioRepository {
       await tx.warehouseState.update({
         where: { idWarehouseState: existente.idWarehouseState },
         data: {
-          cantidad: existente.cantidad.add(cantidad),
+          cantidad: existente.cantidad.add(retirado),
           version: { increment: 1 },
         },
       });
@@ -373,27 +516,12 @@ export class ProcesamientoInventarioRepository {
           idBodega: params.idBodega,
           idUbicacion: params.idUbicacionDestino,
           idProducto: params.idProductoPrimario,
-          cantidad,
+          cantidad: retirado,
         },
       });
     }
 
     await syncUbicacionEstadoSlot(tx, params.idUbicacionDestino);
-
-    await tx.movimientoInventario.create({
-      data: {
-        codigoCuenta: params.codigoCuenta,
-        idBodega: params.idBodega,
-        idProducto: params.idProductoPrimario,
-        idUbicacionDestino: params.idUbicacionDestino,
-        cantidad,
-        tipoMovimiento: TipoMovimiento.transferencia,
-        idUsuario: params.idUsuario,
-        idReferencia: params.idSolicitudProcesamiento,
-        tipoReferencia: TIPO_REFERENCIA_PROCESAMIENTO,
-        metadata: metadataMovimientoProcesamiento('devolver_sobrante'),
-      },
-    });
   }
 
   async tieneSecundarioUbicado(

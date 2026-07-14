@@ -424,13 +424,27 @@ export class SolicitudProcesamientoRepository {
 
   async terminar(
     solicitud: SolicitudRow,
+    idUsuario?: string,
   ): Promise<SolicitudRow> {
-    return this.prisma.solicitudProcesamiento.update({
-      where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
-      data: {
-        estado: EstadoProcesamiento.terminada,
-        cierreDesdeProcesador: false,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      if (idUsuario) {
+        await this.inventario.consumirPrimarioEnZonaProcesamiento(tx, {
+          codigoCuenta: solicitud.codigoCuenta,
+          idBodega: solicitud.idBodega,
+          idProductoPrimario: solicitud.idProductoPrimario,
+          dejarKg: 0,
+          idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+          idUsuario,
+        });
+      }
+
+      return tx.solicitudProcesamiento.update({
+        where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
+        data: {
+          estado: EstadoProcesamiento.terminada,
+          cierreDesdeProcesador: false,
+        },
+      });
     });
   }
 
@@ -568,12 +582,17 @@ export class SolicitudProcesamientoRepository {
       include: { lineas: true },
     });
 
-    if (!orden?.idSolicitudProcesamiento) return;
+    if (!orden) return;
 
     const meta = parseObservacionesOtProcesamiento(orden.observaciones);
-    if (!meta) return;
+    const idSolicitud =
+      orden.idSolicitudProcesamiento?.trim() ||
+      meta?.idSolicitud?.trim() ||
+      null;
 
-    const solicitud = await this.findById(orden.idSolicitudProcesamiento);
+    if (!idSolicitud || !meta) return;
+
+    const solicitud = await this.findById(idSolicitud);
     if (!solicitud) return;
 
     await this.prisma.$transaction(async (tx) => {
@@ -589,6 +608,43 @@ export class SolicitudProcesamientoRepository {
           idProductoSecundario: solicitud.idProductoSecundario,
           idUbicacionDestino: orden.idUbicacionDestino,
           unidades,
+          idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+          idUsuario,
+        });
+
+        const primario = await this.loadProducto(
+          solicitud.idProductoPrimario,
+          solicitud.codigoCuenta,
+        );
+        const sobrante = kgSobranteParaDevolucionMapa({
+          sobranteKg: solicitud.sobranteKg
+            ? Number(solicitud.sobranteKg.toString())
+            : 0,
+          unidadPrimarioVisualizacion: primario.unidadVisualizacion,
+        });
+
+        const sobranteYaDevuelto = await tx.ordenTrabajo.count({
+          where: {
+            estado: EstadoOrdenTrabajo.completada,
+            observaciones: { contains: 'desperdicio' },
+            OR: [
+              {
+                idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+              },
+              {
+                observaciones: {
+                  contains: `solicitudProcesamiento:${solicitud.idSolicitudProcesamiento}`,
+                },
+              },
+            ],
+          },
+        });
+
+        await this.inventario.consumirPrimarioEnZonaProcesamiento(tx, {
+          codigoCuenta: solicitud.codigoCuenta,
+          idBodega: solicitud.idBodega,
+          idProductoPrimario: solicitud.idProductoPrimario,
+          dejarKg: sobranteYaDevuelto > 0 ? 0 : sobrante,
           idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
           idUsuario,
         });
@@ -616,13 +672,39 @@ export class SolicitudProcesamientoRepository {
         });
       }
 
-      await this.tryMarcarTerminada(tx, solicitud);
+      if (
+        orden.estado === EstadoOrdenTrabajo.planificada ||
+        orden.estado === EstadoOrdenTrabajo.en_proceso
+      ) {
+        await tx.ordenTrabajo.update({
+          where: { idOrdenTrabajo: orden.idOrdenTrabajo },
+          data: {
+            estado: EstadoOrdenTrabajo.completada,
+            idAsignado: idUsuario,
+            idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+          },
+        });
+      }
+
+      await tx.tareaCola.updateMany({
+        where: {
+          idOrdenTrabajo: orden.idOrdenTrabajo,
+          estado: { in: [EstadoTarea.pendiente, EstadoTarea.en_proceso] },
+        },
+        data: {
+          estado: EstadoTarea.completada,
+          idAsignado: idUsuario,
+        },
+      });
+
+      await this.tryMarcarTerminada(tx, solicitud, idUsuario);
     });
   }
 
   private async tryMarcarTerminada(
     tx: Prisma.TransactionClient,
     solicitud: SolicitudRow,
+    idUsuario?: string,
   ): Promise<void> {
     if (solicitud.estado !== EstadoProcesamiento.pendiente_cierre) return;
 
@@ -653,14 +735,34 @@ export class SolicitudProcesamientoRepository {
 
     const otsPendientes = await tx.ordenTrabajo.count({
       where: {
-        idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
-        estado: { in: [EstadoOrdenTrabajo.planificada, EstadoOrdenTrabajo.en_proceso] },
+        OR: [
+          { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
+          {
+            observaciones: {
+              contains: `solicitudProcesamiento:${solicitud.idSolicitudProcesamiento}`,
+            },
+          },
+        ],
+        estado: {
+          in: [EstadoOrdenTrabajo.planificada, EstadoOrdenTrabajo.en_proceso],
+        },
       },
     });
 
     const okSobrante = sobrante <= 0 || otsPendientes === 0;
 
     if (okProcesado && okSobrante) {
+      if (idUsuario) {
+        await this.inventario.consumirPrimarioEnZonaProcesamiento(tx, {
+          codigoCuenta: solicitud.codigoCuenta,
+          idBodega: solicitud.idBodega,
+          idProductoPrimario: solicitud.idProductoPrimario,
+          dejarKg: 0,
+          idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento,
+          idUsuario,
+        });
+      }
+
       await tx.solicitudProcesamiento.update({
         where: { idSolicitudProcesamiento: solicitud.idSolicitudProcesamiento },
         data: {

@@ -62,18 +62,47 @@ export function buildObservacionesOtProcesamiento(
   return `${OT_PROCESAMIENTO_META_PREFIX}${rol}:${idSolicitud}`;
 }
 
+/**
+ * Meta oficial `proc_ot:rol:uuid` o B2B jefe
+ * `flujo:bodega_a_bodega|rolDevolucion:procesado|solicitudProcesamiento:uuid`.
+ */
 export function parseObservacionesOtProcesamiento(
   observaciones: string | null,
 ): { rol: RolDevolucionProcesamiento; idSolicitud: string } | null {
-  if (!observaciones?.startsWith(OT_PROCESAMIENTO_META_PREFIX)) return null;
-  const rest = observaciones.slice(OT_PROCESAMIENTO_META_PREFIX.length);
-  const [rol, idSolicitud] = rest.split(':');
+  if (!observaciones?.trim()) return null;
+
+  if (observaciones.startsWith(OT_PROCESAMIENTO_META_PREFIX)) {
+    const rest = observaciones.slice(OT_PROCESAMIENTO_META_PREFIX.length);
+    const [rol, idSolicitud] = rest.split(':');
+    if (
+      (rol === 'procesado' || rol === 'desperdicio') &&
+      idSolicitud?.trim()
+    ) {
+      return { rol, idSolicitud: idSolicitud.trim() };
+    }
+  }
+
+  const rolIdx = observaciones.indexOf('rolDevolucion:');
+  const solIdx = observaciones.indexOf(SOLICITUD_PROCESAMIENTO_MARKER);
+  if (rolIdx < 0 || solIdx < 0) return null;
+
+  const rol = observaciones
+    .slice(rolIdx + 'rolDevolucion:'.length)
+    .split(/[\s|,;]/)[0]
+    ?.trim()
+    .toLowerCase();
+  const idSolicitud = observaciones
+    .slice(solIdx + SOLICITUD_PROCESAMIENTO_MARKER.length)
+    .split(/[\s|,;]/)[0]
+    ?.trim();
+
   if (
     (rol === 'procesado' || rol === 'desperdicio') &&
-    idSolicitud?.trim()
+    idSolicitud
   ) {
-    return { rol, idSolicitud: idSolicitud.trim() };
+    return { rol, idSolicitud };
   }
+
   return null;
 }
 

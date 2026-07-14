@@ -343,13 +343,16 @@ export class SolicitudProcesamientoService {
       throw new NotFoundException('Solicitud de procesamiento no encontrada');
     }
 
-    if (row.estado !== EstadoProcesamiento.pendiente_cierre) {
+    if (
+      row.estado !== EstadoProcesamiento.pendiente_cierre &&
+      row.estado !== EstadoProcesamiento.terminada
+    ) {
       throw new BadRequestException(
-        'Solo se puede terminar una solicitud en pendiente de cierre',
+        'Solo se puede terminar una solicitud en pendiente de cierre o terminada',
       );
     }
 
-    const updated = await this.repository.terminar(row);
+    const updated = await this.repository.terminar(row, ctx.idUsuario);
     return this.repository.toResponse(updated);
   }
 
