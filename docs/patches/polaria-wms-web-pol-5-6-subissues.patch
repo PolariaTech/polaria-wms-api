@@ -1,0 +1,575 @@
+diff --git a/src/modules/custodio/components/CustodioOrdenIngresoForm.tsx b/src/modules/custodio/components/CustodioOrdenIngresoForm.tsx
+index 7b70bcc..b0c84f8 100644
+--- a/src/modules/custodio/components/CustodioOrdenIngresoForm.tsx
++++ b/src/modules/custodio/components/CustodioOrdenIngresoForm.tsx
+@@ -225,7 +225,7 @@ export function CustodioOrdenIngresoForm({
+                     {formatLineaIngresoTitulo(linea)}
+                   </span>
+                   <span className="mt-1 block polaria-text-caption text-polaria-w-50">
+-                    Pedido: {formatKgEs(linea.cantidadPedida)} kg
++                    Conciliación ciega — ingrese peso y temperatura
+                   </span>
+                 </span>
+               </label>
+diff --git a/src/modules/inventory/shared/services/inventory-api.service.ts b/src/modules/inventory/shared/services/inventory-api.service.ts
+index f084c17..9e035a5 100644
+--- a/src/modules/inventory/shared/services/inventory-api.service.ts
++++ b/src/modules/inventory/shared/services/inventory-api.service.ts
+@@ -90,3 +90,43 @@ export async function unlockWarehouseStateApi(
+     body,
+   );
+ }
++
++export interface MovimientoInventarioApiRow {
++  idMovimientoInventario: string;
++  codigoCuenta: string;
++  idBodega: string;
++  idUbicacionOrigen: string | null;
++  idUbicacionDestino: string | null;
++  idProducto: string;
++  idLote: string | null;
++  cantidad: string;
++  tipoMovimiento: string;
++  idUsuario: string;
++  idReferencia: string | null;
++  tipoReferencia: string | null;
++  createdAt: string;
++}
++
++/** Historial de movimientos de inventario (POL-106). */
++export async function listMovimientosInventarioApi(params: {
++  codigoCuenta: string;
++  idBodega: string;
++  idProducto?: string;
++  idUbicacion?: string;
++  tipoMovimiento?: string;
++  idReferencia?: string;
++}): Promise<MovimientoInventarioApiRow[]> {
++  const qs = new URLSearchParams({
++    codigoCuenta: params.codigoCuenta,
++    idBodega: params.idBodega,
++  });
++  if (params.idProducto) qs.set("idProducto", params.idProducto);
++  if (params.idUbicacion) qs.set("idUbicacion", params.idUbicacion);
++  if (params.tipoMovimiento) qs.set("tipoMovimiento", params.tipoMovimiento);
++  if (params.idReferencia) qs.set("idReferencia", params.idReferencia);
++
++  return apiRequest<MovimientoInventarioApiRow[]>(
++    `/inventario/movimientos?${qs.toString()}`,
++    { auth: true },
++  );
++}
+diff --git a/src/modules/processing/index.ts b/src/modules/processing/index.ts
+index 3ba0b29..878b34e 100644
+--- a/src/modules/processing/index.ts
++++ b/src/modules/processing/index.ts
+@@ -1,7 +1,9 @@
+ export type {
++  CreateOrdenesPostCierreInput,
+   CreateSolicitudProcesamientoInput,
+   EstadoProcesamiento,
+   EstadoTarea,
++  OrdenesPostCierreResult,
+   ProductoProcesamientoOption,
+   SolicitudProcesamientoOperadorRow,
+   SolicitudProcesamientoRow,
+@@ -16,13 +18,22 @@ export {
+ } from "./shared/constants/processing-status";
+ 
+ export {
++  aplicarOrdenProcesamiento,
++  asignarOperarioProcesamiento,
++  asignarProcesadorProcesamiento,
++  cerrarSolicitudProcesamiento,
++  crearOrdenesPostCierre,
+   createSolicitudProcesamiento,
++  getDesperdicioSugerido,
++  getSolicitudProcesamiento,
+   getStockProductoBodega,
++  iniciarProcesamiento,
+   listProductosPrimariosProcesamiento,
+   listProductosSecundariosProcesamiento,
+   listSolicitudesProcesamiento,
+   listSolicitudesProcesamientoOperador,
+   listTareasCola,
++  terminarSolicitudProcesamiento,
+ } from "./shared/services/processing.service";
+ 
+ export { BodegaInternaOperadorHub } from "./operador/components/BodegaInternaOperadorHub";
+diff --git a/src/modules/processing/shared/services/processing-api.service.ts b/src/modules/processing/shared/services/processing-api.service.ts
+index f17784f..01c38e4 100644
+--- a/src/modules/processing/shared/services/processing-api.service.ts
++++ b/src/modules/processing/shared/services/processing-api.service.ts
+@@ -1,7 +1,9 @@
+ import { DomainServiceError } from "@/lib/utils/domain-service-error";
+ import { ApiError, apiRequest } from "@/services/api/api";
+ import type {
++  CreateOrdenesPostCierreInput,
+   CreateSolicitudProcesamientoInput,
++  OrdenesPostCierreResult,
+   SolicitudProcesamientoRow,
+ } from "../types/processing.types";
+ 
+@@ -34,9 +36,14 @@ interface SolicitudProcesamientoApiRow {
+   kilosPrimario: string;
+   kilosSecundario: string | null;
+   kilosMerma: string | null;
++  sobranteKg: string | null;
+   reglaConversionCantidadPrimario: string | null;
+   reglaConversionUnidadesSecundario: string | null;
++  perdidaProcesamientoPct: string | null;
+   estimadoUnidadesSecundario: string | null;
++  kgPrimarioDescontado: string | null;
++  cierreDesdeProcesador: boolean;
++  observaciones: string | null;
+   createdAt: string;
+   updatedAt: string;
+ }
+@@ -56,9 +63,14 @@ function mapSolicitudRow(row: SolicitudProcesamientoApiRow): SolicitudProcesamie
+     kilos_primario: row.kilosPrimario,
+     kilos_secundario: row.kilosSecundario,
+     kilos_merma: row.kilosMerma,
++    sobrante_kg: row.sobranteKg,
+     regla_conversion_cantidad_primario: row.reglaConversionCantidadPrimario,
+     regla_conversion_unidades_secundario: row.reglaConversionUnidadesSecundario,
++    perdida_procesamiento_pct: row.perdidaProcesamientoPct,
+     estimado_unidades_secundario: row.estimadoUnidadesSecundario,
++    kg_primario_descontado: row.kgPrimarioDescontado,
++    cierre_desde_procesador: row.cierreDesdeProcesador,
++    observaciones: row.observaciones,
+     created_at: row.createdAt,
+     updated_at: row.updatedAt,
+   };
+@@ -85,6 +97,25 @@ export async function listSolicitudesProcesamientoApi(params: {
+   return rows.map(mapSolicitudRow);
+ }
+ 
++export async function getSolicitudProcesamientoApi(
++  idSolicitud: string,
++): Promise<SolicitudProcesamientoRow> {
++  const row = await apiRequest<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}`,
++    { auth: true },
++  );
++  return mapSolicitudRow(row);
++}
++
++export async function getDesperdicioSugeridoApi(
++  idSolicitud: string,
++): Promise<{ desperdicioKgSugerido: number | null }> {
++  return apiRequest<{ desperdicioKgSugerido: number | null }>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/desperdicio-sugerido`,
++    { auth: true },
++  );
++}
++
+ export async function createSolicitudProcesamientoApi(
+   input: Omit<CreateSolicitudProcesamientoInput, "idSolicitante"> & {
+     idSolicitante?: string;
+@@ -102,14 +133,42 @@ export async function createSolicitudProcesamientoApi(
+       reglaConversionCantidadPrimario: input.reglaConversionCantidadPrimario,
+       reglaConversionUnidadesSecundario:
+         input.reglaConversionUnidadesSecundario,
+-      perdidaProcesamientoPct: undefined,
+-      observaciones: undefined,
++      perdidaProcesamientoPct: input.perdidaProcesamientoPct,
++      observaciones: input.observaciones,
+     },
+   );
+ 
+   return mapSolicitudRow(row);
+ }
+ 
++export async function asignarOperarioProcesamientoApi(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string; idOperario: string },
++): Promise<SolicitudProcesamientoRow> {
++  const row = await mutateApi<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/asignar-operario`,
++    "PATCH",
++    params,
++  );
++  return mapSolicitudRow(row);
++}
++
++export async function iniciarProcesamientoApi(
++  idSolicitud: string,
++  params: {
++    codigoCuenta: string;
++    idBodega: string;
++    idProcesador?: string;
++  },
++): Promise<SolicitudProcesamientoRow> {
++  const row = await mutateApi<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/iniciar`,
++    "POST",
++    params,
++  );
++  return mapSolicitudRow(row);
++}
++
+ export async function asignarProcesadorApi(
+   idSolicitud: string,
+   params: { codigoCuenta: string; idBodega: string; idProcesador: string },
+@@ -127,9 +186,8 @@ export async function cerrarSolicitudProcesamientoApi(
+   params: {
+     codigoCuenta: string;
+     idBodega: string;
+-    kilosSecundario: number;
+     kilosMerma: number;
+-    sobranteKg?: number;
++    kilosSecundario?: number;
+   },
+ ): Promise<SolicitudProcesamientoRow> {
+   const row = await mutateApi<SolicitudProcesamientoApiRow>(
+@@ -139,3 +197,36 @@ export async function cerrarSolicitudProcesamientoApi(
+   );
+   return mapSolicitudRow(row);
+ }
++
++export async function crearOrdenesPostCierreApi(
++  idSolicitud: string,
++  input: CreateOrdenesPostCierreInput,
++): Promise<OrdenesPostCierreResult> {
++  return mutateApi<OrdenesPostCierreResult>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/ordenes-post-cierre`,
++    "POST",
++    input,
++  );
++}
++
++export async function aplicarOrdenProcesamientoApi(
++  idSolicitud: string,
++  idOrden: string,
++): Promise<{ ok: true }> {
++  return mutateApi<{ ok: true }>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/ordenes/${encodeURIComponent(idOrden)}/aplicar`,
++    "POST",
++  );
++}
++
++export async function terminarSolicitudProcesamientoApi(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string },
++): Promise<SolicitudProcesamientoRow> {
++  const row = await mutateApi<SolicitudProcesamientoApiRow>(
++    `/procesamiento/solicitudes/${encodeURIComponent(idSolicitud)}/terminar`,
++    "POST",
++    params,
++  );
++  return mapSolicitudRow(row);
++}
+diff --git a/src/modules/processing/shared/services/processing.service.ts b/src/modules/processing/shared/services/processing.service.ts
+index 0155546..7d69e7c 100644
+--- a/src/modules/processing/shared/services/processing.service.ts
++++ b/src/modules/processing/shared/services/processing.service.ts
+@@ -10,11 +10,22 @@ import {
+ import { DomainServiceError } from "@/lib/utils/domain-service-error";
+ import { listTareasColaApi } from "@/modules/operations";
+ import {
++  aplicarOrdenProcesamientoApi,
++  asignarOperarioProcesamientoApi,
++  asignarProcesadorApi,
++  cerrarSolicitudProcesamientoApi,
++  crearOrdenesPostCierreApi,
+   createSolicitudProcesamientoApi,
++  getDesperdicioSugeridoApi,
++  getSolicitudProcesamientoApi,
++  iniciarProcesamientoApi,
+   listSolicitudesProcesamientoApi,
++  terminarSolicitudProcesamientoApi,
+ } from "./processing-api.service";
+ import type {
++  CreateOrdenesPostCierreInput,
+   CreateSolicitudProcesamientoInput,
++  OrdenesPostCierreResult,
+   ProductoProcesamientoOption,
+   SolicitudProcesamientoOperadorRow,
+   SolicitudProcesamientoRow,
+@@ -112,7 +123,74 @@ function mapSolicitudOperadorRow(
+   };
+ }
+ 
+-// TODO POL-5+: cerrar solicitudes de procesamiento vía apiRequest al API Nest.
++// Flujo frio: mutaciones vía API Nest (sin cambios de UI).
++
++export async function getSolicitudProcesamiento(
++  idSolicitud: string,
++): Promise<SolicitudProcesamientoRow> {
++  return getSolicitudProcesamientoApi(idSolicitud);
++}
++
++export async function getDesperdicioSugerido(
++  idSolicitud: string,
++): Promise<number | null> {
++  const result = await getDesperdicioSugeridoApi(idSolicitud);
++  return result.desperdicioKgSugerido;
++}
++
++export async function asignarOperarioProcesamiento(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string; idOperario: string },
++): Promise<SolicitudProcesamientoRow> {
++  return asignarOperarioProcesamientoApi(idSolicitud, params);
++}
++
++export async function iniciarProcesamiento(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string; idProcesador?: string },
++): Promise<SolicitudProcesamientoRow> {
++  return iniciarProcesamientoApi(idSolicitud, params);
++}
++
++export async function asignarProcesadorProcesamiento(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string; idProcesador: string },
++): Promise<SolicitudProcesamientoRow> {
++  return asignarProcesadorApi(idSolicitud, params);
++}
++
++export async function cerrarSolicitudProcesamiento(
++  idSolicitud: string,
++  params: {
++    codigoCuenta: string;
++    idBodega: string;
++    kilosMerma: number;
++    kilosSecundario?: number;
++  },
++): Promise<SolicitudProcesamientoRow> {
++  return cerrarSolicitudProcesamientoApi(idSolicitud, params);
++}
++
++export async function crearOrdenesPostCierre(
++  idSolicitud: string,
++  input: CreateOrdenesPostCierreInput,
++): Promise<OrdenesPostCierreResult> {
++  return crearOrdenesPostCierreApi(idSolicitud, input);
++}
++
++export async function aplicarOrdenProcesamiento(
++  idSolicitud: string,
++  idOrden: string,
++): Promise<{ ok: true }> {
++  return aplicarOrdenProcesamientoApi(idSolicitud, idOrden);
++}
++
++export async function terminarSolicitudProcesamiento(
++  idSolicitud: string,
++  params: { codigoCuenta: string; idBodega: string },
++): Promise<SolicitudProcesamientoRow> {
++  return terminarSolicitudProcesamientoApi(idSolicitud, params);
++}
+ 
+ export async function listSolicitudesProcesamiento(
+   params: TenantListParams,
+diff --git a/src/modules/processing/shared/types/processing.types.ts b/src/modules/processing/shared/types/processing.types.ts
+index ded62be..7b6fd97 100644
+--- a/src/modules/processing/shared/types/processing.types.ts
++++ b/src/modules/processing/shared/types/processing.types.ts
+@@ -6,12 +6,6 @@ export type EstadoProcesamiento =
+   | "terminada"
+   | "cancelada";
+ 
+-export type EstadoTarea =
+-  | "pendiente"
+-  | "en_proceso"
+-  | "completada"
+-  | "cancelada";
+-
+ export type TipoTarea =
+   | "ingreso"
+   | "movimiento"
+@@ -20,6 +14,12 @@ export type TipoTarea =
+   | "revision"
+   | "otro";
+ 
++export type EstadoTarea =
++  | "pendiente"
++  | "en_proceso"
++  | "completada"
++  | "cancelada";
++
+ export interface SolicitudProcesamientoRow {
+   id_solicitud_procesamiento: string;
+   codigo_cuenta: string;
+@@ -34,9 +34,14 @@ export interface SolicitudProcesamientoRow {
+   kilos_primario: string;
+   kilos_secundario: string | null;
+   kilos_merma: string | null;
++  sobrante_kg: string | null;
+   regla_conversion_cantidad_primario: string | null;
+   regla_conversion_unidades_secundario: string | null;
++  perdida_procesamiento_pct: string | null;
+   estimado_unidades_secundario: string | null;
++  kg_primario_descontado: string | null;
++  cierre_desde_procesador: boolean;
++  observaciones: string | null;
+   created_at: string;
+   updated_at: string;
+ }
+@@ -68,7 +73,21 @@ export interface CreateSolicitudProcesamientoInput {
+   kilosPrimario: number;
+   reglaConversionCantidadPrimario: number;
+   reglaConversionUnidadesSecundario: number;
+-  estimadoUnidadesSecundario: number;
++  estimadoUnidadesSecundario?: number;
++  perdidaProcesamientoPct?: number;
++  observaciones?: string;
++}
++
++export interface CreateOrdenesPostCierreInput {
++  codigoCuenta: string;
++  idBodega: string;
++  idUbicacionDestinoProcesado?: string;
++  idUbicacionDestinoDesperdicio?: string;
++}
++
++export interface OrdenesPostCierreResult {
++  ordenProcesadoId: string | null;
++  ordenDesperdicioId: string | null;
+ }
+ 
+ export interface TareaColaRow {
+diff --git a/src/modules/purchases/ingreso/components/RecepcionCompraModal.tsx b/src/modules/purchases/ingreso/components/RecepcionCompraModal.tsx
+index ffd6fba..891e247 100644
+--- a/src/modules/purchases/ingreso/components/RecepcionCompraModal.tsx
++++ b/src/modules/purchases/ingreso/components/RecepcionCompraModal.tsx
+@@ -42,7 +42,7 @@ function buildDraftLineas(lineas: OrdenCompraLineaRow[]): DraftLinea[] {
+       titulo: resolveOrdenLineaTitulo(linea),
+       cantidadPedida: linea.cantidad,
+       cantidadYaRecibida: linea.cantidad_recibida ?? 0,
+-      cantidadRecibidaInput: pendiente > 0 ? String(pendiente) : "0",
++      cantidadRecibidaInput: "",
+       temperaturaInput: "",
+     };
+   });
+@@ -120,10 +120,19 @@ export function RecepcionCompraModal({
+           );
+         }
+ 
+-        const temperatura =
+-          linea.temperaturaInput.trim() === ""
+-            ? undefined
+-            : parseDecimalEs(linea.temperaturaInput);
++        const temperatura = parseDecimalEs(linea.temperaturaInput);
++
++        if (
++          cantidadRecibida > 0 &&
++          (temperatura == null ||
++            !Number.isFinite(temperatura) ||
++            Number.isNaN(temperatura))
++        ) {
++          throw new DomainServiceError(
++            `La temperatura de la línea ${index + 1} es obligatoria cuando hay cantidad recibida.`,
++            "INVALID_ARGUMENT",
++          );
++        }
+ 
+         if (
+           temperatura != null &&
+@@ -194,8 +203,7 @@ export function RecepcionCompraModal({
+             >
+               <p className="font-medium text-polaria-w">{linea.titulo}</p>
+               <p className="mt-1 polaria-text-body-sm text-polaria-w-50">
+-                Pedido: {formatKgEs(linea.cantidadPedida)} kg · Ya recibido:{" "}
+-                {formatKgEs(linea.cantidadYaRecibida)} kg
++                Conciliación ciega — ingrese cantidad y temperatura recibidas
+               </p>
+               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                 <PolariaFormInput
+@@ -213,7 +221,7 @@ export function RecepcionCompraModal({
+                 />
+                 <PolariaFormInput
+                   id={`rec-temp-${linea.idLineaOrdenCompra}`}
+-                  label="Temperatura (°C, opcional)"
++                  label="Temperatura (°C)"
+                   inputMode="decimal"
+                   value={linea.temperaturaInput}
+                   onChange={(event) =>
+diff --git a/src/modules/purchases/ingreso/utils/recepcion-compra-draft.ts b/src/modules/purchases/ingreso/utils/recepcion-compra-draft.ts
+index 2a1f3cf..a83b38b 100644
+--- a/src/modules/purchases/ingreso/utils/recepcion-compra-draft.ts
++++ b/src/modules/purchases/ingreso/utils/recepcion-compra-draft.ts
+@@ -66,7 +66,7 @@ export function buildRecepcionLineasDraft(
+       cantidadPedida: linea.cantidad,
+       cantidadYaRecibida: linea.cantidad_recibida ?? 0,
+       incluida: tienePendiente,
+-      cantidadRecibidaInput: tienePendiente ? String(pendiente) : "0",
++      cantidadRecibidaInput: "",
+       temperaturaInput: "",
+     };
+   });
+diff --git a/src/modules/warehouses/estado-bodega/components/EstadoBodegaSlotCell.tsx b/src/modules/warehouses/estado-bodega/components/EstadoBodegaSlotCell.tsx
+index ecda0c1..c133db0 100644
+--- a/src/modules/warehouses/estado-bodega/components/EstadoBodegaSlotCell.tsx
++++ b/src/modules/warehouses/estado-bodega/components/EstadoBodegaSlotCell.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { Box, Plus } from "lucide-react";
++import { Box, Lock, Plus } from "lucide-react";
+ import { cn } from "@/lib/utils/cn";
+ import type { EstadoBodegaSlot } from "../types/estado-bodega.types";
+ 
+@@ -93,6 +93,21 @@ export function EstadoBodegaSlotCell({
+               : "—"}
+           </span>
+ 
++          {detalle?.lockedBy ? (
++            <span
++              className={cn(
++                "mx-auto inline-flex max-w-full items-center gap-0.5 truncate rounded-full border border-amber-400/40 bg-amber-500/15 font-bold text-amber-200",
++                compact
++                  ? "mt-0.5 px-1 py-0.5 text-[8px] leading-none"
++                  : "mt-0.5 px-1.5 py-0.5 polaria-text-caption",
++              )}
++              title={`Bloqueado (${detalle.lockedBy})`}
++            >
++              <Lock className={compact ? "h-2 w-2" : "h-2.5 w-2.5"} aria-hidden />
++              Lock
++            </span>
++          ) : null}
++
+           {detalle?.temperatura ? (
+             <span
+               className={cn(
+diff --git a/src/modules/warehouses/estado-bodega/types/estado-bodega.types.ts b/src/modules/warehouses/estado-bodega/types/estado-bodega.types.ts
+index 46ff80b..920fac3 100644
+--- a/src/modules/warehouses/estado-bodega/types/estado-bodega.types.ts
++++ b/src/modules/warehouses/estado-bodega/types/estado-bodega.types.ts
+@@ -11,6 +11,7 @@ export interface EstadoBodegaSlotDetalleView {
+   posicion: string | null;
+   temperatura: string | null;
+   ordenCompraCodigo: string | null;
++  lockedBy: string | null;
+ }
+ 
+ export interface EstadoBodegaSlot {
+diff --git a/src/modules/warehouses/estado-bodega/utils/estado-bodega-slot-content.ts b/src/modules/warehouses/estado-bodega/utils/estado-bodega-slot-content.ts
+index 982afbe..91a1d85 100644
+--- a/src/modules/warehouses/estado-bodega/utils/estado-bodega-slot-content.ts
++++ b/src/modules/warehouses/estado-bodega/utils/estado-bodega-slot-content.ts
+@@ -84,6 +84,7 @@ export interface EstadoBodegaSlotDetalle {
+   posicion: string | null;
+   temperatura: string | null;
+   ordenCompraCodigo: string | null;
++  lockedBy: string | null;
+ }
+ 
+ /** Agrega el stock de una ubicación en un detalle de slot para UI/modal. */
+@@ -107,6 +108,8 @@ export function buildSlotDetalleFromRows(
+     return sum + (Number.isFinite(parsed) ? parsed : 0);
+   }, 0);
+ 
++  const lockedRow = rows.find((row) => row.locked_by?.trim()) ?? null;
++
+   return {
+     productoNombre,
+     idPaquete:
+@@ -117,5 +120,6 @@ export function buildSlotDetalleFromRows(
+     posicion: posicionCodigo,
+     temperatura: temperaturas[0] ?? null,
+     ordenCompraCodigo: resolveOrdenCompraCodigo(primary),
++    lockedBy: lockedRow?.locked_by ?? null,
+   };
+ }

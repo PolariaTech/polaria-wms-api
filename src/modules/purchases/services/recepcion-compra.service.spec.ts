@@ -30,7 +30,13 @@ describe('RecepcionCompraService', () => {
   const dto = {
     codigoCuenta: 'CTA001',
     idBodega,
-    lineas: [{ idLineaOrdenCompra: idLinea, cantidadRecibida: 50 }],
+    lineas: [
+      {
+        idLineaOrdenCompra: idLinea,
+        cantidadRecibida: 50,
+        temperaturaRegistrada: -18,
+      },
+    ],
   };
 
   const recepcionRecord = {
@@ -70,6 +76,10 @@ describe('RecepcionCompraService', () => {
             findByOrdenCompra: jest.fn(),
             list: jest.fn(),
             toResponse: jest.fn(),
+            findProductosRangoTemperatura: jest.fn(),
+            findNextUbicacionIngresoLibre: jest.fn(),
+            findUbicacionIngreso: jest.fn(),
+            countUbicacionesIngreso: jest.fn(),
           },
         },
       ],
@@ -116,6 +126,21 @@ describe('RecepcionCompraService', () => {
           cantidadRecibida: new Prisma.Decimal(0),
         },
       ],
+    } as never);
+
+    repository.findProductosRangoTemperatura.mockResolvedValue([
+      {
+        idProducto,
+        sku: 'SKU-1',
+        rangoTemperaturaMin: null,
+        rangoTemperaturaMax: null,
+      },
+    ] as never);
+    repository.findNextUbicacionIngresoLibre.mockResolvedValue({
+      idUbicacion: '550e8400-e29b-41d4-a716-446655440099',
+    } as never);
+    repository.findUbicacionIngreso.mockResolvedValue({
+      idUbicacion: '550e8400-e29b-41d4-a716-446655440099',
     } as never);
 
     repository.cerrarRecepcion.mockResolvedValue(recepcionRecord as never);

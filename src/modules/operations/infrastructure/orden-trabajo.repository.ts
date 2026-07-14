@@ -11,6 +11,9 @@ import {
   TipoTarea,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
+import { assertWarehouseStateLockForMove } from '../../inventory/utils/assert-warehouse-state-lock.util';
+import { seleccionarWarehouseStateFefo } from '../../inventory/utils/fefo-warehouse-state.util';
+import { syncUbicacionEstadoSlot } from '../../inventory/utils/sync-ubicacion-estado-slot.util';
 import {
   CONTADOR_CLAVE_ORDEN_TRABAJO,
   TIPO_REFERENCIA_ORDEN_TRABAJO,
@@ -196,6 +199,8 @@ export class OrdenTrabajoRepository {
             input.idWarehouseState,
             input.version,
             autoResolver,
+            tipoFlujo,
+            idUsuario,
           );
 
           const transferencia = await this.transferirStock(
@@ -298,6 +303,8 @@ export class OrdenTrabajoRepository {
     idWarehouseStateExplicito: string | undefined,
     version: number | undefined,
     autoResolver: boolean,
+    tipoFlujo: FlujoOrdenTrabajo | null,
+    idUsuario: string,
   ): Promise<WarehouseStateRow> {
     if (idWarehouseStateExplicito) {
       const ws = await tx.warehouseState.findUnique({
@@ -312,6 +319,7 @@ export class OrdenTrabajoRepository {
         throw new Error('WAREHOUSE_STATE_VERSION_CONFLICT');
       }
 
+      assertWarehouseStateLockForMove(ws, idUsuario);
       return ws;
     }
 
@@ -342,17 +350,44 @@ export class OrdenTrabajoRepository {
       where.idProducto = primeraLinea.idProducto;
     }
 
-    const candidatos = await tx.warehouseState.findMany({ where });
+    const usarFefo =
+      tipoFlujo === 'a_salida' || tipoFlujo === 'bodega_a_bodega';
+
+    const candidatos = await tx.warehouseState.findMany({
+      where,
+      include: { lote: true },
+      ...(usarFefo
+        ? {
+            orderBy: [
+              { lote: { fechaVencimiento: 'asc' } },
+              { updatedAt: 'asc' },
+            ],
+          }
+        : {}),
+    });
 
     if (candidatos.length === 0) {
       throw new Error('WAREHOUSE_STATE_NOT_FOUND');
     }
 
+    let ws: WarehouseStateRow;
+
     if (candidatos.length > 1) {
-      throw new Error('WAREHOUSE_STATE_AMBIGUOUS');
+      if (usarFefo) {
+        const seleccionado = seleccionarWarehouseStateFefo(candidatos);
+        if (!seleccionado) {
+          throw new Error('WAREHOUSE_STATE_NOT_FOUND');
+        }
+        ws = seleccionado;
+      } else {
+        throw new Error('WAREHOUSE_STATE_AMBIGUOUS');
+      }
+    } else {
+      ws = candidatos[0]!;
     }
 
-    return candidatos[0]!;
+    assertWarehouseStateLockForMove(ws, idUsuario);
+    return ws;
   }
 
   private async transferirStock(
@@ -440,21 +475,8 @@ export class OrdenTrabajoRepository {
       },
     });
 
-    await tx.ubicacion.update({
-      where: { idUbicacion: idUbicacionDestino },
-      data: { estadoSlot: EstadoSlot.ocupado },
-    });
-
-    const stockRestanteOrigen = await tx.warehouseState.count({
-      where: { idUbicacion: idUbicacionOrigen },
-    });
-
-    if (stockRestanteOrigen === 0) {
-      await tx.ubicacion.update({
-        where: { idUbicacion: idUbicacionOrigen },
-        data: { estadoSlot: EstadoSlot.libre },
-      });
-    }
+    await syncUbicacionEstadoSlot(tx, idUbicacionDestino);
+    await syncUbicacionEstadoSlot(tx, idUbicacionOrigen);
 
     return { idProducto: ws.idProducto, cantidad: cantidadMover };
   }

@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import {
   EstadoOrdenCompra,
-  EstadoSlot,
   Prisma,
   TipoMovimiento,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
+import { syncUbicacionEstadoSlot } from '../../inventory/utils/sync-ubicacion-estado-slot.util';
 import { TIPO_REFERENCIA_RECEPCION } from '../constants/recepcion-compra.constants';
 import type {
   CerrarRecepcionInput,
@@ -103,6 +103,22 @@ export class RecepcionCompraRepository {
         idBodega,
         estaActiva: true,
         tipoUbicacion: { esRecepcion: true },
+      },
+    });
+  }
+
+  findProductosRangoTemperatura(ids: string[]) {
+    if (ids.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.prisma.producto.findMany({
+      where: { idProducto: { in: ids } },
+      select: {
+        idProducto: true,
+        sku: true,
+        rangoTemperaturaMin: true,
+        rangoTemperaturaMax: true,
       },
     });
   }
@@ -226,10 +242,7 @@ export class RecepcionCompraRepository {
           });
         }
 
-        await tx.ubicacion.update({
-          where: { idUbicacion: ingresoInventario.idUbicacionIngreso },
-          data: { estadoSlot: EstadoSlot.ocupado },
-        });
+        await syncUbicacionEstadoSlot(tx, ingresoInventario.idUbicacionIngreso);
       }
 
       return recepcion;
