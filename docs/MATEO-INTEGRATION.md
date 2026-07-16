@@ -18,6 +18,61 @@ El SSO WMS → Mateo usa un **JWT firmado** con `MATEO_HANDOFF_SECRET`:
 
 ---
 
+## Widget embebido (canal web en WMS)
+
+Experiencia **dentro** de Polaria WMS (sin redirect SSO). El handoff one-time (`MATEO_HANDOFF_SECRET`, TTL 60s) **no** se reutiliza aquí.
+
+### JWT del widget (POL-73)
+
+| Aspecto | Detalle |
+|---------|---------|
+| Endpoint | `POST /auth/mateo/widget-token` |
+| Guards | `JwtAuthGuard` + `TenantGuard` (Bearer Supabase de sesión WMS) |
+| Secreto | `MATEO_WIDGET_JWT_SECRET` (HS256, **distinto** de `MATEO_HANDOFF_SECRET`) |
+| Header JWT | `alg=HS256`, `kid` = `MATEO_WIDGET_JWT_KID` (default `local-dev-v1`) |
+| Issuer / Audience | `MATEO_WIDGET_JWT_ISSUER` / `MATEO_WIDGET_JWT_AUDIENCE` (defaults `bodega-frio-v2` / `mateo-support-widget`) |
+| TTL | 300 segundos (5 min) |
+| Uso | Reutilizable hasta `exp`; refresh con otro `POST` |
+| Response | `{ token: string, expiresIn: number }` |
+
+Payload JWT:
+
+```json
+{
+  "sub": "<idAuth UUID Supabase>",
+  "jti": "<uuid>",
+  "idUsuario": "<uuid>",
+  "codigoEmpresa": "EMP001 | null",
+  "codigoCuenta": "CTA001 | null",
+  "idRol": "administrador_cuenta",
+  "email": "user@empresa.com",
+  "given_name": "Ana",
+  "family_name": "Pérez",
+  "iss": "bodega-frio-v2",
+  "aud": "mateo-support-widget",
+  "exp": 1710000000
+}
+```
+
+**Contrato n8n (POL-71):** validar `Authorization: Bearer <token>` con el **mismo** `MATEO_WIDGET_JWT_SECRET`, comprobar `iss` / `aud` / `kid`, y resolver `sub` → `id_usuario` vía `resolve_web_user` en Supabase.
+
+### Conversaciones (persistencia)
+
+Esquema canónico en **polaria-wms-db**: `docs/WIDGET-MATEO-CONVERSACIONES.md`  
+Migración: `051_widget_mateo_conversaciones.sql` (tablas `widget_conversacion`, `widget_mensaje` + RLS + `resolve_web_user`).
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/mateo/conversaciones` | Lista del usuario autenticado (`id_usuario` del tenant) |
+| GET | `/mateo/conversaciones/:id` | Detalle + mensajes |
+| POST | `/mateo/conversaciones` | Crear (`{ titulo? }`; `codigo_cuenta` desde tenant) |
+| POST | `/mateo/conversaciones/:id/mensajes` | Append `{ rol, tipo?, contenido, esError?, createdAt? }` |
+| DELETE | `/mateo/conversaciones/:id` | Eliminar si pertenece al usuario |
+
+Guards: Bearer WMS + tenant. Ownership siempre por `id_usuario` del contexto. Prisma: `WidgetConversacion` / `WidgetMensaje`.
+
+---
+
 ## Separación de credenciales por cliente
 
 | Cliente | Header / query | `identificador` | Contraseña |
@@ -243,7 +298,11 @@ Headers permitidos: `Content-Type`, `Authorization`, `X-Auth-Client`.
 
 | Variable | Requerida | Descripción |
 |----------|-----------|-------------|
-| `MATEO_HANDOFF_SECRET` | **Sí** | Secreto para firmar/verificar JWT de handoff |
+| `MATEO_HANDOFF_SECRET` | **Sí** | Secreto para firmar/verificar JWT de handoff SSO |
+| `MATEO_WIDGET_JWT_SECRET` | **Sí** (widget) | Secreto HS256 del JWT del widget embebido (≠ handoff); **mismo** valor que n8n POL-71 |
+| `MATEO_WIDGET_JWT_ISSUER` | No | Default `bodega-frio-v2` |
+| `MATEO_WIDGET_JWT_AUDIENCE` | No | Default `mateo-support-widget` |
+| `MATEO_WIDGET_JWT_KID` | No | Default `local-dev-v1` (header JWT) |
 | `MATEO_ALLOWED_ORIGINS` | No | Orígenes CORS para Mateo (default: ver arriba) |
 | `SUPABASE_URL` | Sí | Cliente Auth |
 | `SUPABASE_ANON_KEY` | Sí | Login y verificación OTP |
@@ -256,10 +315,11 @@ Headers permitidos: `Content-Type`, `Authorization`, `X-Auth-Client`.
 
 | Repo | Responsabilidad SSO |
 |------|---------------------|
-| **polaria-wms-web** | Login con correo (`X-Auth-Client: wms`); **salida**: botón "Mateo IA" → `mateo-handoff` → redirect Mateo `/auth/sso?code=`; **entrada**: `/auth/sso` → `mateo-exchange` → sesión WMS |
+| **polaria-wms-web** | Login con correo (`X-Auth-Client: wms`); **salida SSO**: botón "Mateo IA" → `mateo-handoff` → redirect Mateo `/auth/sso?code=`; **entrada**: `/auth/sso` → `mateo-exchange` → sesión WMS; **widget**: `MateoWidgetHost` → `POST /auth/mateo/widget-token` |
 | **chatbot-mateo** | Login con username (`X-Auth-Client: mateo`); **salida**: botón WMS → `mateo-handoff` → redirect WMS `/auth/sso?code=`; **entrada**: `/auth/sso` → `mateo-exchange` → sesión Mateo |
-| **polaria-wms-api** | Endpoints bidireccionales `mateo-handoff` / `mateo-exchange` (este documento) |
-| **polaria-wms-db** | **Sin cambios** (handoff JWT, no tabla) |
+| **Widget-react** | Bundle embebido; `configureTokenFetcher` + JWT widget; Shadow DOM |
+| **polaria-wms-api** | Endpoints bidireccionales `mateo-handoff` / `mateo-exchange`; `mateo/widget-token`; CRUD `/mateo/conversaciones` |
+| **polaria-wms-db** | Handoff sin tabla; widget: `widget_conversacion` / `widget_mensaje` + RLS + `resolve_web_user` |
 
 ---
 
@@ -304,5 +364,49 @@ curl -X POST http://localhost:3000/auth/mateo-exchange \
   -H "Content-Type: application/json" \
   -d '{"code":"<handoff_jwt>"}'
 ```
+
+### Widget — token
+
+```bash
+curl -X POST http://localhost:3000/auth/mateo/widget-token \
+  -H "Authorization: Bearer <wms_access_token>"
+# → { "token": "<jwt>", "expiresIn": 300 }
+```
+
+El JWT debe verificar en n8n con el **mismo** `MATEO_WIDGET_JWT_SECRET`, más `iss` / `aud` / `kid` (defaults arriba).
+
+### Widget — conversaciones
+
+```bash
+# Listar
+curl http://localhost:3000/mateo/conversaciones \
+  -H "Authorization: Bearer <wms_access_token>"
+
+# Crear
+curl -X POST http://localhost:3000/mateo/conversaciones \
+  -H "Authorization: Bearer <wms_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Append mensaje (id = UUID de conversación)
+curl -X POST http://localhost:3000/mateo/conversaciones/<uuid>/mensajes \
+  -H "Authorization: Bearer <wms_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"rol":"user","tipo":"text","contenido":"Hola","esError":false}'
+```
+
+> El `:id` de mensajes **debe ser UUID**. Ids locales del widget (`conv_*`) producen 400 (`ParseUUIDPipe`).
+
+---
+
+## Troubleshooting widget
+
+| Síntoma | Causa | Acción |
+|---------|--------|--------|
+| Prisma `widget_conversacion` does not exist | Migración 051 no aplicada | Aplicar SQL en Supabase (`polaria-wms-db`) |
+| n8n “sin permiso” / 401 | Secreto o `iss`/`aud`/`kid` distintos | Alinear env API ↔ credential store n8n |
+| Append 400 | Path no-UUID | Actualizar Widget-react (alias local→UUID) |
+| Respuesta AI en otra conversación | Race create remoto | Bundle reciente de Widget-react |
+| P2021 / tabla ausente | DDL pendiente | GlobalExceptionFilter → 503 con mensaje claro |
 
 > El código generado con token Mateo y el generado con token WMS (mismo usuario) son intercambiables: solo importa `sub` (`idAuth`) y validez del JWT de handoff.

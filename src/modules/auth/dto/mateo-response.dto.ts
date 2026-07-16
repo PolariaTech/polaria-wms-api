@@ -15,6 +15,21 @@ export class MateoHandoffResponseDto {
   expiresIn!: number;
 }
 
+export class MateoWidgetTokenResponseDto {
+  @ApiProperty({
+    description:
+      'JWT HS256 para el widget Mateo embebido (TTL 300s, reutilizable hasta expirar)',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+  })
+  token!: string;
+
+  @ApiProperty({
+    description: 'Segundos hasta expiración del token',
+    example: 300,
+  })
+  expiresIn!: number;
+}
+
 export class MateoExchangeUserDto {
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
   idUsuario!: string;

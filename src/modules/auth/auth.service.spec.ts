@@ -12,6 +12,7 @@ import { WmsRol } from '../../generated/prisma/client';
 import { AuthService } from './auth.service';
 import { UsuarioRepository } from './infrastructure/usuario.repository';
 import { MateoHandoffService } from './mateo-handoff.service';
+import { MateoWidgetTokenService } from './mateo-widget-token.service';
 
 const mockConfigurador = {
   idUsuario: 'usr-config',
@@ -60,6 +61,7 @@ describe('AuthService', () => {
   let usuarioRepository: jest.Mocked<UsuarioRepository>;
   let supabaseAuth: jest.Mocked<SupabaseAuthService>;
   let mateoHandoffService: jest.Mocked<MateoHandoffService>;
+  let mateoWidgetTokenService: jest.Mocked<MateoWidgetTokenService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -94,6 +96,12 @@ describe('AuthService', () => {
             redeemCode: jest.fn(),
           },
         },
+        {
+          provide: MateoWidgetTokenService,
+          useValue: {
+            generateToken: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -101,6 +109,7 @@ describe('AuthService', () => {
     usuarioRepository = module.get(UsuarioRepository);
     supabaseAuth = module.get(SupabaseAuthService);
     mateoHandoffService = module.get(MateoHandoffService);
+    mateoWidgetTokenService = module.get(MateoWidgetTokenService);
   });
 
   describe('prelogin', () => {
@@ -341,6 +350,39 @@ describe('AuthService', () => {
       await expect(service.createMateoHandoff('auth-unknown')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('createMateoWidgetToken', () => {
+    it('emite JWT del widget para usuario activo', async () => {
+      usuarioRepository.findActiveByIdAuth.mockResolvedValue(
+        mockTenantUser as never,
+      );
+      mateoWidgetTokenService.generateToken.mockReturnValue({
+        token: 'widget-jwt',
+        expiresIn: 300,
+      });
+
+      const result = await service.createMateoWidgetToken('auth-tenant');
+
+      expect(mateoWidgetTokenService.generateToken).toHaveBeenCalledWith({
+        idAuth: 'auth-tenant',
+        idUsuario: 'usr-tenant',
+        codigoEmpresa: 'EMP001',
+        codigoCuenta: null,
+        idRol: WmsRol.administrador_cuenta,
+        correo: 'admin@empresa.com',
+        nombre: mockTenantUser.nombre,
+      });
+      expect(result).toEqual({ token: 'widget-jwt', expiresIn: 300 });
+    });
+
+    it('lanza 404 si usuario no existe', async () => {
+      usuarioRepository.findActiveByIdAuth.mockResolvedValue(null);
+
+      await expect(
+        service.createMateoWidgetToken('auth-unknown'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

@@ -19,6 +19,7 @@ describe('AuthController (e2e)', () => {
     getMe: jest.Mock;
     logout: jest.Mock;
     createMateoHandoff: jest.Mock;
+    createMateoWidgetToken: jest.Mock;
     exchangeMateoCode: jest.Mock;
   };
 
@@ -38,6 +39,7 @@ describe('AuthController (e2e)', () => {
       getMe: jest.fn(),
       logout: jest.fn(),
       createMateoHandoff: jest.fn(),
+      createMateoWidgetToken: jest.fn(),
       exchangeMateoCode: jest.fn(),
     };
 
@@ -203,6 +205,32 @@ describe('AuthController (e2e)', () => {
 
   it('POST /auth/mateo-handoff responde 401 sin token', async () => {
     await request(app.getHttpServer()).post('/auth/mateo-handoff').expect(401);
+  });
+
+  it('POST /auth/mateo/widget-token responde 200 con Bearer', async () => {
+    authService.createMateoWidgetToken.mockResolvedValue({
+      token: 'widget-jwt',
+      expiresIn: 300,
+    });
+
+    await request(app.getHttpServer())
+      .post('/auth/mateo/widget-token')
+      .set('Authorization', 'Bearer mateo-or-wms-token')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.token).toBe('widget-jwt');
+        expect(res.body.expiresIn).toBe(300);
+      });
+
+    expect(authService.createMateoWidgetToken).toHaveBeenCalledWith(
+      'auth-tenant',
+    );
+  });
+
+  it('POST /auth/mateo/widget-token responde 401 sin token', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/mateo/widget-token')
+      .expect(401);
   });
 
   it('POST /auth/mateo-exchange responde 200 con código válido', async () => {

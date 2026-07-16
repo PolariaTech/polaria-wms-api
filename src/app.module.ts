@@ -15,6 +15,7 @@ import { OperationsModule } from './modules/operations/operations.module';
 import { ProcessingModule } from './modules/processing/processing.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { TransportModule } from './modules/transport/transport.module';
+import { MateoWidgetModule } from './modules/mateo-widget/mateo-widget.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { TransportModule } from './modules/transport/transport.module';
     ProcessingModule,
     SalesModule,
     TransportModule,
+    MateoWidgetModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -155,6 +155,29 @@ Para **configurador**: `codigoEmpresa`, `codigoCuenta`, `razonSocialEmpresa` y `
 
 ---
 
+## POST /auth/mateo/widget-token
+
+Emite JWT HS256 de vida corta (300s) para el **widget embebido** → n8n (POL-71/73).  
+Requiere Bearer de sesión WMS + tenant.
+
+### Response `200`
+
+```json
+{ "token": "<jwt>", "expiresIn": 300 }
+```
+
+Claims relevantes: `sub` (= `id_auth`), `idUsuario`, `email`, `given_name` / `family_name`, `iss`, `aud`; header `kid`.  
+Detalle: [docs/MATEO-INTEGRATION.md](../../docs/MATEO-INTEGRATION.md).
+
+### Errores
+
+| HTTP | Condición |
+|---|---|
+| 401 | Sin Bearer / JWT inválido |
+| 404 | Usuario no encontrado o inactivo |
+
+---
+
 ## POST /auth/logout
 
 Invalida la sesión global del usuario en Supabase Auth.
@@ -186,9 +209,13 @@ Authorization: Bearer <accessToken>
 | `SUPABASE_SERVICE_ROLE_KEY` | `admin.signOut` global, `generateLink` (SSO Mateo) |
 | `DATABASE_URL` | Prisma (lookups backend, bypass RLS) |
 | `MATEO_HANDOFF_SECRET` | JWT de handoff SSO WMS → Mateo |
+| `MATEO_WIDGET_JWT_SECRET` | JWT del widget embebido (mismo secreto que n8n POL-71) |
+| `MATEO_WIDGET_JWT_ISSUER` | Default `bodega-frio-v2` |
+| `MATEO_WIDGET_JWT_AUDIENCE` | Default `mateo-support-widget` |
+| `MATEO_WIDGET_JWT_KID` | Default `local-dev-v1` |
 | `MATEO_ALLOWED_ORIGINS` | CORS para chatbot-mateo (opcional) |
 
-Ver [docs/MATEO-INTEGRATION.md](../../docs/MATEO-INTEGRATION.md) para el contrato completo con Mateo.
+Ver [docs/MATEO-INTEGRATION.md](../../docs/MATEO-INTEGRATION.md) para SSO + widget + conversaciones.
 
 ---
 

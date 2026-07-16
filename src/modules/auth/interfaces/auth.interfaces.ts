@@ -65,6 +65,11 @@ export interface MateoHandoffResponse {
   expiresIn: number;
 }
 
+export interface MateoWidgetTokenResponse {
+  token: string;
+  expiresIn: number;
+}
+
 export interface MateoExchangeUser {
   idUsuario: string;
   username: string;

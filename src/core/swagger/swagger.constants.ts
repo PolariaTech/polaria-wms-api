@@ -20,6 +20,7 @@ export const SWAGGER_TAGS = {
   VENTAS_OV: 'Ventas · Órdenes (OV)',
   TRANSPORTE: 'Transporte · Paquetes y viajes',
   PROCESAMIENTO: 'Procesamiento · Solicitudes',
+  MATEO_WIDGET: 'Mateo · Widget embebido',
   SISTEMA: 'Sistema',
 } as const;
 
@@ -46,6 +47,7 @@ export const SWAGGER_TAG_ORDER: readonly SwaggerTag[] = [
   SWAGGER_TAGS.VENTAS_OV,
   SWAGGER_TAGS.TRANSPORTE,
   SWAGGER_TAGS.PROCESAMIENTO,
+  SWAGGER_TAGS.MATEO_WIDGET,
   SWAGGER_TAGS.SISTEMA,
 ];
 
@@ -90,5 +92,7 @@ export const SWAGGER_TAG_DESCRIPTIONS: Record<SwaggerTag, string> = {
     'Paquete de despacho del custodio: viaje + guías + camión para el rol transportista.',
   [SWAGGER_TAGS.PROCESAMIENTO]:
     'Solicitudes de procesamiento primario→secundario con merma y cierre por procesador.',
+  [SWAGGER_TAGS.MATEO_WIDGET]:
+    'JWT del widget embebido y persistencia de conversaciones del canal web Mateo.',
   [SWAGGER_TAGS.SISTEMA]: 'Health check y utilidades de la API.',
 };

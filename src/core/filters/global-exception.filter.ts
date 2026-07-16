@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client';
 import type { Response } from 'express';
 
 interface ErrorBody {
@@ -45,6 +46,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
             };
 
       response.status(status).json(body);
+      return;
+    }
+
+    if (
+      exception instanceof Prisma.PrismaClientKnownRequestError &&
+      exception.code === 'P2021'
+    ) {
+      this.logger.error(
+        'Tabla Prisma ausente (¿migración pendiente?)',
+        exception.stack,
+      );
+      response.status(HttpStatus.SERVICE_UNAVAILABLE).json({
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        message:
+          'Esquema de base de datos incompleto. Aplica la migración widget_conversacion.',
+        error: 'Service Unavailable',
+      });
       return;
     }
 

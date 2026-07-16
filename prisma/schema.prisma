@@ -323,6 +323,7 @@ model Cuenta {
   sesionesOperativas      SesionOperativa[]
   solicitudesIntegracion  SolicitudIntegracion[]
   tareasCuenta            TareaCuenta[]
+  widgetConversaciones    WidgetConversacion[]
 
   @@map("cuenta")
 }
@@ -447,6 +448,7 @@ model Usuario {
   sesionesOperativas       SesionOperativa[]
   solicitudesIntegracion   SolicitudIntegracion[] @relation("SolicitudIntegracionSolicitante")
   tareasCuentaCreadas      TareaCuenta[]          @relation("TareaCuentaCreador")
+  widgetConversaciones     WidgetConversacion[]
 
   @@map("usuario")
 }
@@ -1178,4 +1180,33 @@ model TareaCuenta {
   creador       Usuario           @relation("TareaCuentaCreador", fields: [idCreador], references: [idUsuario])
 
   @@map("tarea_cuenta")
+}
+
+model WidgetConversacion {
+  idConversacion String          @id @default(dbgenerated("gen_random_uuid()")) @map("id_conversacion") @db.Uuid
+  idUsuario      String          @map("id_usuario") @db.Uuid
+  codigoCuenta   String?         @map("codigo_cuenta") @db.VarChar(32)
+  titulo         String?         @db.VarChar(255)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  usuario        Usuario         @relation(fields: [idUsuario], references: [idUsuario], onDelete: Cascade)
+  cuenta         Cuenta?         @relation(fields: [codigoCuenta], references: [codigoCuenta])
+  mensajes       WidgetMensaje[]
+
+  @@index([idUsuario, updatedAt(sort: Desc)], map: "idx_widget_conversacion_usuario_updated")
+  @@map("widget_conversacion")
+}
+
+model WidgetMensaje {
+  idMensaje      String             @id @default(dbgenerated("gen_random_uuid()")) @map("id_mensaje") @db.Uuid
+  idConversacion String             @map("id_conversacion") @db.Uuid
+  rol            String             @db.VarChar(10)
+  tipo           String             @default("text") @db.VarChar(10)
+  contenido      String
+  esError        Boolean            @default(false) @map("es_error")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  conversacion   WidgetConversacion @relation(fields: [idConversacion], references: [idConversacion], onDelete: Cascade)
+
+  @@index([idConversacion, createdAt], map: "idx_widget_mensaje_conversacion_created")
+  @@map("widget_mensaje")
 }

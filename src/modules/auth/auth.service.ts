@@ -23,6 +23,7 @@ import type {
   LoginResponse,
   MateoExchangeResponse,
   MateoHandoffResponse,
+  MateoWidgetTokenResponse,
   MeResponse,
   PreloginResponse,
   SessionContext,
@@ -34,6 +35,7 @@ import {
   UsuarioWithRelations,
 } from './infrastructure/usuario.repository';
 import { MateoHandoffService } from './mateo-handoff.service';
+import { MateoWidgetTokenService } from './mateo-widget-token.service';
 import type { TenantContext } from '../../core/tenant/tenant-context.interface';
 
 @Injectable()
@@ -44,6 +46,7 @@ export class AuthService {
     private readonly usuarioRepository: UsuarioRepository,
     private readonly supabaseAuth: SupabaseAuthService,
     private readonly mateoHandoffService: MateoHandoffService,
+    private readonly mateoWidgetTokenService: MateoWidgetTokenService,
   ) {}
 
   async prelogin(
@@ -97,6 +100,26 @@ export class AuthService {
     }
 
     return this.mateoHandoffService.generateCode(idAuth);
+  }
+
+  async createMateoWidgetToken(
+    idAuth: string,
+  ): Promise<MateoWidgetTokenResponse> {
+    const usuario = await this.usuarioRepository.findActiveByIdAuth(idAuth);
+
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado o inactivo');
+    }
+
+    return this.mateoWidgetTokenService.generateToken({
+      idAuth: usuario.idAuth,
+      idUsuario: usuario.idUsuario,
+      codigoEmpresa: usuario.codigoEmpresa,
+      codigoCuenta: usuario.codigoCuenta,
+      idRol: usuario.idRol,
+      correo: usuario.correo,
+      nombre: usuario.nombre,
+    });
   }
 
   async exchangeMateoCode(code: string): Promise<MateoExchangeResponse> {

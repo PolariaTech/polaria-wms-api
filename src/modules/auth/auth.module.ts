@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UsuarioRepository } from './infrastructure/usuario.repository';
 import { MateoHandoffService } from './mateo-handoff.service';
+import { MateoWidgetTokenService } from './mateo-widget-token.service';
 
 @Module({
   imports: [
@@ -16,7 +17,12 @@ import { MateoHandoffService } from './mateo-handoff.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, UsuarioRepository, MateoHandoffService],
+  providers: [
+    AuthService,
+    UsuarioRepository,
+    MateoHandoffService,
+    MateoWidgetTokenService,
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}

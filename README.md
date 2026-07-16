@@ -129,6 +129,7 @@ git pull origin main
 |---|---|---|
 | Auth Supabase | ✅ | prelogin, login, logout, me |
 | SSO Mateo | ✅ | handoff + exchange bidireccional |
+| Widget Mateo | ✅ | `widget-token` + `/mateo/conversaciones` |
 | Multitenancy | ✅ | Guards, contexto JWT, scope empresa/cuenta/bodega |
 | Prisma ORM | ✅ | 40 modelos, cliente en `src/generated/prisma/` |
 | Alta usuarios configurador | ✅ | `POST /configurador/usuarios` |
@@ -232,6 +233,10 @@ La API escucha en `http://localhost:3000` (o el `PORT` definido en `.env`).
 | `SUPABASE_SERVICE_ROLE_KEY` | Sí | Service role (crear/borrar usuarios Auth, logout global) |
 | `DATABASE_URL` | Sí | Postgres directo para Prisma (rol `postgres`, bypass RLS) |
 | `MATEO_HANDOFF_SECRET` | Sí | Secreto JWT para SSO WMS ↔ Mateo |
+| `MATEO_WIDGET_JWT_SECRET` | Sí (widget) | Secreto HS256 del chat embebido (= n8n POL-71) |
+| `MATEO_WIDGET_JWT_ISSUER` | No | Default `bodega-frio-v2` |
+| `MATEO_WIDGET_JWT_AUDIENCE` | No | Default `mateo-support-widget` |
+| `MATEO_WIDGET_JWT_KID` | No | Default `local-dev-v1` |
 | `MATEO_ALLOWED_ORIGINS` | No | Orígenes CORS permitidos (comma-separated) |
 
 Ver `.env.example` para plantilla comentada.
@@ -279,7 +284,8 @@ Documentación detallada:
 
 - [docs/TENANT-RLS.md](docs/TENANT-RLS.md) — Multitenancy y RLS
 - [docs/MODELO-OPERATIVO.md](docs/MODELO-OPERATIVO.md) — Modelo operativo WMS
-- [docs/MATEO-INTEGRATION.md](docs/MATEO-INTEGRATION.md) — SSO con chatbot Mateo
+- [docs/MATEO-INTEGRATION.md](docs/MATEO-INTEGRATION.md) — SSO + widget embebido + conversaciones
+- [src/modules/mateo-widget/README.md](src/modules/mateo-widget/README.md) — REST historial del widget
 
 ---
 
@@ -541,7 +547,8 @@ Crea usuarios de nivel **cuenta** o **bodega** dentro del tenant activo del admi
 
 | Módulo | Ruta base | Estado | Descripción |
 |---|---|---|---|
-| `auth` | `/auth` | **Implementado** | Login, sesión, SSO Mateo |
+| `auth` | `/auth` | **Implementado** | Login, sesión, SSO Mateo, widget-token |
+| `mateo-widget` | `/mateo/conversaciones` | **Implementado** | Historial chat embebido |
 | `configurator` | `/configurador`, `/administracion` | **Implementado** | Alta de usuarios por rol |
 | `accounts` | — | Placeholder | Contabilidad y cuentas |
 | `audit` | — | Placeholder | Auditoría (estructura domain/application/infrastructure) |

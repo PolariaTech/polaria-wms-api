@@ -42,6 +42,7 @@ import { MateoExchangeDto } from './dto/mateo-exchange.dto';
 import {
   MateoExchangeResponseDto,
   MateoHandoffResponseDto,
+  MateoWidgetTokenResponseDto,
 } from './dto/mateo-response.dto';
 import { PreloginDto } from './dto/prelogin.dto';
 import { SWAGGER_TAGS } from '../../core/swagger/swagger.constants';
@@ -49,6 +50,7 @@ import type {
   LoginResponse,
   MateoExchangeResponse,
   MateoHandoffResponse,
+  MateoWidgetTokenResponse,
   MeResponse,
   PreloginResponse,
 } from './interfaces/auth.interfaces';
@@ -123,6 +125,25 @@ export class AuthController {
     @CurrentSupabaseUser() user: User,
   ): Promise<MateoHandoffResponse> {
     return this.authService.createMateoHandoff(user.id);
+  }
+
+  @Post('mateo/widget-token')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Emitir JWT del widget Mateo embebido',
+    description:
+      'Usuario autenticado (Bearer Supabase) obtiene un JWT HS256 (TTL 300s) para el widget Mateo. ' +
+      'Reutilizable hasta expirar; refrescar con otro POST. Distinto del handoff SSO one-time.',
+  })
+  @ApiOkResponse({ type: MateoWidgetTokenResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
+  @ApiNotFoundResponse({ description: 'Usuario no encontrado o inactivo' })
+  createMateoWidgetToken(
+    @CurrentSupabaseUser() user: User,
+  ): Promise<MateoWidgetTokenResponse> {
+    return this.authService.createMateoWidgetToken(user.id);
   }
 
   @Post('mateo-exchange')
