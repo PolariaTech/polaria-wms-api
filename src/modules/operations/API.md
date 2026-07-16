@@ -25,7 +25,7 @@ Autenticación: Bearer JWT. Todos los endpoints requieren `codigoCuenta` + `idBo
 
 | Rol | Permisos API |
 |-----|----------------|
-| **Custodio** | Entradas vía `POST /compras/recepciones` (módulo purchases). Salidas/despacho vía ventas (fase siguiente). |
+| **Custodio** | Entradas vía `POST /compras/recepciones`. Salidas/paquete vía `POST /transporte/paquetes-despacho`. |
 | **Jefe bodega** | Crear OT (`a_bodega`, `a_salida`, `bodega_a_bodega`, `revisar`), asignar tareas, gestionar alertas, crear/asignar procesamiento |
 | **Admin bodega** | Solo lectura: listados + `GET /operaciones/reportes/bodega` |
 | **Operario** | Ejecutar OT, completar tareas movimiento/despacho/revisión, reportar fallos, llamar jefe |

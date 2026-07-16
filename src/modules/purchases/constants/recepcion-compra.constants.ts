@@ -16,7 +16,10 @@ export const ROLES_RECEPCION_LECTURA = [
 ] as const;
 
 /**
- * Valores permitidos por `chk_movimiento_tipo_referencia` (migraciones 024, 048):
- * orden_compra | orden_trabajo | orden_venta | solicitud_compra | solicitud_procesamiento | manual
+ * Valores permitidos por `chk_movimiento_tipo_referencia` (migraciones 024+):
+ * orden_compra | orden_trabajo | orden_venta | solicitud_compra |
+ * solicitud_procesamiento | viaje_transporte | manual
+ *
+ * Nota: el API de despacho usa `orden_venta` (id_referencia = OV).
  */
 export const TIPO_REFERENCIA_RECEPCION = 'orden_compra';

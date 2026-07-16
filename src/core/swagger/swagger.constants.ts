@@ -4,6 +4,8 @@ export const SWAGGER_TAGS = {
   USUARIOS_CONFIGURADOR: 'Usuarios · Configurador',
   USUARIOS_ADMIN_CUENTA: 'Usuarios · Admin cuenta',
   CONFIGURACION_BODEGAS: 'Configuración · Bodegas',
+  CONFIGURACION_EMPRESAS: 'Configuración · Empresas',
+  CONFIGURACION_CUENTAS: 'Configuración · Cuentas',
   INTEGRACION: 'Integración · Solicitudes',
   COMPRAS_SOL: 'Compras · Solicitudes (SOL)',
   COMPRAS_OC: 'Compras · Órdenes (OC)',
@@ -16,6 +18,7 @@ export const SWAGGER_TAGS = {
   OPERACIONES_REPORTES: 'Operaciones · Reportes bodega',
   OPERACIONES_OPERARIOS: 'Operaciones · Operarios y presencia',
   VENTAS_OV: 'Ventas · Órdenes (OV)',
+  TRANSPORTE: 'Transporte · Paquetes y viajes',
   PROCESAMIENTO: 'Procesamiento · Solicitudes',
   SISTEMA: 'Sistema',
 } as const;
@@ -27,6 +30,8 @@ export const SWAGGER_TAG_ORDER: readonly SwaggerTag[] = [
   SWAGGER_TAGS.USUARIOS_CONFIGURADOR,
   SWAGGER_TAGS.USUARIOS_ADMIN_CUENTA,
   SWAGGER_TAGS.CONFIGURACION_BODEGAS,
+  SWAGGER_TAGS.CONFIGURACION_EMPRESAS,
+  SWAGGER_TAGS.CONFIGURACION_CUENTAS,
   SWAGGER_TAGS.INTEGRACION,
   SWAGGER_TAGS.COMPRAS_SOL,
   SWAGGER_TAGS.COMPRAS_OC,
@@ -39,6 +44,7 @@ export const SWAGGER_TAG_ORDER: readonly SwaggerTag[] = [
   SWAGGER_TAGS.OPERACIONES_REPORTES,
   SWAGGER_TAGS.OPERACIONES_OPERARIOS,
   SWAGGER_TAGS.VENTAS_OV,
+  SWAGGER_TAGS.TRANSPORTE,
   SWAGGER_TAGS.PROCESAMIENTO,
   SWAGGER_TAGS.SISTEMA,
 ];
@@ -52,6 +58,10 @@ export const SWAGGER_TAG_DESCRIPTIONS: Record<SwaggerTag, string> = {
     'Alta de usuarios dentro del tenant activo. Rol requerido: administrador_cuenta (scope cuenta).',
   [SWAGGER_TAGS.CONFIGURACION_BODEGAS]:
     'Alta de bodegas internas/externas y bootstrap de layout (tipos, zonas, slots). Roles: configurador o administrador_cuenta.',
+  [SWAGGER_TAGS.CONFIGURACION_EMPRESAS]:
+    'Actualización de empresas (razón social, teléfono y estado). Rol requerido: configurador (scope plataforma).',
+  [SWAGGER_TAGS.CONFIGURACION_CUENTAS]:
+    'Actualización de cuentas comerciales (nombre, credenciales/acceso y asignación de bodegas). Rol: configurador.',
   [SWAGGER_TAGS.INTEGRACION]:
     'Solicitudes de integración de bodegas externas: operador_cuenta crea; configurador consulta bandeja.',
   [SWAGGER_TAGS.COMPRAS_SOL]:
@@ -76,6 +86,8 @@ export const SWAGGER_TAG_DESCRIPTIONS: Record<SwaggerTag, string> = {
     'Operarios de bodega: listado con carga y presencia (heartbeat) para asignación de tareas.',
   [SWAGGER_TAGS.VENTAS_OV]:
     'Órdenes de venta: emisión operativa con reserva de stock y tareas de despacho.',
+  [SWAGGER_TAGS.TRANSPORTE]:
+    'Paquete de despacho del custodio: viaje + guías + camión para el rol transportista.',
   [SWAGGER_TAGS.PROCESAMIENTO]:
     'Solicitudes de procesamiento primario→secundario con merma y cierre por procesador.',
   [SWAGGER_TAGS.SISTEMA]: 'Health check y utilidades de la API.',

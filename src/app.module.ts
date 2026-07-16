@@ -14,6 +14,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { ProcessingModule } from './modules/processing/processing.module';
 import { SalesModule } from './modules/sales/sales.module';
+import { TransportModule } from './modules/transport/transport.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SalesModule } from './modules/sales/sales.module';
     OperationsModule,
     ProcessingModule,
     SalesModule,
+    TransportModule,
   ],
   controllers: [AppController],
   providers: [AppService],
