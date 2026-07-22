@@ -12,6 +12,7 @@ const cuentaOperador: TenantContext = {
   nivelRol: RolNivel.cuenta,
   codigoEmpresa: 'EMP001',
   codigoCuenta: 'CTA001',
+  codigosCuentaEmpresa: ['CTA001'],
   idBodegas: [],
 };
 
@@ -21,6 +22,7 @@ const jefeBodega: TenantContext = {
   nivelRol: RolNivel.bodega,
   codigoEmpresa: 'EMP001',
   codigoCuenta: 'CTA001',
+  codigosCuentaEmpresa: ['CTA001'],
   idBodegas: ['bodega-a'],
 };
 
@@ -30,6 +32,17 @@ const configurador: TenantContext = {
   nivelRol: RolNivel.plataforma,
   codigoEmpresa: null,
   codigoCuenta: null,
+  codigosCuentaEmpresa: [],
+  idBodegas: [],
+};
+
+const adminEmpresa: TenantContext = {
+  idUsuario: 'usr-admin-emp',
+  idRol: WmsRol.administrador_cuenta,
+  nivelRol: RolNivel.cuenta,
+  codigoEmpresa: 'EMP001',
+  codigoCuenta: null,
+  codigosCuentaEmpresa: ['CTA001', 'CTA002'],
   idBodegas: [],
 };
 
@@ -101,6 +114,26 @@ describe('tenant-scope.util', () => {
       expect(() =>
         assertOperationalTenantScope(cuentaOperador, {
           codigoCuenta: 'CTA001',
+          idBodega: 'bodega-a',
+        }),
+      ).not.toThrow();
+    });
+
+    it('rechaza cuenta ajena para admin empresa sin codigoCuenta fijo (403)', () => {
+      expect(() =>
+        assertOperationalTenantScope(adminEmpresa, {
+          codigoCuenta: 'CTA_OTRA',
+          idBodega: 'bodega-a',
+        }),
+      ).toThrow(
+        new ForbiddenException('La cuenta indicada no pertenece a su empresa'),
+      );
+    });
+
+    it('acepta cuenta permitida para admin empresa', () => {
+      expect(() =>
+        assertOperationalTenantScope(adminEmpresa, {
+          codigoCuenta: 'CTA002',
           idBodega: 'bodega-a',
         }),
       ).not.toThrow();

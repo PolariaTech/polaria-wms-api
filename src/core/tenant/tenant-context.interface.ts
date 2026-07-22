@@ -6,6 +6,8 @@ export interface TenantContext {
   nivelRol: RolNivel;
   codigoEmpresa: string | null;
   codigoCuenta: string | null;
+  /** Cuentas activas de la empresa del usuario (admin empresa sin cuenta fija). */
+  codigosCuentaEmpresa: string[];
   idBodegas: string[];
 }
 

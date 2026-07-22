@@ -114,7 +114,7 @@ async registrarMovimiento(
 | Artefacto | Ubicación | Uso |
 |-----------|-----------|-----|
 | `applyTenantFilter(where, ctx)` | `core/database/tenant-scope.util.ts` | Fusiona `codigoCuenta` / `idBodega` en `where` de Prisma |
-| `assertOperationalTenantScope(ctx, payload)` | idem | Lanza `403` si el body trae tenant ajeno |
+| `assertOperationalTenantScope(ctx, payload)` | idem | Lanza `403` si el body trae tenant ajeno o cuenta fuera de `codigosCuentaEmpresa` |
 | `TenantScopedRepository` | `core/database/tenant-scoped.repository.ts` | Base para repos POL-33 |
 | `SensitiveWriteGuard` | `core/guards/sensitive-write.guard.ts` | Solo `configurador`, `administrador_bodega`, `jefe_bodega` |
 | `PERMISSION` / `ROLE_PERMISSIONS` | `shared/constants/permissions.ts` | Matriz mínima documentada |
@@ -123,6 +123,18 @@ async registrarMovimiento(
 ### Regla de oro
 
 Los campos `codigoCuenta` e `idBodega` del request son **hints operativos**, no prueba de autorización. La autorización viene de `TenantContext` (JWT + guards) y de `assertOperationalTenantScope`.
+
+## Cierre POL-138 (auditoría multi-tenant)
+
+Validación formal de aislamiento por empresa:
+
+| Capa | Artefacto | Comando |
+|------|-----------|---------|
+| BD RLS | `polaria-wms-db/scripts/validate-rls-pol138.sql` | Tras multitenant + operativo |
+| API guards | `test/tenant-isolation.e2e-spec.ts` | `npm run test:e2e -- tenant-isolation` |
+| Widget RLS | migración `052_widget_conversacion_rls_cuenta.sql` | `codigo_cuenta` alineado a tenant |
+
+`TenantService.buildContext` carga `codigosCuentaEmpresa` para validar escrituras Prisma cuando el usuario es admin de empresa sin `codigoCuenta` fijo.
 
 ## Próximos pasos (fuera de este ticket)
 
