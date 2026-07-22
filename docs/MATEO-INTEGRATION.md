@@ -71,6 +71,18 @@ Migración: `051_widget_mateo_conversaciones.sql` (tablas `widget_conversacion`,
 
 Guards: Bearer WMS + tenant. Ownership siempre por `id_usuario` del contexto. Prisma: `WidgetConversacion` / `WidgetMensaje`.
 
+### Cierre POL-137 (identificación segura del chat)
+
+| Capa | Evidencia |
+|------|-----------|
+| API | `POST /auth/mateo/widget-token` exige Bearer Supabase activo; emite JWT 300s con `idUsuario`, `codigoEmpresa`, `codigoCuenta`, `idRol` |
+| API | `/mateo/conversaciones` filtra por `id_usuario` del tenant (404 si ajeno) |
+| Web | `MateoWidgetHost` no monta sin `accessToken`; `configureTokenFetcher` → widget-token |
+| Widget | `authToken.ts` rechaza sin fetcher; `embed.tsx` exige `tokenFetcher` o `configureTokenFetcher` previo |
+| BD | RLS `widget_conversacion` por `id_usuario` + `codigo_cuenta` (migración `052`) |
+
+Tests automatizados: `test/mateo-widget-auth.e2e-spec.ts`, `test/mateo-conversaciones.e2e-spec.ts`.
+
 ---
 
 ## Separación de credenciales por cliente

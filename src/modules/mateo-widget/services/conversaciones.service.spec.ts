@@ -14,6 +14,7 @@ describe('ConversacionesService', () => {
     nivelRol: RolNivel.cuenta,
     codigoEmpresa: 'EMP001',
     codigoCuenta: 'CTA001',
+    codigosCuentaEmpresa: ['CTA001'],
     idBodegas: [] as string[],
   };
 
