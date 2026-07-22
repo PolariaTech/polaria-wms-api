@@ -22,6 +22,7 @@ const mockTenantContext: TenantContext = {
   nivelRol: RolNivel.cuenta,
   codigoEmpresa: 'EMP001',
   codigoCuenta: null,
+  codigosCuentaEmpresa: ['EMP001'],
   idBodegas: [],
 };
 
@@ -53,6 +54,7 @@ describe('TenantGuard', () => {
       nivelRol: RolNivel.plataforma,
       codigoEmpresa: null,
       codigoCuenta: null,
+      codigosCuentaEmpresa: [],
       idBodegas: [],
     };
     tenantService.buildContext.mockResolvedValue(configuradorContext);

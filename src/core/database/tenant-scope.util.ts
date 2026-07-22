@@ -55,6 +55,14 @@ export function assertOperationalTenantScope(
     );
   }
 
+  if (!ctx.codigoCuenta && ctx.codigoEmpresa) {
+    if (!ctx.codigosCuentaEmpresa.includes(payload.codigoCuenta)) {
+      throw new ForbiddenException(
+        'La cuenta indicada no pertenece a su empresa',
+      );
+    }
+  }
+
   if (ctx.nivelRol === RolNivel.bodega) {
     if (!ctx.idBodegas.includes(payload.idBodega)) {
       throw new ForbiddenException(

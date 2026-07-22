@@ -38,6 +38,7 @@ export class TenantService {
         nivelRol: usuario.rol.nivel,
         codigoEmpresa: null,
         codigoCuenta: null,
+        codigosCuentaEmpresa: [],
         idBodegas,
       };
     }
@@ -68,12 +69,22 @@ export class TenantService {
       );
     }
 
+    const codigosCuentaEmpresa = usuario.codigoEmpresa
+      ? (
+          await this.prisma.cuenta.findMany({
+            where: { codigoEmpresa: usuario.codigoEmpresa, estaActiva: true },
+            select: { codigoCuenta: true },
+          })
+        ).map((c) => c.codigoCuenta)
+      : [];
+
     return {
       idUsuario: usuario.idUsuario,
       idRol: usuario.idRol,
       nivelRol: usuario.rol.nivel,
       codigoEmpresa: usuario.codigoEmpresa,
       codigoCuenta: usuario.codigoCuenta,
+      codigosCuentaEmpresa,
       idBodegas,
     };
   }
