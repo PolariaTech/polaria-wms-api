@@ -34,6 +34,12 @@ Base path: `/inventario/movimientos`
 
 - Utilidad `syncUbicacionEstadoSlot`: actualiza `ubicacion.estado_slot` según stock activo tras recepción, OT y procesamiento.
 
+## Verificación POL-141
+
+- Locks: `docs/MAPA-POL141.md`, `test/warehouse-state-lock.e2e-spec.ts`
+- FEFO: `fefo-warehouse-state.util.spec.ts`
+- Concurrencia manual: `docs/MAPA-CONCURRENCIA-POL141.md`
+
 ## Lectura en web
 
 El frontend puede seguir usando Supabase Realtime para lectura; lock/unlock y movimientos **siempre** vía API.

@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { RolNivel, WmsRol } from '../../../generated/prisma/client';
+import { LOCK_STALE_MS } from '../constants/inventory.constants';
 import { WarehouseStateRepository } from '../infrastructure/warehouse-state.repository';
 import { WarehouseStateService } from './warehouse-state.service';
 
@@ -113,5 +114,81 @@ describe('WarehouseStateService', () => {
     await expect(
       service.unlock(idWs, dto, operarioContext),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('permite takeover cuando el lock está stale', async () => {
+    repository.findById.mockResolvedValue({
+      ...row,
+      lockedBy: 'otro-usuario',
+      lockedAt: new Date(Date.now() - LOCK_STALE_MS - 1_000),
+    } as never);
+    repository.lock.mockResolvedValue({
+      ...row,
+      lockedBy: operarioContext.idUsuario,
+      lockedAt: new Date(),
+      version: 2,
+    } as never);
+
+    const result = await service.lock(idWs, dto, operarioContext);
+
+    expect(repository.lock).toHaveBeenCalledWith(
+      idWs,
+      operarioContext.idUsuario,
+      undefined,
+      true,
+    );
+    expect(result.lockedBy).toBe(operarioContext.idUsuario);
+  });
+
+  it('permite force unlock a jefe de bodega', async () => {
+    const jefeContext = {
+      ...operarioContext,
+      idUsuario: 'usr-jefe',
+      idRol: WmsRol.jefe_bodega,
+    };
+
+    repository.findById.mockResolvedValue({
+      ...row,
+      lockedBy: 'otro-usuario',
+      lockedAt: new Date(),
+    } as never);
+    repository.unlock.mockResolvedValue({
+      ...row,
+      lockedBy: null,
+      lockedAt: null,
+      version: 2,
+    } as never);
+
+    const result = await service.unlock(idWs, dto, jefeContext);
+
+    expect(repository.unlock).toHaveBeenCalledWith(
+      idWs,
+      jefeContext.idUsuario,
+      true,
+    );
+    expect(result.lockedBy).toBeNull();
+  });
+
+  it('pasa expectedVersion al bloquear', async () => {
+    repository.findById.mockResolvedValue(row as never);
+    repository.lock.mockResolvedValue({
+      ...row,
+      lockedBy: operarioContext.idUsuario,
+      lockedAt: new Date(),
+      version: 2,
+    } as never);
+
+    await service.lock(
+      idWs,
+      { ...dto, expectedVersion: 1 },
+      operarioContext,
+    );
+
+    expect(repository.lock).toHaveBeenCalledWith(
+      idWs,
+      operarioContext.idUsuario,
+      1,
+      false,
+    );
   });
 });
