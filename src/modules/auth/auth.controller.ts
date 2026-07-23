@@ -46,6 +46,7 @@ import {
 } from './dto/mateo-response.dto';
 import { PreloginDto } from './dto/prelogin.dto';
 import { SWAGGER_TAGS } from '../../core/swagger/swagger.constants';
+import { AuthThrottle } from '../../core/security/auth-throttle.decorator';
 import type {
   LoginResponse,
   MateoExchangeResponse,
@@ -61,6 +62,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('prelogin')
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Validar identidad y contexto',
@@ -85,6 +87,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Iniciar sesi?n',
@@ -147,6 +150,7 @@ export class AuthController {
   }
 
   @Post('mateo-exchange')
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Canjear código SSO (WMS ↔ Mateo)',

@@ -16,10 +16,12 @@ import { ProcessingModule } from './modules/processing/processing.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { TransportModule } from './modules/transport/transport.module';
 import { MateoWidgetModule } from './modules/mateo-widget/mateo-widget.module';
+import { SecurityModule } from './core/security/security.module';
 
 @Module({
   imports: [
     AppConfigModule,
+    SecurityModule,
     DatabaseModule,
     AuthCoreModule,
     GuardsModule,

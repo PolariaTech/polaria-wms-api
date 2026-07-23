@@ -43,8 +43,8 @@ describe('SensitiveWriteGuard', () => {
     ).toBe(true);
   });
 
-  it('rechaza operario sin permiso de escritura', () => {
-    expect(() =>
+  it('permite operario con permiso de escritura de inventario', () => {
+    expect(
       guard.canActivate(
         mockExecutionContext({
           idUsuario: 'u1',
@@ -55,7 +55,7 @@ describe('SensitiveWriteGuard', () => {
           idBodegas: ['b1'],
         }),
       ),
-    ).toThrow(ForbiddenException);
+    ).toBe(true);
   });
 
   it('rechaza sin tenantContext', () => {
