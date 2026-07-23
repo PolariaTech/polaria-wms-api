@@ -84,6 +84,13 @@ describe('MateoWidgetTokenService', () => {
     expect(payload.iss).toBe(MATEO_WIDGET_JWT_DEFAULT_ISSUER);
     expect(payload.aud).toBe(MATEO_WIDGET_JWT_DEFAULT_AUDIENCE);
 
+    const payloadWithRol = jwtService.verify<{ rol: string }>(result.token, {
+      secret: 'test-widget-secret',
+      issuer: MATEO_WIDGET_JWT_DEFAULT_ISSUER,
+      audience: MATEO_WIDGET_JWT_DEFAULT_AUDIENCE,
+    });
+    expect(payloadWithRol.rol).toBe(WmsRol.administrador_cuenta);
+
     const [headerB64] = result.token.split('.');
     const header = JSON.parse(
       Buffer.from(headerB64, 'base64url').toString('utf8'),

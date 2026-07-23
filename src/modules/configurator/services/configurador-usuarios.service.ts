@@ -79,6 +79,7 @@ export class ConfiguradorUsuariosService {
     const idAuth = await this.supabaseAuth.createAuthUser(correo, dto.password);
 
     try {
+      const telefono = dto.telefono?.trim() || null;
       const usuario =
         await this.usuarioRepository.createUsuarioWithOptionalAsignacion({
           idAuth,
@@ -88,6 +89,7 @@ export class ConfiguradorUsuariosService {
           nombre: dto.nombre,
           username,
           correo,
+          telefono,
           idCreador,
           idBodega: idBodega ?? undefined,
         });
@@ -99,6 +101,7 @@ export class ConfiguradorUsuariosService {
         idRol: usuario.idRol,
         codigoCuenta: usuario.codigoCuenta,
         correo: usuario.correo,
+        telefono: usuario.telefono,
       };
     } catch (error) {
       await this.supabaseAuth.deleteAuthUser(idAuth);

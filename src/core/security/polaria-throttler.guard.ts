@@ -7,7 +7,7 @@ import type { AuthenticatedRequest } from '../tenant/tenant-context.interface';
 @Injectable()
 export class PolariaThrottlerGuard extends ThrottlerGuard {
   protected async getTracker(req: Record<string, unknown>): Promise<string> {
-    const request = req as Request & AuthenticatedRequest;
+    const request = req as unknown as Request & AuthenticatedRequest;
     const ip =
       (request.headers['x-forwarded-for'] as string | undefined)
         ?.split(',')[0]

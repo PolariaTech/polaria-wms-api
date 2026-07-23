@@ -45,15 +45,18 @@ Payload JWT:
   "codigoEmpresa": "EMP001 | null",
   "codigoCuenta": "CTA001 | null",
   "idRol": "administrador_cuenta",
+  "rol": "administrador_cuenta",
   "email": "user@empresa.com",
   "given_name": "Ana",
   "family_name": "Pérez",
   "iss": "bodega-frio-v2",
   "aud": "mateo-support-widget",
-  "exp": 1710000000
+  "iat": 1710000000,
+  "exp": 1710000300
 }
 ```
 
+`idRol` y `rol` son el mismo valor (`usuario.id_rol` en BD). El widget también reenvía `id_rol` / `rol` / `id_usuario` / `email` en el **body** del webhook para que el workflow de n8n los pase al prompt sin decodificar el JWT.
 **Contrato n8n (POL-71):** validar `Authorization: Bearer <token>` con el **mismo** `MATEO_WIDGET_JWT_SECRET`, comprobar `iss` / `aud` / `kid`, y resolver `sub` → `id_usuario` vía `resolve_web_user` en Supabase.
 
 ### Conversaciones (persistencia)

@@ -10,6 +10,7 @@ export interface CreateUsuarioRecordInput {
   nombre: string;
   username: string;
   correo: string;
+  telefono?: string | null;
   idCreador: string;
   idBodega?: string;
 }
@@ -56,6 +57,7 @@ export class ConfiguradorUsuarioRepository {
           nombre: input.nombre.trim(),
           username: input.username.trim(),
           correo: input.correo.trim().toLowerCase(),
+          telefono: input.telefono?.trim() || null,
           idCreador: input.idCreador,
         },
       });

@@ -7,4 +7,5 @@ export interface CreateUsuarioResponse {
   idRol: WmsRol;
   codigoCuenta: string | null;
   correo: string;
+  telefono: string | null;
 }

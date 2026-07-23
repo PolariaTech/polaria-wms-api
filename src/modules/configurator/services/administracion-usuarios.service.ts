@@ -57,6 +57,7 @@ export class AdministracionUsuariosService {
         codigoCuenta: ctx.codigoCuenta,
         idBodega: dto.idBodega,
         correo: dto.correo,
+        telefono: dto.telefono,
         password: dto.password,
       },
       ctx.idUsuario,

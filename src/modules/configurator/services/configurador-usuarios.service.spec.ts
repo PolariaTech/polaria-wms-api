@@ -268,6 +268,7 @@ describe('ConfiguradorUsuariosService', () => {
       idRol: WmsRol.operario,
       codigoCuenta: 'CTA001',
       correo: 'operario@test.com',
+      telefono: null,
     } as never);
 
     const result = await service.create(baseDto, idCreador);
@@ -279,6 +280,7 @@ describe('ConfiguradorUsuariosService', () => {
       idRol: WmsRol.operario,
       codigoCuenta: 'CTA001',
       correo: 'operario@test.com',
+      telefono: null,
     });
     expect(supabaseAuth.createAuthUser).toHaveBeenCalledWith(
       'operario@test.com',
@@ -289,6 +291,7 @@ describe('ConfiguradorUsuariosService', () => {
         idAuth: 'auth-new',
         idBodega: 'bodega-uuid',
         idCreador,
+        telefono: null,
       }),
     );
   });

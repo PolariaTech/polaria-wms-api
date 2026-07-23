@@ -47,8 +47,21 @@ export class CreateUsuarioDto {
   @IsEmail()
   correo!: string;
 
-  @ApiProperty({ example: 'secreto123', minLength: 6 })
+  @ApiPropertyOptional({
+    example: '+573001112233',
+    description: 'Teléfono en formato internacional E.164 (opcional)',
+  })
+  @IsOptional()
   @IsString()
-  @MinLength(6)
+  telefono?: string | null;
+
+  @ApiProperty({
+    example: 'ClaveSegura1!',
+    minLength: 8,
+    description:
+      'Mín. 8 caracteres, mayúscula, minúscula, número y carácter especial',
+  })
+  @IsString()
+  @MinLength(8)
   password!: string;
 }

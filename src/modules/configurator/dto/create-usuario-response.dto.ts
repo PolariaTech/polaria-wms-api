@@ -19,4 +19,10 @@ export class CreateUsuarioResponseDto {
 
   @ApiProperty({ example: 'operario@empresa.com' })
   correo!: string;
+
+  @ApiPropertyOptional({
+    example: '+573001112233',
+    nullable: true,
+  })
+  telefono!: string | null;
 }

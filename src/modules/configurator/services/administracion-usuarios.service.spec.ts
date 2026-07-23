@@ -23,7 +23,8 @@ describe('AdministracionUsuariosService', () => {
     username: 'operador.c1',
     nombre: 'Operador Cuenta',
     correo: 'operador@test.com',
-    password: 'secret1',
+    telefono: '+573001112233',
+    password: 'ClaveSegura1!',
   };
 
   beforeEach(async () => {
@@ -47,6 +48,7 @@ describe('AdministracionUsuariosService', () => {
       idRol: WmsRol.operador_cuenta,
       codigoCuenta: 'CTA001',
       correo: baseDto.correo,
+      telefono: baseDto.telefono,
     });
   });
 
@@ -58,6 +60,7 @@ describe('AdministracionUsuariosService', () => {
         idRol: WmsRol.operador_cuenta,
         codigoEmpresa: 'EMP001',
         codigoCuenta: 'CTA001',
+        telefono: '+573001112233',
       }),
       adminContext.idUsuario,
     );

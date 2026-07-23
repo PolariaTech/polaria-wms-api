@@ -33,6 +33,7 @@ export class MovimientoInventarioService {
       {
         idBodega: query.idBodega,
         ...(query.idProducto ? { idProducto: query.idProducto } : {}),
+        ...(query.idLote ? { idLote: query.idLote } : {}),
         ...(tipo ? { tipoMovimiento: tipo } : {}),
         ...(query.idReferencia ? { idReferencia: query.idReferencia } : {}),
         ...(query.idUbicacion

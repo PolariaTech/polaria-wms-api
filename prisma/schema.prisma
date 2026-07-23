@@ -420,6 +420,7 @@ model Usuario {
   nombre                 String                 @db.VarChar(255)
   username               String                 @unique
   correo                 String                 @unique
+  telefono               String?                @db.VarChar(32)
   estaActivo             Boolean                @default(true) @map("esta_activo")
   createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)

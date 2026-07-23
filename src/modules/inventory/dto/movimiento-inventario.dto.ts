@@ -31,6 +31,13 @@ export class ListMovimientosInventarioQueryDto {
   @IsOptional()
   @IsUUID()
   idReferencia?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtra el historial de una caja/lote concreto',
+  })
+  @IsOptional()
+  @IsUUID()
+  idLote?: string;
 }
 
 export class MovimientoInventarioResponseDto {

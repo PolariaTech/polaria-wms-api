@@ -28,7 +28,10 @@ export interface MateoWidgetJwtPayload {
   idUsuario: string;
   codigoEmpresa: string | null;
   codigoCuenta: string | null;
+  /** Rol WMS del usuario logueado (enum Prisma `WmsRol`). */
   idRol: WmsRol;
+  /** Alias explícito de `idRol` para workflows n8n / prompts de Mateo. */
+  rol: WmsRol;
   email: string;
   given_name?: string;
   family_name?: string;
@@ -58,6 +61,7 @@ export class MateoWidgetTokenService {
         codigoEmpresa: usuario.codigoEmpresa,
         codigoCuenta: usuario.codigoCuenta,
         idRol: usuario.idRol,
+        rol: usuario.idRol,
         email: usuario.correo,
         ...(givenName ? { given_name: givenName } : {}),
         ...(familyName ? { family_name: familyName } : {}),
