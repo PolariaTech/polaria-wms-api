@@ -24,9 +24,9 @@ Guards: `JwtAuthGuard` + `TenantGuard` (Bearer **sesión WMS**, no el JWT de n8n
 
 ## Modelo
 
-Tablas Supabase: `widget_conversacion` / `widget_mensaje`  
-Migración: `polaria-wms-db` → `051_widget_mateo_conversaciones.sql`  
-Prisma: `WidgetConversacion` / `WidgetMensaje`
+Tablas Supabase: `mateo_support.widget_conversacion` / `mateo_support.widget_mensaje`  
+Migración: `polaria-wms-db` → `051` + `055_widget_tables_mateo_support_schema.sql`  
+Prisma: `WidgetConversacion` / `WidgetMensaje` (`@@schema("mateo_support")`)
 
 ## Docs
 

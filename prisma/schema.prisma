@@ -6,6 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["public", "mateo_support"]
 }
 
 enum WmsRol {
@@ -20,6 +21,8 @@ enum WmsRol {
   transportista
 
   @@map("wms_rol")
+
+  @@schema("public")
 }
 
 enum RolNivel {
@@ -28,6 +31,8 @@ enum RolNivel {
   bodega
 
   @@map("rol_nivel")
+
+  @@schema("public")
 }
 
 enum EstadoSolicitudCompra {
@@ -39,6 +44,8 @@ enum EstadoSolicitudCompra {
   cancelada
 
   @@map("estado_solicitud_compra")
+
+  @@schema("public")
 }
 
 enum EstadoOrdenCompra {
@@ -50,6 +57,8 @@ enum EstadoOrdenCompra {
   cancelada
 
   @@map("estado_orden_compra")
+
+  @@schema("public")
 }
 
 enum TipoMovimiento {
@@ -67,6 +76,8 @@ enum TipoMovimiento {
   produccion_ot
 
   @@map("tipo_movimiento")
+
+  @@schema("public")
 }
 
 enum TipoAuditoria {
@@ -78,6 +89,8 @@ enum TipoAuditoria {
   acceso_denegado
 
   @@map("tipo_auditoria")
+
+  @@schema("public")
 }
 
 enum EstadoOrdenTrabajo {
@@ -88,6 +101,8 @@ enum EstadoOrdenTrabajo {
   cancelada
 
   @@map("estado_orden_trabajo")
+
+  @@schema("public")
 }
 
 enum TipoOrdenTrabajo {
@@ -99,6 +114,8 @@ enum TipoOrdenTrabajo {
   otro
 
   @@map("tipo_orden_trabajo")
+
+  @@schema("public")
 }
 
 enum TipoLineaOt {
@@ -107,6 +124,8 @@ enum TipoLineaOt {
   subproducto
 
   @@map("tipo_linea_ot")
+
+  @@schema("public")
 }
 
 enum EstadoOrdenVenta {
@@ -119,6 +138,8 @@ enum EstadoOrdenVenta {
   cancelada
 
   @@map("estado_orden_venta")
+
+  @@schema("public")
 }
 
 enum EstadoViajeTransporte {
@@ -128,6 +149,8 @@ enum EstadoViajeTransporte {
   cancelado
 
   @@map("estado_viaje_transporte")
+
+  @@schema("public")
 }
 
 enum EstadoGuiaEnvio {
@@ -138,6 +161,8 @@ enum EstadoGuiaEnvio {
   anulada
 
   @@map("estado_guia_envio")
+
+  @@schema("public")
 }
 
 enum TipoEvidenciaTransporte {
@@ -145,6 +170,8 @@ enum TipoEvidenciaTransporte {
   firma
 
   @@map("tipo_evidencia_transporte")
+
+  @@schema("public")
 }
 
 enum BodegaTipo {
@@ -152,6 +179,8 @@ enum BodegaTipo {
   externa
 
   @@map("bodega_tipo")
+
+  @@schema("public")
 }
 
 enum EstadoSolicitudBodega {
@@ -161,6 +190,8 @@ enum EstadoSolicitudBodega {
   cancelada
 
   @@map("estado_solicitud_bodega")
+
+  @@schema("public")
 }
 
 enum DestinoTipo {
@@ -168,6 +199,8 @@ enum DestinoTipo {
   externa
 
   @@map("destino_tipo")
+
+  @@schema("public")
 }
 
 enum EstadoSlot {
@@ -177,6 +210,8 @@ enum EstadoSlot {
   en_proceso
 
   @@map("estado_slot")
+
+  @@schema("public")
 }
 
 enum EstadoLote {
@@ -186,6 +221,8 @@ enum EstadoLote {
   agotado
 
   @@map("estado_lote")
+
+  @@schema("public")
 }
 
 enum TipoCamion {
@@ -194,6 +231,8 @@ enum TipoCamion {
   isotermico
 
   @@map("tipo_camion")
+
+  @@schema("public")
 }
 
 enum EstadoProcesamiento {
@@ -205,6 +244,8 @@ enum EstadoProcesamiento {
   cancelada
 
   @@map("estado_procesamiento")
+
+  @@schema("public")
 }
 
 enum TipoAlerta {
@@ -214,6 +255,8 @@ enum TipoAlerta {
   otro
 
   @@map("tipo_alerta")
+
+  @@schema("public")
 }
 
 enum EstadoAlerta {
@@ -221,6 +264,8 @@ enum EstadoAlerta {
   cerrada
 
   @@map("estado_alerta")
+
+  @@schema("public")
 }
 
 enum TipoTarea {
@@ -232,6 +277,8 @@ enum TipoTarea {
   otro
 
   @@map("tipo_tarea")
+
+  @@schema("public")
 }
 
 enum EstadoTarea {
@@ -241,6 +288,8 @@ enum EstadoTarea {
   cancelada
 
   @@map("estado_tarea")
+
+  @@schema("public")
 }
 
 enum EstadoTareaCuenta {
@@ -248,6 +297,8 @@ enum EstadoTareaCuenta {
   resuelta
 
   @@map("estado_tarea_cuenta")
+
+  @@schema("public")
 }
 
 enum EstadoIntegracion {
@@ -255,6 +306,8 @@ enum EstadoIntegracion {
   finalizado
 
   @@map("estado_integracion")
+
+  @@schema("public")
 }
 
 model Rol {
@@ -267,6 +320,8 @@ model Rol {
   asignaciones  AsignacionBodega[]
 
   @@map("rol")
+
+  @@schema("public")
 }
 
 model Empresa {
@@ -282,6 +337,8 @@ model Empresa {
   solicitudesAltaBodega SolicitudAltaBodega[]
 
   @@map("empresa")
+
+  @@schema("public")
 }
 
 model Cuenta {
@@ -326,6 +383,8 @@ model Cuenta {
   widgetConversaciones    WidgetConversacion[]
 
   @@map("cuenta")
+
+  @@schema("public")
 }
 
 model Bodega {
@@ -368,6 +427,8 @@ model Bodega {
 
   @@unique([codigoCuenta, codigo], map: "uq_bodega_cuenta_codigo")
   @@map("bodega")
+
+  @@schema("public")
 }
 
 model SolicitudAltaBodega {
@@ -391,6 +452,8 @@ model SolicitudAltaBodega {
   bodegasOrigen     Bodega[]              @relation("BodegaDesdeSolicitud")
 
   @@map("solicitud_alta_bodega")
+
+  @@schema("public")
 }
 
 model AsignacionBodega {
@@ -408,6 +471,8 @@ model AsignacionBodega {
 
   @@unique([idUsuario, idBodega], map: "uq_asignacion_usuario_bodega")
   @@map("asignacion_bodega")
+
+  @@schema("public")
 }
 
 model Usuario {
@@ -452,6 +517,8 @@ model Usuario {
   widgetConversaciones     WidgetConversacion[]
 
   @@map("usuario")
+
+  @@schema("public")
 }
 
 model TipoUbicacion {
@@ -472,6 +539,8 @@ model TipoUbicacion {
 
   @@unique([idBodega, codigo], map: "uq_tipo_ubicacion_bodega_codigo")
   @@map("tipo_ubicacion")
+
+  @@schema("public")
 }
 
 model Zona {
@@ -489,6 +558,8 @@ model Zona {
 
   @@unique([idBodega, codigo], map: "uq_zona_bodega_codigo")
   @@map("zona")
+
+  @@schema("public")
 }
 
 model Ubicacion {
@@ -517,6 +588,8 @@ model Ubicacion {
 
   @@unique([idBodega, codigo], map: "uq_ubicacion_bodega_codigo")
   @@map("ubicacion")
+
+  @@schema("public")
 }
 
 model Proveedor {
@@ -535,6 +608,8 @@ model Proveedor {
 
   @@unique([codigoCuenta, codigo], map: "uq_proveedor_cuenta_codigo")
   @@map("proveedor")
+
+  @@schema("public")
 }
 
 model Cliente {
@@ -557,6 +632,8 @@ model Cliente {
 
   @@unique([codigoCuenta, codigo], map: "uq_cliente_cuenta_codigo")
   @@map("cliente")
+
+  @@schema("public")
 }
 
 model Producto {
@@ -598,6 +675,8 @@ model Producto {
 
   @@unique([codigoCuenta, sku], map: "uq_producto_cuenta_sku")
   @@map("producto")
+
+  @@schema("public")
 }
 
 model Comprador {
@@ -615,6 +694,8 @@ model Comprador {
 
   @@unique([codigoCuenta, codigo], map: "uq_comprador_cuenta_codigo")
   @@map("comprador")
+
+  @@schema("public")
 }
 
 model Planta {
@@ -633,6 +714,8 @@ model Planta {
 
   @@unique([codigoCuenta, codigo], map: "uq_planta_cuenta_codigo")
   @@map("planta")
+
+  @@schema("public")
 }
 
 model Camion {
@@ -657,6 +740,8 @@ model Camion {
 
   @@unique([codigoCuenta, placa], map: "uq_camion_cuenta_placa")
   @@map("camion")
+
+  @@schema("public")
 }
 
 model SolicitudCompra {
@@ -681,6 +766,8 @@ model SolicitudCompra {
 
   @@unique([codigoCuenta, codigo], map: "uq_solicitud_compra_cuenta_codigo")
   @@map("solicitud_compra")
+
+  @@schema("public")
 }
 
 model SolicitudCompraLinea {
@@ -692,6 +779,8 @@ model SolicitudCompraLinea {
   producto               Producto        @relation(fields: [idProducto], references: [idProducto])
 
   @@map("solicitud_compra_linea")
+
+  @@schema("public")
 }
 
 model OrdenCompra {
@@ -720,6 +809,8 @@ model OrdenCompra {
 
   @@unique([codigoCuenta, codigo], map: "uq_orden_compra_cuenta_codigo")
   @@map("orden_compra")
+
+  @@schema("public")
 }
 
 model OrdenCompraLinea {
@@ -734,6 +825,8 @@ model OrdenCompraLinea {
   lineasRecepcion    RecepcionCompraLinea[]
 
   @@map("orden_compra_linea")
+
+  @@schema("public")
 }
 
 model RecepcionCompra {
@@ -753,6 +846,8 @@ model RecepcionCompra {
   lineas         RecepcionCompraLinea[]
 
   @@map("recepcion_compra")
+
+  @@schema("public")
 }
 
 model RecepcionCompraLinea {
@@ -769,6 +864,8 @@ model RecepcionCompraLinea {
   producto            Producto?         @relation(fields: [idProducto], references: [idProducto])
 
   @@map("recepcion_compra_linea")
+
+  @@schema("public")
 }
 
 model Lote {
@@ -793,6 +890,8 @@ model Lote {
 
   @@unique([idBodega, idProducto, codigoLote], map: "uq_lote_bodega_producto_codigo")
   @@map("lote")
+
+  @@schema("public")
 }
 
 model WarehouseState {
@@ -818,6 +917,8 @@ model WarehouseState {
 
   @@unique([idUbicacion, idProducto, idLote], map: "uq_warehouse_state_slot")
   @@map("warehouse_state")
+
+  @@schema("public")
 }
 
 model MovimientoInventario {
@@ -844,6 +945,8 @@ model MovimientoInventario {
   usuario                Usuario         @relation(fields: [idUsuario], references: [idUsuario])
 
   @@map("movimiento_inventario")
+
+  @@schema("public")
 }
 
 model Contador {
@@ -858,6 +961,8 @@ model Contador {
 
   @@unique([codigoCuenta, idBodega, clave], map: "uq_contador_cuenta_bodega_clave")
   @@map("contador")
+
+  @@schema("public")
 }
 
 model AuditoriaOperacion {
@@ -875,6 +980,8 @@ model AuditoriaOperacion {
   usuario      Usuario?      @relation(fields: [idUsuario], references: [idUsuario])
 
   @@map("auditoria_operacion")
+
+  @@schema("public")
 }
 
 model OrdenTrabajo {
@@ -909,6 +1016,8 @@ model OrdenTrabajo {
 
   @@unique([codigoCuenta, codigo], map: "uq_orden_trabajo_cuenta_codigo")
   @@map("orden_trabajo")
+
+  @@schema("public")
 }
 
 model OrdenTrabajoLinea {
@@ -923,6 +1032,8 @@ model OrdenTrabajoLinea {
   ubicacion           Ubicacion?   @relation(fields: [idUbicacion], references: [idUbicacion])
 
   @@map("orden_trabajo_linea")
+
+  @@schema("public")
 }
 
 model OrdenVenta {
@@ -953,6 +1064,8 @@ model OrdenVenta {
 
   @@unique([codigoCuenta, codigo], map: "uq_orden_venta_cuenta_codigo")
   @@map("orden_venta")
+
+  @@schema("public")
 }
 
 model OrdenVentaLinea {
@@ -966,6 +1079,8 @@ model OrdenVentaLinea {
   evidenciasTransporte EvidenciaTransporte[]
 
   @@map("orden_venta_linea")
+
+  @@schema("public")
 }
 
 model ViajeTransporte {
@@ -990,6 +1105,8 @@ model ViajeTransporte {
 
   @@unique([codigoCuenta, codigo], map: "uq_viaje_cuenta_codigo")
   @@map("viaje_transporte")
+
+  @@schema("public")
 }
 
 model GuiaEnvio {
@@ -1008,6 +1125,8 @@ model GuiaEnvio {
 
   @@unique([codigoCuenta, codigo], map: "uq_guia_cuenta_codigo")
   @@map("guia_envio")
+
+  @@schema("public")
 }
 
 model EvidenciaTransporte {
@@ -1024,6 +1143,8 @@ model EvidenciaTransporte {
   lineaOrdenVenta     OrdenVentaLinea?        @relation(fields: [idLineaOrdenVenta], references: [idLineaOrdenVenta], onDelete: SetNull)
 
   @@map("evidencia_transporte")
+
+  @@schema("public")
 }
 
 model SolicitudProcesamiento {
@@ -1065,6 +1186,8 @@ model SolicitudProcesamiento {
 
   @@unique([codigoCuenta, codigo], map: "uq_solicitud_procesamiento_cuenta_codigo")
   @@map("solicitud_procesamiento")
+
+  @@schema("public")
 }
 
 model RegistroMerma {
@@ -1080,6 +1203,8 @@ model RegistroMerma {
   cuenta                   Cuenta                 @relation(fields: [codigoCuenta], references: [codigoCuenta])
 
   @@map("registro_merma")
+
+  @@schema("public")
 }
 
 model AlertaOperativa {
@@ -1104,6 +1229,8 @@ model AlertaOperativa {
   responsable    Usuario?      @relation("AlertaResponsable", fields: [idResponsable], references: [idUsuario])
 
   @@map("alerta_operativa")
+
+  @@schema("public")
 }
 
 model TareaCola {
@@ -1126,6 +1253,8 @@ model TareaCola {
   solicitudProcesamiento   SolicitudProcesamiento? @relation(fields: [idSolicitudProcesamiento], references: [idSolicitudProcesamiento], onDelete: SetNull)
 
   @@map("tarea_cola")
+
+  @@schema("public")
 }
 
 model SesionOperativa {
@@ -1144,6 +1273,8 @@ model SesionOperativa {
 
   @@unique([idUsuario, codigoCuenta, idBodega], map: "uq_sesion_operativa_usuario_bodega")
   @@map("sesion_operativa")
+
+  @@schema("public")
 }
 
 model SolicitudIntegracion {
@@ -1164,6 +1295,8 @@ model SolicitudIntegracion {
   solicitante            Usuario           @relation("SolicitudIntegracionSolicitante", fields: [idSolicitante], references: [idUsuario])
 
   @@map("solicitud_integracion")
+
+  @@schema("public")
 }
 
 model TareaCuenta {
@@ -1181,6 +1314,8 @@ model TareaCuenta {
   creador       Usuario           @relation("TareaCuentaCreador", fields: [idCreador], references: [idUsuario])
 
   @@map("tarea_cuenta")
+
+  @@schema("public")
 }
 
 model WidgetConversacion {
@@ -1196,6 +1331,8 @@ model WidgetConversacion {
 
   @@index([idUsuario, updatedAt(sort: Desc)], map: "idx_widget_conversacion_usuario_updated")
   @@map("widget_conversacion")
+
+  @@schema("mateo_support")
 }
 
 model WidgetMensaje {
@@ -1210,4 +1347,6 @@ model WidgetMensaje {
 
   @@index([idConversacion, createdAt], map: "idx_widget_mensaje_conversacion_created")
   @@map("widget_mensaje")
+
+  @@schema("mateo_support")
 }
