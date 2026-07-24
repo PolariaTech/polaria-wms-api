@@ -178,11 +178,7 @@ describe('WarehouseStateService', () => {
       version: 2,
     } as never);
 
-    await service.lock(
-      idWs,
-      { ...dto, expectedVersion: 1 },
-      operarioContext,
-    );
+    await service.lock(idWs, { ...dto, expectedVersion: 1 }, operarioContext);
 
     expect(repository.lock).toHaveBeenCalledWith(
       idWs,

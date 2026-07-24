@@ -68,10 +68,7 @@ export class ConversacionesController {
   @ApiOperation({ summary: 'Crear conversación vacía' })
   @ApiCreatedResponse({ type: MateoConversacionDetalleDto })
   @ApiUnauthorizedResponse()
-  create(
-    @Body() dto: CreateConversacionDto,
-    @TenantCtx() ctx: TenantContext,
-  ) {
+  create(@Body() dto: CreateConversacionDto, @TenantCtx() ctx: TenantContext) {
     return this.conversacionesService.create(dto, ctx);
   }
 

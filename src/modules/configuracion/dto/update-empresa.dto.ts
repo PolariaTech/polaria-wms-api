@@ -10,7 +10,8 @@ export class UpdateEmpresaDto {
   @ApiPropertyOptional({
     example: '+573001112233',
     nullable: true,
-    description: 'Teléfono internacional. Enviar null o string vacío para limpiar.',
+    description:
+      'Teléfono internacional. Enviar null o string vacío para limpiar.',
   })
   @IsOptional()
   @IsString()

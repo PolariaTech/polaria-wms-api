@@ -1,4 +1,8 @@
-import { INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  UnauthorizedException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -58,7 +62,10 @@ describe('Mateo conversaciones auth (e2e)', () => {
       controllers: [ConversacionesController],
       providers: [
         ConversacionesService,
-        { provide: ConversacionesRepository, useValue: conversacionesRepository },
+        {
+          provide: ConversacionesRepository,
+          useValue: conversacionesRepository,
+        },
         { provide: SupabaseAuthService, useValue: supabaseAuth },
         { provide: TenantService, useValue: tenantService },
         JwtAuthGuard,

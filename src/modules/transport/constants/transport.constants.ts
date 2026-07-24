@@ -11,7 +11,8 @@ export const CONTADOR_CLAVE_GUIA_ENVIO = 'guia_envio';
 export const TIPO_REFERENCIA_DESPACHO_PAQUETE = 'orden_venta';
 
 /** @deprecated Usar TIPO_REFERENCIA_DESPACHO_PAQUETE (viaje_transporte no está en el CHECK). */
-export const TIPO_REFERENCIA_VIAJE_TRANSPORTE = TIPO_REFERENCIA_DESPACHO_PAQUETE;
+export const TIPO_REFERENCIA_VIAJE_TRANSPORTE =
+  TIPO_REFERENCIA_DESPACHO_PAQUETE;
 
 /** Custodio arma el paquete y lo envía al rol transporte (flujo frio). */
 export const ROLES_PAQUETE_DESPACHO = [

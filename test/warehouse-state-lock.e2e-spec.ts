@@ -101,9 +101,9 @@ describe('Warehouse state lock (e2e)', () => {
         {
           provide: TenantService,
           useValue: {
-            buildContext: jest.fn().mockImplementation(() =>
-              Promise.resolve(currentContext),
-            ),
+            buildContext: jest
+              .fn()
+              .mockImplementation(() => Promise.resolve(currentContext)),
           },
         },
         JwtAuthGuard,

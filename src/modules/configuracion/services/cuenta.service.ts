@@ -83,9 +83,8 @@ export class CuentaService {
     idsBodegasDeseadas: string[],
     codigoCuentaDestinoDto?: string,
   ): Promise<void> {
-    const actuales = await this.cuentaRepository.findBodegasActivasDeCuenta(
-      codigoCuenta,
-    );
+    const actuales =
+      await this.cuentaRepository.findBodegasActivasDeCuenta(codigoCuenta);
     const actualesIds = new Set(actuales.map((item) => item.idBodega));
     const deseadasIds = new Set(idsBodegasDeseadas);
 

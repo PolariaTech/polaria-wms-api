@@ -1,4 +1,8 @@
-import { INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  UnauthorizedException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -83,7 +87,8 @@ describe('Mateo widget auth (e2e)', () => {
           provide: ConfigService,
           useValue: {
             getOrThrow: jest.fn((key: string) => {
-              if (key === 'MATEO_WIDGET_JWT_SECRET') return 'test-widget-secret';
+              if (key === 'MATEO_WIDGET_JWT_SECRET')
+                return 'test-widget-secret';
               if (key === 'MATEO_HANDOFF_SECRET') return 'test-handoff-secret';
               throw new Error(`missing config ${key}`);
             }),
@@ -150,14 +155,7 @@ describe('Mateo widget auth (e2e)', () => {
       secret: 'test-widget-secret',
       issuer: MATEO_WIDGET_JWT_DEFAULT_ISSUER,
       audience: MATEO_WIDGET_JWT_DEFAULT_AUDIENCE,
-    }) as {
-      sub: string;
-      idUsuario: string;
-      codigoEmpresa: string;
-      codigoCuenta: string;
-      idRol: string;
-      email: string;
-    };
+    });
 
     expect(payload.sub).toBe(mockUsuario.idAuth);
     expect(payload.idUsuario).toBe(mockUsuario.idUsuario);

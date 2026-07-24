@@ -92,11 +92,7 @@ describe('ConversacionesService', () => {
     repository.appendMensaje.mockResolvedValue(null);
 
     await expect(
-      service.appendMensaje(
-        'conv-x',
-        { rol: 'user', contenido: 'hola' },
-        ctx,
-      ),
+      service.appendMensaje('conv-x', { rol: 'user', contenido: 'hola' }, ctx),
     ).rejects.toThrow(NotFoundException);
   });
 });

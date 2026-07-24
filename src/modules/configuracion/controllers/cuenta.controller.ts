@@ -53,7 +53,9 @@ export class CuentaController {
   })
   @ApiOkResponse({ type: UpdateCuentaResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
-  @ApiForbiddenResponse({ description: 'Solo configurador puede actualizar cuentas' })
+  @ApiForbiddenResponse({
+    description: 'Solo configurador puede actualizar cuentas',
+  })
   @ApiNotFoundResponse({ description: 'Cuenta no encontrada' })
   update(
     @Param('codigoCuenta') codigoCuenta: string,

@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { mapEjecutarOrdenError } from './map-ejecutar-orden-error';
 
 describe('mapEjecutarOrdenError', () => {
@@ -15,11 +12,11 @@ describe('mapEjecutarOrdenError', () => {
   });
 
   it('mapea LOCK_HELD_BY_OTHER a ConflictException', () => {
-    expect(() => mapEjecutarOrdenError(new Error('LOCK_HELD_BY_OTHER'))).toThrow(
-      ConflictException,
-    );
-    expect(() => mapEjecutarOrdenError(new Error('LOCK_HELD_BY_OTHER'))).toThrow(
-      'La posición está bloqueada por otro operario',
-    );
+    expect(() =>
+      mapEjecutarOrdenError(new Error('LOCK_HELD_BY_OTHER')),
+    ).toThrow(ConflictException);
+    expect(() =>
+      mapEjecutarOrdenError(new Error('LOCK_HELD_BY_OTHER')),
+    ).toThrow('La posición está bloqueada por otro operario');
   });
 });

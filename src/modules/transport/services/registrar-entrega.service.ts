@@ -56,8 +56,7 @@ export class RegistrarEntregaService {
   }
 
   private mapError(error: unknown): Error {
-    const code =
-      error instanceof Error ? error.message : 'ENTREGA_FAILED';
+    const code = error instanceof Error ? error.message : 'ENTREGA_FAILED';
 
     switch (code) {
       case 'VIAJE_NO_ENCONTRADO':

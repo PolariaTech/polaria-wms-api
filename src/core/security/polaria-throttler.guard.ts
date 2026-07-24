@@ -6,7 +6,7 @@ import type { AuthenticatedRequest } from '../tenant/tenant-context.interface';
 /** Rate limit por IP; si hay tenant, también por empresa (anti noisy-neighbor). */
 @Injectable()
 export class PolariaThrottlerGuard extends ThrottlerGuard {
-  protected async getTracker(req: Record<string, unknown>): Promise<string> {
+  protected getTracker(req: Record<string, unknown>): Promise<string> {
     const request = req as unknown as Request & AuthenticatedRequest;
     const ip =
       (request.headers['x-forwarded-for'] as string | undefined)
@@ -17,9 +17,9 @@ export class PolariaThrottlerGuard extends ThrottlerGuard {
     const empresa = request.tenantContext?.codigoEmpresa;
 
     if (empresa) {
-      return `tenant:${empresa}:${ip}`;
+      return Promise.resolve(`tenant:${empresa}:${ip}`);
     }
 
-    return `ip:${ip}`;
+    return Promise.resolve(`ip:${ip}`);
   }
 }

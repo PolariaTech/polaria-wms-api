@@ -14,7 +14,10 @@ export function cantidadesCoinciden(
 
 /** Como frio: Cerrado(ok) solo si cantidades coinciden y conformidad = true. */
 export function resolverResultadoEntrega(
-  lineas: Array<{ cantidadEsperada: Prisma.Decimal | number; cantidadEntregada: number }>,
+  lineas: Array<{
+    cantidadEsperada: Prisma.Decimal | number;
+    cantidadEntregada: number;
+  }>,
   entregaConforme: boolean,
 ): 'ok' | 'no_ok' {
   if (lineas.length === 0) return 'no_ok';

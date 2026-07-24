@@ -12,7 +12,8 @@ export class UpdateCuentaResponseDto {
 
   @ApiProperty({
     example: true,
-    description: 'Si es false, los usuarios de la cuenta no pueden iniciar sesión',
+    description:
+      'Si es false, los usuarios de la cuenta no pueden iniciar sesión',
   })
   estaActiva!: boolean;
 }

@@ -51,7 +51,9 @@ export class EmpresaController {
   })
   @ApiOkResponse({ type: UpdateEmpresaResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
-  @ApiForbiddenResponse({ description: 'Solo configurador puede actualizar empresas' })
+  @ApiForbiddenResponse({
+    description: 'Solo configurador puede actualizar empresas',
+  })
   @ApiNotFoundResponse({ description: 'Empresa no encontrada' })
   update(
     @Param('codigoEmpresa') codigoEmpresa: string,

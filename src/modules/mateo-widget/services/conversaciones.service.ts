@@ -1,6 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
-import { AppendMensajeDto, CreateConversacionDto } from '../dto/conversaciones.dto';
+import {
+  AppendMensajeDto,
+  CreateConversacionDto,
+} from '../dto/conversaciones.dto';
 import type {
   MateoConversacionDetalle,
   MateoConversacionListItem,

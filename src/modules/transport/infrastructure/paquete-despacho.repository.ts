@@ -272,8 +272,7 @@ export class PaqueteDespachoRepository {
 
     const candidatos = stockCache
       .filter(
-        (row) =>
-          row.idProducto === params.idProducto && row.cantidad.gt(0),
+        (row) => row.idProducto === params.idProducto && row.cantidad.gt(0),
       )
       .sort((a, b) => Number(b.cantidad.sub(a.cantidad)));
 
