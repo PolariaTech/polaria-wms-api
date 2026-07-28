@@ -15,6 +15,9 @@ Guards: `JwtAuthGuard` + `TenantGuard` (Bearer **sesión WMS**, no el JWT de n8n
 | POST | `/:id/mensajes` | Append `{ rol, tipo?, contenido, esError?, createdAt? }` |
 | DELETE | `/:id` | Eliminar si es dueño |
 
+`POST /:id/mensajes` es idempotente frente a reintentos normales del mismo payload
+(mismo `rol/tipo/contenido/esError/createdAt`): devuelve el mensaje existente y no duplica filas.
+
 ## Auth en el host
 
 | Uso | Token |
@@ -25,7 +28,7 @@ Guards: `JwtAuthGuard` + `TenantGuard` (Bearer **sesión WMS**, no el JWT de n8n
 ## Modelo
 
 Tablas Supabase: `mateo_support.widget_conversacion` / `mateo_support.widget_mensaje`  
-Migración: `polaria-wms-db` → `051` + `055_widget_tables_mateo_support_schema.sql`  
+Migración: `polaria-wms-db` → `051` + `055_widget_tables_mateo_support_schema.sql` + `057_widget_mensaje_dedupe_reintento.sql`  
 Prisma: `WidgetConversacion` / `WidgetMensaje` (`@@schema("mateo_support")`)
 
 ## Docs

@@ -62,14 +62,14 @@ Payload JWT:
 ### Conversaciones (persistencia)
 
 Esquema canónico en **polaria-wms-db**: `docs/WIDGET-MATEO-CONVERSACIONES.md`  
-Migración: `051_widget_mateo_conversaciones.sql` (tablas `widget_conversacion`, `widget_mensaje` + RLS + `resolve_web_user`).
+Migraciones clave: `051_widget_mateo_conversaciones.sql`, `055_widget_tables_mateo_support_schema.sql`, `057_widget_mensaje_dedupe_reintento.sql`.
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/mateo/conversaciones` | Lista del usuario autenticado (`id_usuario` del tenant) |
 | GET | `/mateo/conversaciones/:id` | Detalle + mensajes |
 | POST | `/mateo/conversaciones` | Crear (`{ titulo? }`; `codigo_cuenta` desde tenant) |
-| POST | `/mateo/conversaciones/:id/mensajes` | Append `{ rol, tipo?, contenido, esError?, createdAt? }` |
+| POST | `/mateo/conversaciones/:id/mensajes` | Append idempotente ante reintento normal `{ rol, tipo?, contenido, esError?, createdAt? }` |
 | DELETE | `/mateo/conversaciones/:id` | Eliminar si pertenece al usuario |
 
 Guards: Bearer WMS + tenant. Ownership siempre por `id_usuario` del contexto. Prisma: `WidgetConversacion` / `WidgetMensaje`.
