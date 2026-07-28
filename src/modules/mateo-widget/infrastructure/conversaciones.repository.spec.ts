@@ -73,7 +73,8 @@ describe('ConversacionesRepository.appendMensaje', () => {
         }),
       }),
     );
-    expect(prisma.widgetConversacion.update).toHaveBeenCalledTimes(1);
+    // Se invoca una vez al construir la transacción y otra en el fallback dedupe.
+    expect(prisma.widgetConversacion.update).toHaveBeenCalledTimes(2);
     expect(result).toEqual(existing);
   });
 });
