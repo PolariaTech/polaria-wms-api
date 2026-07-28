@@ -5,6 +5,12 @@ import type {
   MateoMensajeTipo,
 } from '../interfaces/conversaciones.interfaces';
 
+/** Alineado con el widget (`content.slice(0, 40)`). */
+export const WIDGET_TITULO_MAX_LEN = 40;
+
+/** Título genérico cuando el primer mensaje es solo imagen (sin caption). */
+export const WIDGET_TITULO_IMAGEN = 'Imagen';
+
 function isUniqueViolation(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -12,6 +18,33 @@ function isUniqueViolation(error: unknown): boolean {
     'code' in error &&
     (error as { code?: string }).code === 'P2002'
   );
+}
+
+/** Título legible a partir de un mensaje de usuario (texto o imagen). */
+export function tituloFromUserMensaje(
+  tipo: MateoMensajeTipo | string,
+  contenido: string,
+): string | null {
+  const trimmed = contenido.trim();
+  if (!trimmed) return null;
+  if (tipo === 'image') return WIDGET_TITULO_IMAGEN;
+  return trimmed.slice(0, WIDGET_TITULO_MAX_LEN);
+}
+
+/**
+ * Decide si el mensaje entrante debe (re)escribir el título de la conversación.
+ * - Primer mensaje user → fija título.
+ * - Caption de texto tras una imagen → reemplaza el placeholder "Imagen".
+ */
+export function shouldUpdateTitulo(
+  tituloActual: string | null | undefined,
+  rol: MateoMensajeRol | string,
+  tipo: MateoMensajeTipo | string,
+  esError: boolean,
+): boolean {
+  if (rol !== 'user' || esError) return false;
+  if (!tituloActual) return true;
+  return tituloActual === WIDGET_TITULO_IMAGEN && tipo === 'text';
 }
 
 @Injectable()
@@ -28,6 +61,13 @@ export class ConversacionesRepository {
         codigoCuenta: true,
         createdAt: true,
         updatedAt: true,
+        // Fallback para conversaciones antiguas con titulo null.
+        mensajes: {
+          where: { rol: 'user', esError: false },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          select: { contenido: true, tipo: true },
+        },
       },
     });
   }
@@ -86,7 +126,7 @@ export class ConversacionesRepository {
         idConversacion: params.idConversacion,
         idUsuario: params.idUsuario,
       },
-      select: { idConversacion: true },
+      select: { idConversacion: true, titulo: true },
     });
 
     if (!owned) {
@@ -102,6 +142,20 @@ export class ConversacionesRepository {
       esError: true,
       createdAt: true,
     } as const;
+
+    const nextTitulo = shouldUpdateTitulo(
+      owned.titulo,
+      params.rol,
+      params.tipo,
+      params.esError,
+    )
+      ? tituloFromUserMensaje(params.tipo, params.contenido)
+      : null;
+
+    const conversacionUpdate = {
+      updatedAt: new Date(),
+      ...(nextTitulo ? { titulo: nextTitulo } : {}),
+    };
 
     let mensaje: {
       idMensaje: string;
@@ -127,7 +181,7 @@ export class ConversacionesRepository {
         }),
         this.prisma.widgetConversacion.update({
           where: { idConversacion: params.idConversacion },
-          data: { updatedAt: new Date() },
+          data: conversacionUpdate,
         }),
       ]);
     } catch (error) {
@@ -149,7 +203,7 @@ export class ConversacionesRepository {
         if (existing) {
           await this.prisma.widgetConversacion.update({
             where: { idConversacion: params.idConversacion },
-            data: { updatedAt: new Date() },
+            data: conversacionUpdate,
           });
           return existing;
         }

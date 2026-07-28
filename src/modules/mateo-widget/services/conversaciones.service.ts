@@ -11,7 +11,10 @@ import type {
   MateoMensajeRol,
   MateoMensajeTipo,
 } from '../interfaces/conversaciones.interfaces';
-import { ConversacionesRepository } from '../infrastructure/conversaciones.repository';
+import {
+  ConversacionesRepository,
+  tituloFromUserMensaje,
+} from '../infrastructure/conversaciones.repository';
 
 @Injectable()
 export class ConversacionesService {
@@ -100,10 +103,26 @@ export class ConversacionesService {
     codigoCuenta: string | null;
     createdAt: Date;
     updatedAt: Date;
+    mensajes?: Array<{
+      contenido: string;
+      tipo: string;
+      rol?: string;
+      esError?: boolean;
+    }>;
   }): MateoConversacionListItem {
+    const preview = row.mensajes?.find(
+      (m) =>
+        (m.rol === undefined || m.rol === 'user') &&
+        !m.esError &&
+        m.contenido.trim(),
+    );
+    const tituloDerivado = preview
+      ? tituloFromUserMensaje(preview.tipo, preview.contenido)
+      : null;
+
     return {
       idConversacion: row.idConversacion,
-      titulo: row.titulo,
+      titulo: row.titulo ?? tituloDerivado,
       codigoCuenta: row.codigoCuenta,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

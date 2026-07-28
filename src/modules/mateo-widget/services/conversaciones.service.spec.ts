@@ -61,6 +61,29 @@ describe('ConversacionesService', () => {
     ]);
   });
 
+  it('deriva título del primer mensaje user si titulo es null', async () => {
+    repository.listByUsuario.mockResolvedValue([
+      {
+        idConversacion: 'conv-2',
+        titulo: null,
+        codigoCuenta: 'CTA001',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+        mensajes: [{ contenido: 'Prueba continuidad 1', tipo: 'text' }],
+      },
+    ]);
+
+    await expect(service.list(ctx)).resolves.toEqual([
+      {
+        idConversacion: 'conv-2',
+        titulo: 'Prueba continuidad 1',
+        codigoCuenta: 'CTA001',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-02T00:00:00.000Z',
+      },
+    ]);
+  });
+
   it('lanza 404 si la conversación no pertenece al usuario', async () => {
     repository.findByIdForUsuario.mockResolvedValue(null);
 
