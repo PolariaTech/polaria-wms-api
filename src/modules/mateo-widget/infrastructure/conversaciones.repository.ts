@@ -5,6 +5,15 @@ import type {
   MateoMensajeTipo,
 } from '../interfaces/conversaciones.interfaces';
 
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === 'P2002'
+  );
+}
+
 @Injectable()
 export class ConversacionesRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -84,30 +93,70 @@ export class ConversacionesRepository {
       return null;
     }
 
-    const [mensaje] = await this.prisma.$transaction([
-      this.prisma.widgetMensaje.create({
-        data: {
-          idConversacion: params.idConversacion,
-          rol: params.rol,
-          tipo: params.tipo,
-          contenido: params.contenido,
-          esError: params.esError,
-          ...(params.createdAt ? { createdAt: params.createdAt } : {}),
-        },
-        select: {
-          idMensaje: true,
-          rol: true,
-          tipo: true,
-          contenido: true,
-          esError: true,
-          createdAt: true,
-        },
-      }),
-      this.prisma.widgetConversacion.update({
-        where: { idConversacion: params.idConversacion },
-        data: { updatedAt: new Date() },
-      }),
-    ]);
+    const createdAt = params.createdAt ?? new Date();
+    const mensajeSelect = {
+      idMensaje: true,
+      rol: true,
+      tipo: true,
+      contenido: true,
+      esError: true,
+      createdAt: true,
+    } as const;
+
+    let mensaje: {
+      idMensaje: string;
+      rol: string;
+      tipo: string;
+      contenido: string;
+      esError: boolean;
+      createdAt: Date;
+    };
+
+    try {
+      [mensaje] = await this.prisma.$transaction([
+        this.prisma.widgetMensaje.create({
+          data: {
+            idConversacion: params.idConversacion,
+            rol: params.rol,
+            tipo: params.tipo,
+            contenido: params.contenido,
+            esError: params.esError,
+            createdAt,
+          },
+          select: mensajeSelect,
+        }),
+        this.prisma.widgetConversacion.update({
+          where: { idConversacion: params.idConversacion },
+          data: { updatedAt: new Date() },
+        }),
+      ]);
+    } catch (error) {
+      // Dedupe ante reintentos del cliente: si el INSERT choca con UNIQUE,
+      // devolvemos el mensaje ya persistido en vez de fallar.
+      if (isUniqueViolation(error)) {
+        const existing = await this.prisma.widgetMensaje.findFirst({
+          where: {
+            idConversacion: params.idConversacion,
+            rol: params.rol,
+            tipo: params.tipo,
+            contenido: params.contenido,
+            esError: params.esError,
+            createdAt,
+          },
+          select: mensajeSelect,
+        });
+
+        if (existing) {
+          await this.prisma.widgetConversacion.update({
+            where: { idConversacion: params.idConversacion },
+            data: { updatedAt: new Date() },
+          });
+          return existing;
+        }
+      }
+
+      throw error;
+    }
 
     return mensaje;
   }
