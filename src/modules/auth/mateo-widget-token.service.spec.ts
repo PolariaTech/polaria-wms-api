@@ -23,6 +23,7 @@ describe('MateoWidgetTokenService', () => {
     idRol: WmsRol.administrador_cuenta,
     correo: 'admin@empresa.com',
     nombre: 'Ana Pérez',
+    telefono: '+573009998877',
   };
 
   beforeEach(async () => {
@@ -64,6 +65,7 @@ describe('MateoWidgetTokenService', () => {
       idUsuario: string;
       email: string;
       idRol: string;
+      phone_number?: string | null;
       given_name?: string;
       family_name?: string;
       iss?: string;
@@ -77,6 +79,7 @@ describe('MateoWidgetTokenService', () => {
     expect(payload.sub).toBe('auth-123');
     expect(payload.idUsuario).toBe('usr-1');
     expect(payload.email).toBe('admin@empresa.com');
+    expect(payload.phone_number).toBe('+573009998877');
     expect(payload.idRol).toBe(WmsRol.administrador_cuenta);
     expect(payload.jti).toEqual(expect.any(String));
     expect(payload.given_name).toBe('Ana');
@@ -97,6 +100,18 @@ describe('MateoWidgetTokenService', () => {
     ) as { kid?: string; alg?: string };
     expect(header.alg).toBe('HS256');
     expect(header.kid).toBe(MATEO_WIDGET_JWT_DEFAULT_KID);
+  });
+
+  it('pone phone_number null si el usuario no tiene teléfono', () => {
+    const { token } = service.generateToken({ ...usuario, telefono: null });
+
+    const payload = jwtService.verify<{ phone_number: string | null }>(token, {
+      secret: 'test-widget-secret',
+      issuer: MATEO_WIDGET_JWT_DEFAULT_ISSUER,
+      audience: MATEO_WIDGET_JWT_DEFAULT_AUDIENCE,
+    });
+
+    expect(payload.phone_number).toBeNull();
   });
 
   it('permite reutilizar el mismo token hasta que expire (no one-time)', () => {

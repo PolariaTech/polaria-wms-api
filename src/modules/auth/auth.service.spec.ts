@@ -42,6 +42,7 @@ const mockTenantUser = {
   nombre: 'Admin Cuenta',
   username: 'admin.cuenta',
   correo: 'admin@empresa.com',
+  telefono: '+573001112233',
   estaActivo: true,
   rol: {
     idRol: WmsRol.administrador_cuenta,
@@ -373,6 +374,7 @@ describe('AuthService', () => {
         idRol: WmsRol.administrador_cuenta,
         correo: 'admin@empresa.com',
         nombre: mockTenantUser.nombre,
+        telefono: '+573001112233',
       });
       expect(result).toEqual({ token: 'widget-jwt', expiresIn: 300 });
     });

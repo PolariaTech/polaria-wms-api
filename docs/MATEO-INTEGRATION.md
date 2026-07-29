@@ -47,6 +47,7 @@ Payload JWT:
   "idRol": "administrador_cuenta",
   "rol": "administrador_cuenta",
   "email": "user@empresa.com",
+  "phone_number": "+573001112233 | null",
   "given_name": "Ana",
   "family_name": "Pérez",
   "iss": "bodega-frio-v2",
@@ -56,8 +57,10 @@ Payload JWT:
 }
 ```
 
-`idRol` y `rol` son el mismo valor (`usuario.id_rol` en BD). El widget también reenvía `id_rol` / `rol` / `id_usuario` / `email` en el **body** del webhook para que el workflow de n8n los pase al prompt sin decodificar el JWT.
-**Contrato n8n (POL-71):** validar `Authorization: Bearer <token>` con el **mismo** `MATEO_WIDGET_JWT_SECRET`, comprobar `iss` / `aud` / `kid`, y resolver `sub` → `id_usuario` vía `resolve_web_user` en Supabase.
+`idRol` y `rol` son el mismo valor (`usuario.id_rol` en BD). `phone_number` sale de `usuario.telefono` (null si no hay).  
+El widget reenvía en el **body** del webhook a n8n: `id_rol` / `rol` / `id_usuario` / `email` / `phone_number` / … (identidad) y **`conversation_id`** (UUID de `widget_conversacion`, solo en el body — **no** va en el JWT, porque cambia por cada chat y el token dura ~5 min).
+
+**Contrato n8n (POL-71):** validar `Authorization: Bearer <token>` con el **mismo** `MATEO_WIDGET_JWT_SECRET`, comprobar `iss` / `aud` / `kid`, y resolver `sub` → `id_usuario` vía `resolve_web_user` en Supabase. Simple Memory debe clavear por `conversation_id` del body.
 
 ### Conversaciones (persistencia)
 
