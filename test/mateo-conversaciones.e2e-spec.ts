@@ -69,7 +69,7 @@ describe('Mateo conversaciones auth (e2e)', () => {
   const store = new Map<string, RepoConv>();
 
   const conversacionesRepository = {
-    listByUsuario: jest.fn(async (idUsuario: string) => {
+    listByUsuario: jest.fn((idUsuario: string) => {
       return Array.from(store.values())
         .filter((c) => c.idUsuario === idUsuario)
         .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
@@ -81,7 +81,7 @@ describe('Mateo conversaciones auth (e2e)', () => {
           updatedAt: c.updatedAt,
         }));
     }),
-    findByIdForUsuario: jest.fn(async (idConversacion: string, idUsuario: string) => {
+    findByIdForUsuario: jest.fn((idConversacion: string, idUsuario: string) => {
       const conv = store.get(idConversacion);
       if (!conv || conv.idUsuario !== idUsuario) return null;
       return {
@@ -93,28 +93,34 @@ describe('Mateo conversaciones auth (e2e)', () => {
         mensajes: [...conv.mensajes],
       };
     }),
-    create: jest.fn(async (data: { idUsuario: string; codigoCuenta: string | null; titulo?: string | null }) => {
-      const now = new Date();
-      const conv: RepoConv = {
-        idConversacion: nextConversationId(),
-        idUsuario: data.idUsuario,
-        codigoCuenta: data.codigoCuenta,
-        titulo: data.titulo?.trim() || null,
-        createdAt: now,
-        updatedAt: now,
-        mensajes: [],
-      };
-      store.set(conv.idConversacion, conv);
-      return {
-        idConversacion: conv.idConversacion,
-        titulo: conv.titulo,
-        codigoCuenta: conv.codigoCuenta,
-        createdAt: conv.createdAt,
-        updatedAt: conv.updatedAt,
-      };
-    }),
+    create: jest.fn(
+      (data: {
+        idUsuario: string;
+        codigoCuenta: string | null;
+        titulo?: string | null;
+      }) => {
+        const now = new Date();
+        const conv: RepoConv = {
+          idConversacion: nextConversationId(),
+          idUsuario: data.idUsuario,
+          codigoCuenta: data.codigoCuenta,
+          titulo: data.titulo?.trim() || null,
+          createdAt: now,
+          updatedAt: now,
+          mensajes: [],
+        };
+        store.set(conv.idConversacion, conv);
+        return {
+          idConversacion: conv.idConversacion,
+          titulo: conv.titulo,
+          codigoCuenta: conv.codigoCuenta,
+          createdAt: conv.createdAt,
+          updatedAt: conv.updatedAt,
+        };
+      },
+    ),
     appendMensaje: jest.fn(
-      async (params: {
+      (params: {
         idConversacion: string;
         idUsuario: string;
         rol: 'user' | 'ai';
@@ -155,7 +161,7 @@ describe('Mateo conversaciones auth (e2e)', () => {
         return nuevo;
       },
     ),
-    deleteForUsuario: jest.fn(async (idConversacion: string, idUsuario: string) => {
+    deleteForUsuario: jest.fn((idConversacion: string, idUsuario: string) => {
       const conv = store.get(idConversacion);
       if (!conv || conv.idUsuario !== idUsuario) return false;
       store.delete(idConversacion);
@@ -167,7 +173,7 @@ describe('Mateo conversaciones auth (e2e)', () => {
     store.clear();
     counter = 1;
     supabaseAuth = {
-      getUserFromToken: jest.fn().mockImplementation(async (token: string) => {
+      getUserFromToken: jest.fn().mockImplementation((token: string) => {
         if (token === 'token-usuario-a') return { id: usuarioAAuth };
         if (token === 'token-usuario-b') return { id: usuarioBAuth };
         throw new UnauthorizedException('Token inválido o expirado');
@@ -186,7 +192,7 @@ describe('Mateo conversaciones auth (e2e)', () => {
         {
           provide: TenantService,
           useValue: {
-            buildContext: jest.fn().mockImplementation(async (idAuth: string) => {
+            buildContext: jest.fn().mockImplementation((idAuth: string) => {
               if (idAuth === usuarioAAuth) return usuarioA;
               if (idAuth === usuarioBAuth) return usuarioB;
               throw new UnauthorizedException('Token inválido o expirado');
