@@ -22,7 +22,7 @@ function isUniqueViolation(error: unknown): boolean {
 
 /** Título legible a partir de un mensaje de usuario (texto o imagen). */
 export function tituloFromUserMensaje(
-  tipo: MateoMensajeTipo | string,
+  tipo: string,
   contenido: string,
 ): string | null {
   const trimmed = contenido.trim();
@@ -38,8 +38,8 @@ export function tituloFromUserMensaje(
  */
 export function shouldUpdateTitulo(
   tituloActual: string | null | undefined,
-  rol: MateoMensajeRol | string,
-  tipo: MateoMensajeTipo | string,
+  rol: string,
+  tipo: string,
   esError: boolean,
 ): boolean {
   if (rol !== 'user' || esError) return false;

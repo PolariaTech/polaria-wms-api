@@ -65,7 +65,9 @@ describe('ConversacionesRepository.appendMensaje', () => {
       createdAt: baseParams.createdAt,
     };
     prisma.widgetMensaje.findFirst.mockResolvedValue(existing);
-    prisma.widgetConversacion.update.mockResolvedValue({ idConversacion: owned.idConversacion });
+    prisma.widgetConversacion.update.mockResolvedValue({
+      idConversacion: owned.idConversacion,
+    });
 
     const result = await repo.appendMensaje(baseParams);
 
@@ -163,9 +165,9 @@ describe('tituloFromUserMensaje / shouldUpdateTitulo', () => {
   it('permite upgrade desde placeholder Imagen con caption de texto', () => {
     expect(shouldUpdateTitulo(null, 'user', 'text', false)).toBe(true);
     expect(shouldUpdateTitulo('Titulo', 'user', 'text', false)).toBe(false);
-    expect(shouldUpdateTitulo(WIDGET_TITULO_IMAGEN, 'user', 'text', false)).toBe(
-      true,
-    );
+    expect(
+      shouldUpdateTitulo(WIDGET_TITULO_IMAGEN, 'user', 'text', false),
+    ).toBe(true);
     expect(shouldUpdateTitulo(null, 'ai', 'text', false)).toBe(false);
     expect(shouldUpdateTitulo(null, 'user', 'text', true)).toBe(false);
   });

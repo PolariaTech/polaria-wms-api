@@ -34,6 +34,8 @@ describe('Procesamiento flujo frio (e2e)', () => {
   const operarioId = '660e8400-e29b-41d4-a716-446655440001';
   const solicitudId = '770e8400-e29b-41d4-a716-446655440002';
   const tareaId = '880e8400-e29b-41d4-a716-446655440003';
+  const productoPrimarioId = '990e8400-e29b-41d4-a716-446655440004';
+  const productoSecundarioId = 'aa0e8400-e29b-41d4-a716-446655440005';
 
   const jefeContext = {
     idUsuario: 'jefe-1',
@@ -123,8 +125,8 @@ describe('Procesamiento flujo frio (e2e)', () => {
       .send({
         codigoCuenta: 'CTA001',
         idBodega: bodegaId,
-        idProductoPrimario: 'prod-1',
-        idProductoSecundario: 'prod-2',
+        idProductoPrimario: productoPrimarioId,
+        idProductoSecundario: productoSecundarioId,
         kilosPrimario: 100,
       })
       .expect(201);
@@ -167,7 +169,7 @@ describe('Procesamiento flujo frio (e2e)', () => {
         codigoCuenta: 'CTA001',
         idBodega: bodegaId,
       })
-      .expect(201);
+      .expect(200);
 
     expect(tareaService.completar).toHaveBeenCalledWith(
       tareaId,

@@ -89,7 +89,7 @@ describe('AdministracionUsuariosController (e2e)', () => {
         idRol: WmsRol.operario,
         idBodega: '550e8400-e29b-41d4-a716-446655440000',
         correo: 'nuevo@test.com',
-        password: 'secret1',
+        password: 'secret12',
       })
       .expect(401);
   });
@@ -109,7 +109,7 @@ describe('AdministracionUsuariosController (e2e)', () => {
         idRol: WmsRol.operario,
         idBodega: '550e8400-e29b-41d4-a716-446655440000',
         correo: 'nuevo@test.com',
-        password: 'secret1',
+        password: 'secret12',
       })
       .expect(403);
   });
@@ -139,7 +139,7 @@ describe('AdministracionUsuariosController (e2e)', () => {
         username: 'operador.c1',
         nombre: 'Operador',
         correo: 'operador@test.com',
-        password: 'secret1',
+        password: 'secret12',
       })
       .expect(201);
 
@@ -172,7 +172,7 @@ describe('AdministracionUsuariosController (e2e)', () => {
         idRol: WmsRol.operario,
         idBodega: '550e8400-e29b-41d4-a716-446655440000',
         correo: 'operario@test.com',
-        password: 'secret1',
+        password: 'secret12',
       })
       .expect(201)
       .expect((res) => {
