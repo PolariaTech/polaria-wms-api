@@ -88,7 +88,7 @@ describe('ConfiguradorUsuariosController (e2e)', () => {
         codigoCuenta: 'CTA001',
         idBodega: '550e8400-e29b-41d4-a716-446655440000',
         correo: 'nuevo@test.com',
-        password: 'secret1',
+        password: 'secret12',
       })
       .expect(401);
   });
@@ -108,7 +108,7 @@ describe('ConfiguradorUsuariosController (e2e)', () => {
         codigoCuenta: 'CTA001',
         idBodega: '550e8400-e29b-41d4-a716-446655440000',
         correo: 'nuevo@test.com',
-        password: 'secret1',
+        password: 'secret12',
       })
       .expect(403);
   });
@@ -142,7 +142,7 @@ describe('ConfiguradorUsuariosController (e2e)', () => {
         codigoCuenta: 'CTA001',
         idBodega: '550e8400-e29b-41d4-a716-446655440000',
         correo: 'operario@test.com',
-        password: 'secret1',
+        password: 'secret12',
       })
       .expect(201)
       .expect((res) => {
