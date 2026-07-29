@@ -166,7 +166,7 @@ Requiere Bearer de sesión WMS + tenant.
 { "token": "<jwt>", "expiresIn": 300 }
 ```
 
-Claims relevantes: `sub` (= `id_auth`), `idUsuario`, `email`, `given_name` / `family_name`, `iss`, `aud`; header `kid`.  
+Claims relevantes: `sub` (= `id_auth`), `idUsuario`, `email`, `phone_number`, `given_name` / `family_name`, `iss`, `aud`; header `kid`.  
 Detalle: [docs/MATEO-INTEGRATION.md](../../docs/MATEO-INTEGRATION.md).
 
 ### Errores

@@ -119,6 +119,7 @@ export class AuthService {
       idRol: usuario.idRol,
       correo: usuario.correo,
       nombre: usuario.nombre,
+      telefono: usuario.telefono,
     });
   }
 

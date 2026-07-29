@@ -20,6 +20,8 @@ export interface MateoWidgetTokenUsuario {
   correo: string;
   /** Nombre completo WMS → claim `given_name` para n8n. */
   nombre?: string | null;
+  /** Teléfono WMS (`usuario.telefono`) → claim `phone_number` para n8n. */
+  telefono?: string | null;
 }
 
 export interface MateoWidgetJwtPayload {
@@ -33,6 +35,8 @@ export interface MateoWidgetJwtPayload {
   /** Alias explícito de `idRol` para workflows n8n / prompts de Mateo. */
   rol: WmsRol;
   email: string;
+  /** Teléfono del usuario WMS (o null si no tiene). */
+  phone_number: string | null;
   given_name?: string;
   family_name?: string;
 }
@@ -52,6 +56,7 @@ export class MateoWidgetTokenService {
   } {
     const jti = randomUUID();
     const { givenName, familyName } = splitNombre(usuario.nombre);
+    const phoneNumber = usuario.telefono?.trim() || null;
 
     const token = this.jwtService.sign(
       {
@@ -63,6 +68,7 @@ export class MateoWidgetTokenService {
         idRol: usuario.idRol,
         rol: usuario.idRol,
         email: usuario.correo,
+        phone_number: phoneNumber,
         ...(givenName ? { given_name: givenName } : {}),
         ...(familyName ? { family_name: familyName } : {}),
       } satisfies MateoWidgetJwtPayload,
