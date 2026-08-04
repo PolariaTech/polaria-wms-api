@@ -7,6 +7,7 @@ import {
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 import { METADATA_SUBTIPO_LLAMADA_JEFE } from '../constants/operations.constants';
+import type { BodegaReportesFechaRange } from '../utils/bodega-reportes-fecha-range.util';
 
 export interface BodegaReportesResumen {
   ingresos: number;
@@ -27,8 +28,16 @@ export class BodegaReportesRepository {
   async getResumen(
     codigoCuenta: string,
     idBodega: string,
+    rango: BodegaReportesFechaRange,
   ): Promise<BodegaReportesResumen> {
     const base = { codigoCuenta, idBodega };
+    const { desdeAt, hastaAt, fechaDesde, fechaHasta } = rango;
+    const createdInRange = { gte: desdeAt, lte: hastaAt };
+    /** `periodo` en merma es Date (sin hora). */
+    const periodoInRange = {
+      gte: new Date(`${fechaDesde}T00:00:00.000Z`),
+      lte: new Date(`${fechaHasta}T00:00:00.000Z`),
+    };
 
     const [
       ingresos,
@@ -41,7 +50,12 @@ export class BodegaReportesRepository {
       tareasPendientes,
       llamadasPendientes,
     ] = await Promise.all([
-      this.prisma.recepcionCompra.count({ where: base }),
+      this.prisma.recepcionCompra.count({
+        where: {
+          ...base,
+          cerradaAt: createdInRange,
+        },
+      }),
       this.prisma.ordenVenta.count({
         where: {
           codigoCuenta,
@@ -49,12 +63,14 @@ export class BodegaReportesRepository {
           estado: {
             in: [EstadoOrdenVenta.despachada, EstadoOrdenVenta.cerrada],
           },
+          updatedAt: createdInRange,
         },
       }),
       this.prisma.movimientoInventario.count({
         where: {
           ...base,
           tipoMovimiento: TipoMovimiento.transferencia,
+          createdAt: createdInRange,
         },
       }),
       this.prisma.guiaEnvio.count({
@@ -62,11 +78,13 @@ export class BodegaReportesRepository {
           codigoCuenta,
           estado: EstadoGuiaEnvio.entregada,
           viaje: { idBodega },
+          updatedAt: createdInRange,
         },
       }),
       this.prisma.alertaOperativa.count({
         where: {
           ...base,
+          createdAt: createdInRange,
           NOT: {
             metadata: {
               path: ['subtipo'],
@@ -76,9 +94,13 @@ export class BodegaReportesRepository {
         },
       }),
       this.prisma.registroMerma.aggregate({
-        where: { ...base },
+        where: {
+          ...base,
+          periodo: periodoInRange,
+        },
         _sum: { kilosMerma: true },
       }),
+      // Cola abierta: snapshot actual, sin filtro de fechas
       this.prisma.ordenTrabajo.count({
         where: {
           ...base,

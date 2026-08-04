@@ -33,10 +33,12 @@ export const ROLES_PROCESAMIENTO_LECTURA = [
   WmsRol.operario,
 ] as const;
 
-/** Jefe crea solicitudes de procesamiento (frio: jefe/orquestación). */
+/** Operador de cuenta / jefe crean solicitudes; el jefe asigna en Almacenamiento. */
 export const ROLES_PROCESAMIENTO_CREAR = [
   WmsRol.configurador,
   WmsRol.jefe_bodega,
+  WmsRol.operador_cuenta,
+  WmsRol.administrador_cuenta,
 ] as const;
 
 export const ROLES_PROCESAMIENTO_ASIGNAR_OPERARIO = [

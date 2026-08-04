@@ -53,6 +53,7 @@ import {
   CreateOrdenTrabajoDto,
   CrearLlamadaDto,
   EjecutarOrdenTrabajoDto,
+  BodegaReportesQueryDto,
   ListAlertasQueryDto,
   ListOrdenesTrabajoQueryDto,
   ListTareasQueryDto,
@@ -348,11 +349,13 @@ export class BodegaReportesController {
   @ApiOperation({
     summary: 'Resumen de reportes operativos de bodega',
     description:
-      'Solo lectura. Usado por administrador de bodega y jefe. Incluye ingresos, salidas, movimientos, alertas y merma.',
+      'Solo lectura. Incluye ingresos, salidas, movimientos, alertas y merma en el rango ' +
+      '`fechaDesde`/`fechaHasta` (YYYY-MM-DD, America/Bogota). Si se omiten, default = hoy. ' +
+      'Métricas de cola abierta (OT/tareas/llamadas pendientes) son snapshot actual sin filtro de fechas.',
   })
   @ApiOkResponse({ type: BodegaReportesResumenDto })
   getResumen(
-    @Query() query: TenantBodegaQueryDto,
+    @Query() query: BodegaReportesQueryDto,
     @TenantCtx() ctx: TenantContext,
   ): Promise<BodegaReportesResumen> {
     return this.reportesService.getResumen(query, ctx);
