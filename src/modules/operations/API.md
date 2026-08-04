@@ -35,7 +35,7 @@ Autenticación: Bearer JWT. Todos los endpoints requieren `codigoCuenta` + `idBo
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/reportes/bodega` | Resumen ingresos, salidas, movimientos, alertas, merma (admin/jefe) |
+| GET | `/reportes/bodega` | Resumen ingresos, salidas, movimientos, alertas, merma. Query: `codigoCuenta`, `idBodega`, `fechaDesde?`, `fechaHasta?` (YYYY-MM-DD; default = hoy America/Bogota). Cola abierta sin filtro de fechas. |
 
 ## Órdenes de trabajo
 

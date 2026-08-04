@@ -11,6 +11,8 @@ import { PolariaThrottlerGuard } from './polaria-throttler.guard';
         { name: 'default', ttl: 60_000, limit: 200 },
         { name: 'auth', ttl: 60_000, limit: 15 },
       ],
+      errorMessage:
+        'Hay demasiadas peticiones en poco tiempo. Espera 1 minuto e inténtalo de nuevo.',
       skipIf: () => process.env.NODE_ENV === 'test',
     }),
   ],

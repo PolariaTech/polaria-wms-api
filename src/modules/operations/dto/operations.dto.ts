@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsDateString,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -20,6 +21,25 @@ export class TenantBodegaQueryDto {
   @ApiProperty()
   @IsUUID()
   idBodega!: string;
+}
+
+/** Query de reportes operativos con rango de fechas opcional (default = hoy). */
+export class BodegaReportesQueryDto extends TenantBodegaQueryDto {
+  @ApiPropertyOptional({
+    description: 'Inicio del rango (YYYY-MM-DD). Default: hoy (America/Bogota).',
+    example: '2026-08-04',
+  })
+  @IsOptional()
+  @IsDateString()
+  fechaDesde?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fin del rango (YYYY-MM-DD). Default: hoy (America/Bogota).',
+    example: '2026-08-04',
+  })
+  @IsOptional()
+  @IsDateString()
+  fechaHasta?: string;
 }
 
 export class ListOrdenesTrabajoQueryDto extends TenantBodegaQueryDto {
