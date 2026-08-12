@@ -37,6 +37,7 @@ import {
 import { MateoHandoffService } from './mateo-handoff.service';
 import { MateoWidgetTokenService } from './mateo-widget-token.service';
 import type { TenantContext } from '../../core/tenant/tenant-context.interface';
+import { PrismaService } from '../../core/database/prisma.service';
 
 @Injectable()
 export class AuthService {
@@ -47,6 +48,7 @@ export class AuthService {
     private readonly supabaseAuth: SupabaseAuthService,
     private readonly mateoHandoffService: MateoHandoffService,
     private readonly mateoWidgetTokenService: MateoWidgetTokenService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async prelogin(
@@ -154,6 +156,26 @@ export class AuthService {
     }
 
     const isConfigurador = this.usuarioRepository.isConfigurador(usuario.idRol);
+    const schemaName = isConfigurador
+      ? null
+      : (ctx.schemaName ?? usuario.empresa?.schemaName ?? null);
+
+    let nombreComercialCuenta: string | null = isConfigurador
+      ? null
+      : (usuario.cuenta?.nombreComercial ?? null);
+
+    if (
+      !isConfigurador &&
+      !nombreComercialCuenta &&
+      usuario.codigoCuenta &&
+      schemaName
+    ) {
+      const cuenta = await this.prisma.forSchema(schemaName).cuenta.findUnique({
+        where: { codigoCuenta: usuario.codigoCuenta },
+        select: { nombreComercial: true },
+      });
+      nombreComercialCuenta = cuenta?.nombreComercial ?? null;
+    }
 
     return {
       idUsuario: usuario.idUsuario,
@@ -169,11 +191,10 @@ export class AuthService {
         ? null
         : (usuario.empresa?.razonSocial ?? null),
       codigoCuenta: isConfigurador ? null : usuario.codigoCuenta,
-      nombreComercialCuenta: isConfigurador
-        ? null
-        : (usuario.cuenta?.nombreComercial ?? null),
+      nombreComercialCuenta,
       scope: isConfigurador ? AUTH_SCOPE.PLATFORM : AUTH_SCOPE.TENANT,
       idBodegas: ctx.idBodegas,
+      schemaName,
     };
   }
 
@@ -254,8 +275,20 @@ export class AuthService {
       throw new ForbiddenException('La empresa está inactiva');
     }
 
-    if (usuario.codigoCuenta && usuario.cuenta && !usuario.cuenta.estaActiva) {
-      throw new ForbiddenException('La cuenta está inactiva');
+    if (usuario.codigoCuenta) {
+      if (usuario.empresa.schemaName) {
+        const cuentaTenant = await this.prisma
+          .forSchema(usuario.empresa.schemaName)
+          .cuenta.findUnique({
+            where: { codigoCuenta: usuario.codigoCuenta },
+            select: { estaActiva: true },
+          });
+        if (cuentaTenant && !cuentaTenant.estaActiva) {
+          throw new ForbiddenException('La cuenta está inactiva');
+        }
+      } else if (usuario.cuenta && !usuario.cuenta.estaActiva) {
+        throw new ForbiddenException('La cuenta está inactiva');
+      }
     }
 
     return {

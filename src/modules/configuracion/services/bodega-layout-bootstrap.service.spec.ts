@@ -21,6 +21,7 @@ describe('BodegaLayoutBootstrapService', () => {
     tipo: BodegaTipo.interna,
     capacidadSlots: 3,
     estaActiva: true,
+    schemaName: null as string | null,
   };
 
   const bootstrapResult = {

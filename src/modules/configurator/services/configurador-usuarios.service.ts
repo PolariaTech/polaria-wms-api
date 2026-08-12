@@ -164,8 +164,10 @@ export class ConfiguradorUsuariosService {
     codigoEmpresa: string,
     codigoCuenta: string,
   ): Promise<void> {
-    const cuenta =
-      await this.usuarioRepository.findCuentaWithEmpresa(codigoCuenta);
+    const cuenta = await this.usuarioRepository.findCuentaWithEmpresa(
+      codigoCuenta,
+      codigoEmpresa,
+    );
 
     if (!cuenta) {
       throw new NotFoundException('Cuenta no encontrada');

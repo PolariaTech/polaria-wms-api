@@ -9,6 +9,8 @@ export interface TenantContext {
   /** Cuentas activas de la empresa del usuario (admin empresa sin cuenta fija). */
   codigosCuentaEmpresa: string[];
   idBodegas: string[];
+  /** Schema Postgres emp_* (null = legacy en public). */
+  schemaName: string | null;
 }
 
 export interface AuthenticatedRequest {

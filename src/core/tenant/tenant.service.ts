@@ -40,6 +40,7 @@ export class TenantService {
         codigoCuenta: null,
         codigosCuentaEmpresa: [],
         idBodegas,
+        schemaName: null,
       };
     }
 
@@ -55,8 +56,21 @@ export class TenantService {
       throw new ForbiddenException('La empresa está inactiva');
     }
 
-    if (usuario.codigoCuenta && usuario.cuenta && !usuario.cuenta.estaActiva) {
-      throw new ForbiddenException('La cuenta está inactiva');
+    if (usuario.codigoCuenta) {
+      // cuenta puede vivir en emp_*; el include Prisma solo resuelve public.
+      if (usuario.empresa.schemaName) {
+        const cuentaTenant = await this.prisma
+          .forSchema(usuario.empresa.schemaName)
+          .cuenta.findUnique({
+            where: { codigoCuenta: usuario.codigoCuenta },
+            select: { estaActiva: true },
+          });
+        if (cuentaTenant && !cuentaTenant.estaActiva) {
+          throw new ForbiddenException('La cuenta está inactiva');
+        }
+      } else if (usuario.cuenta && !usuario.cuenta.estaActiva) {
+        throw new ForbiddenException('La cuenta está inactiva');
+      }
     }
 
     const codigoEmpresaSolicitado = requestedCodigoEmpresa?.trim();
@@ -71,12 +85,25 @@ export class TenantService {
 
     const codigosCuentaEmpresa = usuario.codigoEmpresa
       ? (
-          await this.prisma.cuenta.findMany({
+          await this.prisma.forSchema(usuario.empresa.schemaName).cuenta.findMany({
             where: { codigoEmpresa: usuario.codigoEmpresa, estaActiva: true },
             select: { codigoCuenta: true },
           })
         ).map((c) => c.codigoCuenta)
       : [];
+
+    // Bodegas / asignaciones viven en schema tenant si existe.
+    const idBodegasTenant =
+      usuario.empresa.schemaName != null
+        ? (
+            await this.prisma
+              .forSchema(usuario.empresa.schemaName)
+              .asignacionBodega.findMany({
+                where: { idUsuario: usuario.idUsuario },
+                select: { idBodega: true },
+              })
+          ).map((a) => a.idBodega)
+        : idBodegas;
 
     return {
       idUsuario: usuario.idUsuario,
@@ -85,7 +112,8 @@ export class TenantService {
       codigoEmpresa: usuario.codigoEmpresa,
       codigoCuenta: usuario.codigoCuenta,
       codigosCuentaEmpresa,
-      idBodegas,
+      idBodegas: idBodegasTenant,
+      schemaName: usuario.empresa.schemaName,
     };
   }
 }

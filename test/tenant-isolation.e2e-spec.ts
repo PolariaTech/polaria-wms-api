@@ -29,6 +29,7 @@ describe('Tenant isolation (e2e)', () => {
     codigoCuenta: 'ACME-01',
     codigosCuentaEmpresa: ['ACME-01'],
     idBodegas: [bodegaId],
+    schemaName: null,
   };
 
   const adminEmpresaAcme = {
@@ -39,6 +40,7 @@ describe('Tenant isolation (e2e)', () => {
     codigoCuenta: null,
     codigosCuentaEmpresa: ['ACME-01', 'ACME-02'],
     idBodegas: [],
+    schemaName: null,
   };
 
   beforeEach(async () => {

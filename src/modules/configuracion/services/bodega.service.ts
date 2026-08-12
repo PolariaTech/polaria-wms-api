@@ -38,7 +38,7 @@ export class BodegaService {
       dto.capacidadSlots,
     );
 
-    await this.assertCuentaActiva(codigoCuenta);
+    const cuenta = await this.assertCuentaActiva(codigoCuenta);
     this.assertTenantAccess(codigoCuenta, ctx);
 
     try {
@@ -49,6 +49,8 @@ export class BodegaService {
         tipo: dto.tipo,
         capacidadSlots,
         idCreador: ctx.idUsuario,
+        // null = public (legacy); emp_* para schema-per-empresa.
+        schemaName: cuenta.schemaName ?? ctx.schemaName ?? null,
       });
     } catch (error) {
       if (
@@ -57,6 +59,32 @@ export class BodegaService {
       ) {
         throw new ConflictException(
           'Ya existe una bodega con ese código en la cuenta',
+        );
+      }
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2003'
+      ) {
+        throw new BadRequestException(
+          'La cuenta no existe en el schema de la empresa (FK bodega→cuenta).',
+        );
+      }
+      // INSERT raw: el adapter a veces no mapea a P2002/P2003.
+      const rawMessage =
+        error instanceof Error ? error.message : String(error ?? '');
+      if (/unique|duplicate key|bodega_codigo_cuenta_codigo/i.test(rawMessage)) {
+        throw new ConflictException(
+          'Ya existe una bodega con ese código en la cuenta',
+        );
+      }
+      if (/fk_bodega_cuenta|codigo_cuenta/i.test(rawMessage)) {
+        throw new BadRequestException(
+          'La cuenta no existe en el schema de la empresa (FK bodega→cuenta).',
+        );
+      }
+      if (/fk_bodega_creador|id_creador/i.test(rawMessage)) {
+        throw new BadRequestException(
+          'El usuario creador no existe en public.usuario (FK bodega→usuario).',
         );
       }
       throw error;
@@ -115,7 +143,9 @@ export class BodegaService {
     return resolveCapacidadSlots(capacidadSlots);
   }
 
-  private async assertCuentaActiva(codigoCuenta: string): Promise<void> {
+  private async assertCuentaActiva(
+    codigoCuenta: string,
+  ): Promise<NonNullable<Awaited<ReturnType<BodegaRepository['findCuenta']>>>> {
     const cuenta = await this.bodegaRepository.findCuenta(codigoCuenta);
 
     if (!cuenta) {
@@ -129,6 +159,8 @@ export class BodegaService {
     if (!cuenta.estaActiva) {
       throw new ForbiddenException('La cuenta está inactiva');
     }
+
+    return cuenta;
   }
 
   private assertTenantAccess(

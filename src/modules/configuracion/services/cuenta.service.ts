@@ -38,20 +38,24 @@ export class CuentaService {
       throw new NotFoundException('Cuenta no encontrada');
     }
 
+    const schemaName = existing.schemaName;
+
     if (syncBodegas) {
       await this.syncBodegas(
         existing.codigoEmpresa,
         codigo,
         idsBodegasDeseadas,
         dto.codigoCuentaDestinoDesvinculacion,
+        schemaName,
       );
     }
 
     if (Object.keys(data).length === 0) {
-      return existing;
+      const { schemaName: _schema, ...rest } = existing;
+      return rest;
     }
 
-    return this.cuentaRepository.update(codigo, data);
+    return this.cuentaRepository.update(codigo, data, schemaName);
   }
 
   private buildUpdateData(dto: UpdateCuentaDto): UpdateCuentaData {
@@ -81,10 +85,13 @@ export class CuentaService {
     codigoEmpresa: string,
     codigoCuenta: string,
     idsBodegasDeseadas: string[],
-    codigoCuentaDestinoDto?: string,
+    codigoCuentaDestinoDto: string | undefined,
+    schemaName: string | null,
   ): Promise<void> {
-    const actuales =
-      await this.cuentaRepository.findBodegasActivasDeCuenta(codigoCuenta);
+    const actuales = await this.cuentaRepository.findBodegasActivasDeCuenta(
+      codigoCuenta,
+      schemaName,
+    );
     const actualesIds = new Set(actuales.map((item) => item.idBodega));
     const deseadasIds = new Set(idsBodegasDeseadas);
 
@@ -92,7 +99,12 @@ export class CuentaService {
     const toUnlink = [...actualesIds].filter((id) => !deseadasIds.has(id));
 
     if (toAssign.length > 0) {
-      await this.assignBodegas(codigoEmpresa, codigoCuenta, toAssign);
+      await this.assignBodegas(
+        codigoEmpresa,
+        codigoCuenta,
+        toAssign,
+        schemaName,
+      );
     }
 
     if (toUnlink.length === 0) return;
@@ -101,20 +113,27 @@ export class CuentaService {
       codigoEmpresa,
       codigoCuenta,
       codigoCuentaDestinoDto,
+      schemaName,
     );
 
-    await this.cuentaRepository.assignBodegasToCuenta(destino, toUnlink);
+    await this.cuentaRepository.assignBodegasToCuenta(
+      destino,
+      toUnlink,
+      schemaName,
+    );
   }
 
   private async resolveCuentaDestino(
     codigoEmpresa: string,
     codigoCuentaActual: string,
-    codigoCuentaDestinoDto?: string,
+    codigoCuentaDestinoDto: string | undefined,
+    schemaName: string | null,
   ): Promise<string> {
     const destinoDto = codigoCuentaDestinoDto?.trim() || '';
     const otras = await this.cuentaRepository.findOtrasCuentasEmpresa(
       codigoEmpresa,
       codigoCuentaActual,
+      schemaName,
     );
 
     if (destinoDto) {
@@ -145,8 +164,12 @@ export class CuentaService {
     codigoEmpresa: string,
     codigoCuenta: string,
     idsBodegas: string[],
+    schemaName: string | null,
   ): Promise<void> {
-    const bodegas = await this.cuentaRepository.findBodegasByIds(idsBodegas);
+    const bodegas = await this.cuentaRepository.findBodegasByIds(
+      idsBodegas,
+      schemaName,
+    );
 
     if (bodegas.length !== idsBodegas.length) {
       throw new BadRequestException(
@@ -167,7 +190,11 @@ export class CuentaService {
       .map((bodega) => bodega.idBodega);
 
     if (toAssign.length > 0) {
-      await this.cuentaRepository.assignBodegasToCuenta(codigoCuenta, toAssign);
+      await this.cuentaRepository.assignBodegasToCuenta(
+        codigoCuenta,
+        toAssign,
+        schemaName,
+      );
     }
   }
 }

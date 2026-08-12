@@ -52,6 +52,8 @@ export interface MeResponse {
   nombreComercialCuenta: string | null;
   scope: AuthScope;
   idBodegas: string[];
+  /** Schema Postgres emp_* (null = legacy public). */
+  schemaName: string | null;
 }
 
 export interface ValidatedUserContext {

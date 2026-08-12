@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BodegaTipo, Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
+import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 import {
   LAYOUT_INGRESO_SLOTS,
   LAYOUT_PROCESAMIENTO_SLOTS,
@@ -30,103 +31,165 @@ export interface BodegaLayoutRecord {
   tipo: BodegaTipo;
   capacidadSlots: number | null;
   estaActiva: boolean;
+  /** null = public; emp_* para schema-per-empresa. */
+  schemaName: string | null;
 }
+
+type TipoUbicacionRow = {
+  idTipoUbicacion: string;
+  codigo: string;
+  esRecepcion: boolean;
+  esPicking: boolean;
+};
+
+type ZonaRow = {
+  idZona: string;
+  codigo: string;
+};
 
 @Injectable()
 export class BodegaLayoutRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly schemaLocator: TenantSchemaLocator,
+  ) {}
 
-  findBodega(idBodega: string): Promise<BodegaLayoutRecord | null> {
-    return this.prisma.bodega.findUnique({
-      where: { idBodega },
-      select: {
-        idBodega: true,
-        codigoCuenta: true,
-        tipo: true,
-        capacidadSlots: true,
-        estaActiva: true,
-      },
-    });
+  async findBodega(idBodega: string): Promise<BodegaLayoutRecord | null> {
+    const located = await this.schemaLocator.findBodegaById(idBodega);
+    if (!located) return null;
+
+    return {
+      idBodega: located.idBodega,
+      codigoCuenta: located.codigoCuenta,
+      tipo: located.tipo as BodegaTipo,
+      capacidadSlots: located.capacidadSlots,
+      estaActiva: located.estaActiva,
+      schemaName: located.schemaName,
+    };
   }
 
-  countUbicaciones(idBodega: string): Promise<number> {
-    return this.prisma.ubicacion.count({ where: { idBodega } });
+  countUbicaciones(
+    idBodega: string,
+    schemaName?: string | null,
+  ): Promise<number> {
+    const schema = this.schemaLocator.assertSafeSchemaIdent(
+      schemaName ?? 'public',
+    );
+    return this.prisma
+      .$queryRawUnsafe<Array<{ count: bigint }>>(
+        `SELECT count(*)::bigint AS count
+         FROM ${schema}.ubicacion
+         WHERE id_bodega = $1::uuid`,
+        idBodega,
+      )
+      .then((rows) => Number(rows[0]?.count ?? 0));
+  }
+
+  /**
+   * Transacción con search_path tenant (triggers layout leen "bodega" sin
+   * calificar) + escrituras SQL calificadas (Prisma cae en public.*).
+   */
+  private async withTenantLayoutTx<T>(
+    schemaName: string | null,
+    fn: (
+      tx: Prisma.TransactionClient,
+      schema: string,
+    ) => Promise<T>,
+  ): Promise<T> {
+    const schema = this.schemaLocator.assertSafeSchemaIdent(
+      schemaName ?? 'public',
+    );
+    const searchPath =
+      schema === 'public'
+        ? 'public,mateo_support'
+        : `${schema},public,mateo_support`;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `SELECT set_config('search_path', $1, true)`,
+        searchPath,
+      );
+      return fn(tx, schema);
+    });
   }
 
   bootstrapLayout(
     bodega: BodegaLayoutRecord,
     capacidadSlots: number,
   ): Promise<BootstrapLayoutResult> {
-    return this.prisma.$transaction(async (tx) => {
-      const tipoIngreso = await tx.tipoUbicacion.create({
-        data: this.tipoIngresoData(bodega),
-      });
-
-      const tipoAlmacen = await tx.tipoUbicacion.create({
-        data: this.tipoAlmacenData(bodega),
-      });
-
-      const tipoSalida = await tx.tipoUbicacion.create({
-        data: this.tipoSalidaData(bodega),
-      });
-
-      const tipoProcesamiento = await tx.tipoUbicacion.create({
-        data: this.tipoProcesamientoData(bodega),
-      });
-
-      const zonaIngreso = await tx.zona.create({
-        data: this.zonaData(bodega, LAYOUT_ZONA_INGRESO),
-      });
-
-      const zonaAlmacen = await tx.zona.create({
-        data: this.zonaData(bodega, LAYOUT_ZONA_ALMACEN),
-      });
-
-      const zonaSalida = await tx.zona.create({
-        data: this.zonaData(bodega, LAYOUT_ZONA_SALIDA),
-      });
-
-      const zonaProcesamiento = await tx.zona.create({
-        data: this.zonaData(bodega, LAYOUT_ZONA_PROCESAMIENTO),
-      });
-
-      const ingresoRows = this.buildIngresoUbicaciones(
-        bodega,
-        tipoIngreso.idTipoUbicacion,
-        zonaIngreso.idZona,
+    return this.withTenantLayoutTx(bodega.schemaName, async (tx, schema) => {
+      const tipoIngreso = await this.insertTipoUbicacion(
+        tx,
+        schema,
+        this.tipoIngresoData(bodega),
+      );
+      const tipoAlmacen = await this.insertTipoUbicacion(
+        tx,
+        schema,
+        this.tipoAlmacenData(bodega),
+      );
+      const tipoSalida = await this.insertTipoUbicacion(
+        tx,
+        schema,
+        this.tipoSalidaData(bodega),
+      );
+      const tipoProcesamiento = await this.insertTipoUbicacion(
+        tx,
+        schema,
+        this.tipoProcesamientoData(bodega),
       );
 
-      const almacenRows = Array.from(
-        { length: capacidadSlots },
-        (_, index) => ({
+      const zonaIngreso = await this.insertZona(
+        tx,
+        schema,
+        this.zonaData(bodega, LAYOUT_ZONA_INGRESO),
+      );
+      const zonaAlmacen = await this.insertZona(
+        tx,
+        schema,
+        this.zonaData(bodega, LAYOUT_ZONA_ALMACEN),
+      );
+      const zonaSalida = await this.insertZona(
+        tx,
+        schema,
+        this.zonaData(bodega, LAYOUT_ZONA_SALIDA),
+      );
+      const zonaProcesamiento = await this.insertZona(
+        tx,
+        schema,
+        this.zonaData(bodega, LAYOUT_ZONA_PROCESAMIENTO),
+      );
+
+      const ubicacionRows = [
+        ...this.buildIngresoUbicaciones(
+          bodega,
+          tipoIngreso.idTipoUbicacion,
+          zonaIngreso.idZona,
+        ),
+        ...Array.from({ length: capacidadSlots }, (_, index) => ({
           codigoCuenta: bodega.codigoCuenta,
           idBodega: bodega.idBodega,
           idZona: zonaAlmacen.idZona,
           idTipoUbicacion: tipoAlmacen.idTipoUbicacion,
           codigo: formatSlotCodigo(index + 1, capacidadSlots),
-        }),
-      );
+        })),
+        ...this.buildSalidaUbicaciones(
+          bodega,
+          tipoSalida.idTipoUbicacion,
+          zonaSalida.idZona,
+        ),
+        ...this.buildProcesamientoUbicaciones(
+          bodega,
+          tipoProcesamiento.idTipoUbicacion,
+          zonaProcesamiento.idZona,
+        ),
+      ];
 
-      const salidaRows = this.buildSalidaUbicaciones(
-        bodega,
-        tipoSalida.idTipoUbicacion,
-        zonaSalida.idZona,
+      const ubicacionesCreadas = await this.insertUbicaciones(
+        tx,
+        schema,
+        ubicacionRows,
       );
-
-      const procesamientoRows = this.buildProcesamientoUbicaciones(
-        bodega,
-        tipoProcesamiento.idTipoUbicacion,
-        zonaProcesamiento.idZona,
-      );
-
-      const { count: ubicacionesCreadas } = await tx.ubicacion.createMany({
-        data: [
-          ...ingresoRows,
-          ...almacenRows,
-          ...salidaRows,
-          ...procesamientoRows,
-        ],
-      });
 
       return {
         idBodega: bodega.idBodega,
@@ -142,19 +205,18 @@ export class BodegaLayoutRepository {
   ensureOperationalZones(
     bodega: BodegaLayoutRecord,
   ): Promise<EnsureOperationalZonesResult> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.withTenantLayoutTx(bodega.schemaName, async (tx, schema) => {
       let tiposUbicacionCreados = 0;
       let zonasCreadas = 0;
       let ubicacionesIngresoCreadas = 0;
       let ubicacionesSalidaCreadas = 0;
       let ubicacionesProcesamientoCreadas = 0;
 
-      const tipos = await tx.tipoUbicacion.findMany({
-        where: { idBodega: bodega.idBodega },
-      });
+      const tipos = await this.listTiposUbicacion(tx, schema, bodega.idBodega);
 
-      const tipoIngreso = await this.ensureTipoUbicacion(
+      const tipoIngreso = await this.ensureTipoUbicacionSql(
         tx,
+        schema,
         bodega,
         tipos,
         LAYOUT_TIPO_INGRESO.codigo,
@@ -164,8 +226,9 @@ export class BodegaLayoutRepository {
         },
       );
 
-      const tipoSalida = await this.ensureTipoUbicacion(
+      const tipoSalida = await this.ensureTipoUbicacionSql(
         tx,
+        schema,
         bodega,
         tipos,
         LAYOUT_TIPO_SALIDA.codigo,
@@ -175,8 +238,9 @@ export class BodegaLayoutRepository {
         },
       );
 
-      const tipoProcesamiento = await this.ensureTipoUbicacion(
+      const tipoProcesamiento = await this.ensureTipoUbicacionSql(
         tx,
+        schema,
         bodega,
         tipos,
         LAYOUT_TIPO_PROCESAMIENTO.codigo,
@@ -186,8 +250,9 @@ export class BodegaLayoutRepository {
         },
       );
 
-      const zonaIngreso = await this.ensureZona(
+      const zonaIngreso = await this.ensureZonaSql(
         tx,
+        schema,
         bodega,
         LAYOUT_ZONA_INGRESO,
         () => {
@@ -195,8 +260,9 @@ export class BodegaLayoutRepository {
         },
       );
 
-      const zonaSalida = await this.ensureZona(
+      const zonaSalida = await this.ensureZonaSql(
         tx,
+        schema,
         bodega,
         LAYOUT_ZONA_SALIDA,
         () => {
@@ -204,8 +270,9 @@ export class BodegaLayoutRepository {
         },
       );
 
-      const zonaProcesamiento = await this.ensureZona(
+      const zonaProcesamiento = await this.ensureZonaSql(
         tx,
+        schema,
         bodega,
         LAYOUT_ZONA_PROCESAMIENTO,
         () => {
@@ -213,55 +280,58 @@ export class BodegaLayoutRepository {
         },
       );
 
-      const ingresoExistentes = await tx.ubicacion.count({
-        where: {
-          idBodega: bodega.idBodega,
-          tipoUbicacion: { esRecepcion: true },
-        },
-      });
-
+      const ingresoExistentes = await this.countUbicacionesByTipoFlag(
+        tx,
+        schema,
+        bodega.idBodega,
+        'es_recepcion',
+      );
       if (ingresoExistentes === 0) {
-        const rows = this.buildIngresoUbicaciones(
-          bodega,
-          tipoIngreso.idTipoUbicacion,
-          zonaIngreso.idZona,
+        ubicacionesIngresoCreadas = await this.insertUbicaciones(
+          tx,
+          schema,
+          this.buildIngresoUbicaciones(
+            bodega,
+            tipoIngreso.idTipoUbicacion,
+            zonaIngreso.idZona,
+          ),
         );
-        const created = await tx.ubicacion.createMany({ data: rows });
-        ubicacionesIngresoCreadas = created.count;
       }
 
-      const salidaExistentes = await tx.ubicacion.count({
-        where: {
-          idBodega: bodega.idBodega,
-          tipoUbicacion: { esPicking: true },
-        },
-      });
-
+      const salidaExistentes = await this.countUbicacionesByTipoFlag(
+        tx,
+        schema,
+        bodega.idBodega,
+        'es_picking',
+      );
       if (salidaExistentes === 0) {
-        const rows = this.buildSalidaUbicaciones(
-          bodega,
-          tipoSalida.idTipoUbicacion,
-          zonaSalida.idZona,
+        ubicacionesSalidaCreadas = await this.insertUbicaciones(
+          tx,
+          schema,
+          this.buildSalidaUbicaciones(
+            bodega,
+            tipoSalida.idTipoUbicacion,
+            zonaSalida.idZona,
+          ),
         );
-        const created = await tx.ubicacion.createMany({ data: rows });
-        ubicacionesSalidaCreadas = created.count;
       }
 
-      const procesamientoExistentes = await tx.ubicacion.count({
-        where: {
-          idBodega: bodega.idBodega,
-          tipoUbicacion: { codigo: LAYOUT_TIPO_PROCESAMIENTO.codigo },
-        },
-      });
-
+      const procesamientoExistentes = await this.countUbicacionesByTipoCodigo(
+        tx,
+        schema,
+        bodega.idBodega,
+        LAYOUT_TIPO_PROCESAMIENTO.codigo,
+      );
       if (procesamientoExistentes === 0) {
-        const rows = this.buildProcesamientoUbicaciones(
-          bodega,
-          tipoProcesamiento.idTipoUbicacion,
-          zonaProcesamiento.idZona,
+        ubicacionesProcesamientoCreadas = await this.insertUbicaciones(
+          tx,
+          schema,
+          this.buildProcesamientoUbicaciones(
+            bodega,
+            tipoProcesamiento.idTipoUbicacion,
+            zonaProcesamiento.idZona,
+          ),
         );
-        const created = await tx.ubicacion.createMany({ data: rows });
-        ubicacionesProcesamientoCreadas = created.count;
       }
 
       return {
@@ -274,6 +344,211 @@ export class BodegaLayoutRepository {
         ubicacionesProcesamientoCreadas,
       };
     });
+  }
+
+  private async insertTipoUbicacion(
+    tx: Prisma.TransactionClient,
+    schema: string,
+    data: Prisma.TipoUbicacionUncheckedCreateInput,
+  ): Promise<{ idTipoUbicacion: string }> {
+    const rows = await tx.$queryRawUnsafe<Array<{ idTipoUbicacion: string }>>(
+      `INSERT INTO ${schema}.tipo_ubicacion (
+         codigo_cuenta, id_bodega, codigo, nombre,
+         es_recepcion, es_almacenamiento, es_picking, esta_activa
+       ) VALUES (
+         $1, $2::uuid, $3, $4, $5, $6, $7, true
+       )
+       RETURNING id_tipo_ubicacion AS "idTipoUbicacion"`,
+      data.codigoCuenta,
+      data.idBodega,
+      data.codigo,
+      data.nombre,
+      data.esRecepcion ?? false,
+      data.esAlmacenamiento ?? true,
+      data.esPicking ?? false,
+    );
+    const row = rows[0];
+    if (!row) {
+      throw new Error(`No se pudo insertar tipo_ubicacion en ${schema}`);
+    }
+    return row;
+  }
+
+  private async insertZona(
+    tx: Prisma.TransactionClient,
+    schema: string,
+    data: Prisma.ZonaUncheckedCreateInput,
+  ): Promise<{ idZona: string }> {
+    const rows = await tx.$queryRawUnsafe<Array<{ idZona: string }>>(
+      `INSERT INTO ${schema}.zona (
+         codigo_cuenta, id_bodega, codigo, nombre, esta_activa
+       ) VALUES (
+         $1, $2::uuid, $3, $4, true
+       )
+       RETURNING id_zona AS "idZona"`,
+      data.codigoCuenta,
+      data.idBodega,
+      data.codigo,
+      data.nombre,
+    );
+    const row = rows[0];
+    if (!row) {
+      throw new Error(`No se pudo insertar zona en ${schema}`);
+    }
+    return row;
+  }
+
+  private async insertUbicaciones(
+    tx: Prisma.TransactionClient,
+    schema: string,
+    rows: Array<{
+      codigoCuenta: string;
+      idBodega: string;
+      idZona: string;
+      idTipoUbicacion: string;
+      codigo: string;
+    }>,
+  ): Promise<number> {
+    if (rows.length === 0) return 0;
+
+    // unnest arrays: una sola statement evita N round-trips.
+    const codigosCuenta = rows.map((r) => r.codigoCuenta);
+    const idsBodega = rows.map((r) => r.idBodega);
+    const idsZona = rows.map((r) => r.idZona);
+    const idsTipo = rows.map((r) => r.idTipoUbicacion);
+    const codigos = rows.map((r) => r.codigo);
+
+    const result = await tx.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `WITH inserted AS (
+         INSERT INTO ${schema}.ubicacion (
+           codigo_cuenta, id_bodega, id_zona, id_tipo_ubicacion, codigo, esta_activa
+         )
+         SELECT
+           c.codigo_cuenta,
+           c.id_bodega::uuid,
+           c.id_zona::uuid,
+           c.id_tipo_ubicacion::uuid,
+           c.codigo,
+           true
+         FROM unnest(
+           $1::text[],
+           $2::text[],
+           $3::text[],
+           $4::text[],
+           $5::text[]
+         ) AS c(codigo_cuenta, id_bodega, id_zona, id_tipo_ubicacion, codigo)
+         RETURNING 1
+       )
+       SELECT count(*)::bigint AS count FROM inserted`,
+      codigosCuenta,
+      idsBodega,
+      idsZona,
+      idsTipo,
+      codigos,
+    );
+
+    return Number(result[0]?.count ?? 0);
+  }
+
+  private async listTiposUbicacion(
+    tx: Prisma.TransactionClient,
+    schema: string,
+    idBodega: string,
+  ): Promise<TipoUbicacionRow[]> {
+    return tx.$queryRawUnsafe<TipoUbicacionRow[]>(
+      `SELECT id_tipo_ubicacion AS "idTipoUbicacion",
+              codigo,
+              es_recepcion AS "esRecepcion",
+              es_picking AS "esPicking"
+       FROM ${schema}.tipo_ubicacion
+       WHERE id_bodega = $1::uuid`,
+      idBodega,
+    );
+  }
+
+  private async countUbicacionesByTipoFlag(
+    tx: Prisma.TransactionClient,
+    schema: string,
+    idBodega: string,
+    flagColumn: 'es_recepcion' | 'es_picking',
+  ): Promise<number> {
+    const rows = await tx.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT count(*)::bigint AS count
+       FROM ${schema}.ubicacion u
+       JOIN ${schema}.tipo_ubicacion t
+         ON t.id_tipo_ubicacion = u.id_tipo_ubicacion
+       WHERE u.id_bodega = $1::uuid
+         AND t.${flagColumn} = true`,
+      idBodega,
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  private async countUbicacionesByTipoCodigo(
+    tx: Prisma.TransactionClient,
+    schema: string,
+    idBodega: string,
+    codigoTipo: string,
+  ): Promise<number> {
+    const rows = await tx.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT count(*)::bigint AS count
+       FROM ${schema}.ubicacion u
+       JOIN ${schema}.tipo_ubicacion t
+         ON t.id_tipo_ubicacion = u.id_tipo_ubicacion
+       WHERE u.id_bodega = $1::uuid
+         AND t.codigo = $2`,
+      idBodega,
+      codigoTipo,
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  private async ensureTipoUbicacionSql(
+    tx: Prisma.TransactionClient,
+    schema: string,
+    _bodega: BodegaLayoutRecord,
+    tipos: TipoUbicacionRow[],
+    codigo: string,
+    createData: () => Prisma.TipoUbicacionUncheckedCreateInput,
+    onCreated: () => void,
+  ): Promise<{ idTipoUbicacion: string }> {
+    const existente = tipos.find((tipo) => tipo.codigo === codigo);
+    if (existente) {
+      return { idTipoUbicacion: existente.idTipoUbicacion };
+    }
+
+    const creado = await this.insertTipoUbicacion(tx, schema, createData());
+    onCreated();
+    return creado;
+  }
+
+  private async ensureZonaSql(
+    tx: Prisma.TransactionClient,
+    schema: string,
+    bodega: BodegaLayoutRecord,
+    zona: { codigo: string; nombre: string },
+    onCreated: () => void,
+  ): Promise<{ idZona: string }> {
+    const existentes = await tx.$queryRawUnsafe<ZonaRow[]>(
+      `SELECT id_zona AS "idZona", codigo
+       FROM ${schema}.zona
+       WHERE id_bodega = $1::uuid AND codigo = $2
+       LIMIT 1`,
+      bodega.idBodega,
+      zona.codigo,
+    );
+
+    if (existentes[0]) {
+      return { idZona: existentes[0].idZona };
+    }
+
+    const creada = await this.insertZona(
+      tx,
+      schema,
+      this.zonaData(bodega, zona),
+    );
+    onCreated();
+    return creada;
   }
 
   private tipoIngresoData(
@@ -348,7 +623,7 @@ export class BodegaLayoutRepository {
     bodega: BodegaLayoutRecord,
     idTipoUbicacion: string,
     idZona: string,
-  ): Prisma.UbicacionCreateManyInput[] {
+  ) {
     return Array.from({ length: LAYOUT_INGRESO_SLOTS }, (_, index) => ({
       codigoCuenta: bodega.codigoCuenta,
       idBodega: bodega.idBodega,
@@ -366,7 +641,7 @@ export class BodegaLayoutRepository {
     bodega: BodegaLayoutRecord,
     idTipoUbicacion: string,
     idZona: string,
-  ): Prisma.UbicacionCreateManyInput[] {
+  ) {
     return Array.from({ length: LAYOUT_SALIDA_SLOTS }, (_, index) => ({
       codigoCuenta: bodega.codigoCuenta,
       idBodega: bodega.idBodega,
@@ -384,7 +659,7 @@ export class BodegaLayoutRepository {
     bodega: BodegaLayoutRecord,
     idTipoUbicacion: string,
     idZona: string,
-  ): Prisma.UbicacionCreateManyInput[] {
+  ) {
     return Array.from({ length: LAYOUT_PROCESAMIENTO_SLOTS }, (_, index) => ({
       codigoCuenta: bodega.codigoCuenta,
       idBodega: bodega.idBodega,
@@ -396,47 +671,5 @@ export class BodegaLayoutRepository {
         LAYOUT_PROCESAMIENTO_SLOTS,
       ),
     }));
-  }
-
-  private async ensureTipoUbicacion(
-    tx: Prisma.TransactionClient,
-    bodega: BodegaLayoutRecord,
-    tipos: Array<{ idTipoUbicacion: string; codigo: string }>,
-    codigo: string,
-    createData: () => Prisma.TipoUbicacionUncheckedCreateInput,
-    onCreated: () => void,
-  ) {
-    const existente = tipos.find((tipo) => tipo.codigo === codigo);
-    if (existente) {
-      return existente;
-    }
-
-    const creado = await tx.tipoUbicacion.create({ data: createData() });
-    onCreated();
-    return creado;
-  }
-
-  private async ensureZona(
-    tx: Prisma.TransactionClient,
-    bodega: BodegaLayoutRecord,
-    zona: { codigo: string; nombre: string },
-    onCreated: () => void,
-  ) {
-    const existente = await tx.zona.findFirst({
-      where: {
-        idBodega: bodega.idBodega,
-        codigo: zona.codigo,
-      },
-    });
-
-    if (existente) {
-      return existente;
-    }
-
-    const creada = await tx.zona.create({
-      data: this.zonaData(bodega, zona),
-    });
-    onCreated();
-    return creada;
   }
 }

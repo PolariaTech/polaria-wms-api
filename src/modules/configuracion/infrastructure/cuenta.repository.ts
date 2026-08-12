@@ -7,27 +7,56 @@ import type {
   UpdateCuentaResult,
 } from '../interfaces/cuenta.interfaces';
 
+type CuentaLocate = CuentaRecord & { schemaName: string | null };
+
 @Injectable()
 export class CuentaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findByCodigo(codigoCuenta: string): Promise<CuentaRecord | null> {
-    return this.prisma.cuenta.findUnique({
+  private readonly cuentaSelect = {
+    codigoCuenta: true,
+    codigoEmpresa: true,
+    nombreComercial: true,
+    estaActiva: true,
+  } as const;
+
+  /** Busca en public y, si no está, en schemas emp_* de empresas. */
+  async findByCodigo(codigoCuenta: string): Promise<CuentaLocate | null> {
+    const inPublic = await this.prisma.cuenta.findUnique({
       where: { codigoCuenta },
-      select: {
-        codigoCuenta: true,
-        codigoEmpresa: true,
-        nombreComercial: true,
-        estaActiva: true,
-      },
+      select: this.cuentaSelect,
     });
+    if (inPublic) {
+      return { ...inPublic, schemaName: null };
+    }
+
+    const empresas = await this.prisma.empresa.findMany({
+      where: { schemaName: { not: null } },
+      select: { schemaName: true },
+    });
+
+    for (const empresa of empresas) {
+      if (!empresa.schemaName) continue;
+      const found = await this.prisma
+        .forSchema(empresa.schemaName)
+        .cuenta.findUnique({
+          where: { codigoCuenta },
+          select: this.cuentaSelect,
+        });
+      if (found) {
+        return { ...found, schemaName: empresa.schemaName };
+      }
+    }
+
+    return null;
   }
 
   findOtrasCuentasEmpresa(
     codigoEmpresa: string,
     codigoCuentaExcluir: string,
+    schemaName?: string | null,
   ): Promise<{ codigoCuenta: string; nombreComercial: string }[]> {
-    return this.prisma.cuenta.findMany({
+    return this.prisma.forSchema(schemaName ?? null).cuenta.findMany({
       where: {
         codigoEmpresa,
         codigoCuenta: { not: codigoCuentaExcluir },
@@ -43,8 +72,9 @@ export class CuentaRepository {
 
   findBodegasActivasDeCuenta(
     codigoCuenta: string,
+    schemaName?: string | null,
   ): Promise<{ idBodega: string }[]> {
-    return this.prisma.bodega.findMany({
+    return this.prisma.forSchema(schemaName ?? null).bodega.findMany({
       where: { codigoCuenta, estaActiva: true },
       select: { idBodega: true },
     });
@@ -53,8 +83,9 @@ export class CuentaRepository {
   update(
     codigoCuenta: string,
     data: UpdateCuentaData,
+    schemaName?: string | null,
   ): Promise<UpdateCuentaResult> {
-    return this.prisma.cuenta.update({
+    return this.prisma.forSchema(schemaName ?? null).cuenta.update({
       where: { codigoCuenta },
       data,
       select: {
@@ -66,10 +97,13 @@ export class CuentaRepository {
     });
   }
 
-  findBodegasByIds(idsBodega: string[]): Promise<BodegaAssignCandidate[]> {
+  findBodegasByIds(
+    idsBodega: string[],
+    schemaName?: string | null,
+  ): Promise<BodegaAssignCandidate[]> {
     if (idsBodega.length === 0) return Promise.resolve([]);
 
-    return this.prisma.bodega.findMany({
+    return this.prisma.forSchema(schemaName ?? null).bodega.findMany({
       where: {
         idBodega: { in: idsBodega },
         estaActiva: true,
@@ -85,12 +119,13 @@ export class CuentaRepository {
   assignBodegasToCuenta(
     codigoCuenta: string,
     idsBodega: string[],
+    schemaName?: string | null,
   ): Promise<{ count: number }> {
     if (idsBodega.length === 0) {
       return Promise.resolve({ count: 0 });
     }
 
-    return this.prisma.bodega.updateMany({
+    return this.prisma.forSchema(schemaName ?? null).bodega.updateMany({
       where: { idBodega: { in: idsBodega } },
       data: { codigoCuenta },
     });

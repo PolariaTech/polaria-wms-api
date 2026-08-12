@@ -13,6 +13,7 @@ import { AuthService } from './auth.service';
 import { UsuarioRepository } from './infrastructure/usuario.repository';
 import { MateoHandoffService } from './mateo-handoff.service';
 import { MateoWidgetTokenService } from './mateo-widget-token.service';
+import { PrismaService } from '../../core/database/prisma.service';
 
 const mockConfigurador = {
   idUsuario: 'usr-config',
@@ -101,6 +102,14 @@ describe('AuthService', () => {
           provide: MateoWidgetTokenService,
           useValue: {
             generateToken: jest.fn(),
+          },
+        },
+        {
+          provide: PrismaService,
+          useValue: {
+            forSchema: jest.fn().mockReturnValue({
+              cuenta: { findUnique: jest.fn().mockResolvedValue(null) },
+            }),
           },
         },
       ],
@@ -441,6 +450,7 @@ describe('AuthService', () => {
       codigoEmpresa: 'EMP001',
       codigoCuenta: null,
       idBodegas: ['bodega-1'],
+      schemaName: null,
     };
 
     const configuradorContext = {
@@ -450,6 +460,7 @@ describe('AuthService', () => {
       codigoEmpresa: null,
       codigoCuenta: null,
       idBodegas: [],
+      schemaName: null,
     };
 
     it('retorna scope platform para configurador', async () => {
@@ -463,6 +474,7 @@ describe('AuthService', () => {
       expect(result.codigoEmpresa).toBeNull();
       expect(result.codigoCuenta).toBeNull();
       expect(result.idBodegas).toEqual([]);
+      expect(result.schemaName).toBeNull();
     });
 
     it('retorna scope tenant con datos de empresa e idBodegas', async () => {
@@ -475,6 +487,7 @@ describe('AuthService', () => {
       expect(result.scope).toBe('tenant');
       expect(result.razonSocialEmpresa).toBe('Empresa Demo SA');
       expect(result.idBodegas).toEqual(['bodega-1']);
+      expect(result.schemaName).toBeNull();
     });
 
     it('lanza 404 si no hay usuario activo', async () => {

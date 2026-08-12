@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { RequireTenantContextInterceptor } from '../interceptors/require-tenant-context.interceptor';
+import { TenantSchemaInterceptor } from '../interceptors/tenant-schema.interceptor';
 import { TenantModule } from '../tenant/tenant.module';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
@@ -15,6 +16,10 @@ import { TenantGuard } from './tenant.guard';
     RolesGuard,
     TenantGuard,
     SensitiveWriteGuard,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantSchemaInterceptor,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: RequireTenantContextInterceptor,

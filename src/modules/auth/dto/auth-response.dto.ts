@@ -121,4 +121,11 @@ export class MeResponseDto {
     description: 'Bodegas asignadas al usuario (vacío si no aplica)',
   })
   idBodegas!: string[];
+
+  @ApiPropertyOptional({
+    example: 'emp_andino',
+    nullable: true,
+    description: 'Schema Postgres del tenant (null = legacy en public)',
+  })
+  schemaName!: string | null;
 }

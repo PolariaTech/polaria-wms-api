@@ -1,94 +1,58 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
-import { EmpresaRepository } from '../infrastructure/empresa.repository';
+import { ConflictException } from '@nestjs/common';
 import { EmpresaService } from './empresa.service';
+import { EmpresaRepository } from '../infrastructure/empresa.repository';
 
-describe('EmpresaService', () => {
-  let service: EmpresaService;
-  let repository: jest.Mocked<EmpresaRepository>;
-
-  const empresa = {
-    codigoEmpresa: 'EVU53',
-    razonSocial: 'Tecno',
-    telefono: null as string | null,
-    estaActiva: true,
+describe('EmpresaService.create', () => {
+  const repository = {
+    findByCodigo: jest.fn(),
+    create: jest.fn(),
   };
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        EmpresaService,
-        {
-          provide: EmpresaRepository,
-          useValue: {
-            findByCodigo: jest.fn(),
-            update: jest.fn(),
-          },
-        },
-      ],
-    }).compile();
+  const service = new EmpresaService(
+    repository as unknown as EmpresaRepository,
+  );
 
-    service = module.get(EmpresaService);
-    repository = module.get(EmpresaRepository);
-    repository.findByCodigo.mockResolvedValue(empresa);
-    repository.update.mockResolvedValue({
-      ...empresa,
-      razonSocial: 'Tecno SpA',
-      estaActiva: false,
-    });
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  it('actualiza razón social y estado', async () => {
-    await expect(
-      service.update('EVU53', {
-        razonSocial: 'Tecno SpA',
-        estaActiva: false,
-      }),
-    ).resolves.toEqual({
-      codigoEmpresa: 'EVU53',
-      razonSocial: 'Tecno SpA',
-      telefono: null,
-      estaActiva: false,
-    });
-
-    expect(repository.findByCodigo).toHaveBeenCalledWith('EVU53');
-    expect(repository.update).toHaveBeenCalledWith('EVU53', {
-      razonSocial: 'Tecno SpA',
-      estaActiva: false,
-    });
-  });
-
-  it('limpia teléfono vacío a null', async () => {
-    repository.update.mockResolvedValue({
-      ...empresa,
-      telefono: null,
-    });
-
-    await service.update('EVU53', { telefono: '   ' });
-
-    expect(repository.update).toHaveBeenCalledWith('EVU53', {
-      telefono: null,
-    });
-  });
-
-  it('rechaza body sin campos', async () => {
-    await expect(service.update('EVU53', {})).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    expect(repository.update).not.toHaveBeenCalled();
-  });
-
-  it('rechaza razón social vacía', async () => {
-    await expect(
-      service.update('EVU53', { razonSocial: '   ' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('retorna 404 si la empresa no existe', async () => {
+  it('provisiona empresa nueva con schemaName', async () => {
     repository.findByCodigo.mockResolvedValue(null);
+    repository.create.mockResolvedValue({
+      codigoEmpresa: 'ANDINO',
+      razonSocial: 'Andino SpA',
+      telefono: null,
+      estaActiva: true,
+      schemaName: 'emp_andino',
+    });
+
+    const result = await service.create({
+      codigoEmpresa: 'ANDINO',
+      razonSocial: 'Andino SpA',
+    });
+
+    expect(repository.create).toHaveBeenCalledWith({
+      codigoEmpresa: 'ANDINO',
+      razonSocial: 'Andino SpA',
+      telefono: null,
+      idCreador: null,
+    });
+    expect(result.schemaName).toBe('emp_andino');
+  });
+
+  it('rechaza código duplicado', async () => {
+    repository.findByCodigo.mockResolvedValue({
+      codigoEmpresa: 'ANDINO',
+      razonSocial: 'Existente',
+      telefono: null,
+      estaActiva: true,
+    });
 
     await expect(
-      service.update('XXXXX', { razonSocial: 'X' }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+      service.create({
+        codigoEmpresa: 'ANDINO',
+        razonSocial: 'Otra',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

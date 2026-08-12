@@ -1,11 +1,14 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { CreateEmpresaDto } from '../dto/create-empresa.dto';
 import { UpdateEmpresaDto } from '../dto/update-empresa.dto';
 import { EmpresaRepository } from '../infrastructure/empresa.repository';
 import type {
+  CreateEmpresaResult,
   UpdateEmpresaData,
   UpdateEmpresaResult,
 } from '../interfaces/empresa.interfaces';
@@ -13,6 +16,33 @@ import type {
 @Injectable()
 export class EmpresaService {
   constructor(private readonly empresaRepository: EmpresaRepository) {}
+
+  async create(dto: CreateEmpresaDto): Promise<CreateEmpresaResult> {
+    const codigoEmpresa = dto.codigoEmpresa.trim();
+    const razonSocial = dto.razonSocial.trim();
+
+    if (!codigoEmpresa) {
+      throw new BadRequestException('El código de empresa es obligatorio');
+    }
+    if (!razonSocial) {
+      throw new BadRequestException('La razón social es obligatoria');
+    }
+
+    const existing = await this.empresaRepository.findByCodigo(codigoEmpresa);
+    if (existing) {
+      throw new ConflictException('Ya existe una empresa con ese código');
+    }
+
+    const telefonoRaw = dto.telefono?.trim() ?? '';
+    const telefono = telefonoRaw.length > 0 ? telefonoRaw : null;
+
+    return this.empresaRepository.create({
+      codigoEmpresa,
+      razonSocial,
+      telefono,
+      idCreador: dto.idCreador?.trim() || null,
+    });
+  }
 
   async update(
     codigoEmpresa: string,

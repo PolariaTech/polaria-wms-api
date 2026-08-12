@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../core/database/prisma.service';
 import type {
+  CreateEmpresaData,
+  CreateEmpresaResult,
   UpdateEmpresaData,
   UpdateEmpresaResult,
 } from '../interfaces/empresa.interfaces';
@@ -17,8 +19,36 @@ export class EmpresaRepository {
         razonSocial: true,
         telefono: true,
         estaActiva: true,
+        schemaName: true,
       },
     });
+  }
+
+  async create(data: CreateEmpresaData): Promise<CreateEmpresaResult> {
+    const created = await this.prisma.empresa.create({
+      data: {
+        codigoEmpresa: data.codigoEmpresa,
+        razonSocial: data.razonSocial,
+        telefono: data.telefono ?? null,
+        idCreador: data.idCreador ?? null,
+        estaActiva: true,
+      },
+      select: {
+        codigoEmpresa: true,
+        razonSocial: true,
+        telefono: true,
+        estaActiva: true,
+      },
+    });
+
+    const schemaName = await this.prisma.provisionEmpresaSchema(
+      created.codigoEmpresa,
+    );
+
+    return {
+      ...created,
+      schemaName,
+    };
   }
 
   update(
@@ -33,6 +63,7 @@ export class EmpresaRepository {
         razonSocial: true,
         telefono: true,
         estaActiva: true,
+        schemaName: true,
       },
     });
   }

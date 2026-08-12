@@ -40,6 +40,7 @@ describe('BodegaService', () => {
     codigoCuenta: 'CTA001',
     codigoEmpresa: 'EMP001',
     estaActiva: true,
+    schemaName: null as string | null,
     empresa: { estaActiva: true },
   };
 
@@ -93,6 +94,7 @@ describe('BodegaService', () => {
       tipo: BodegaTipo.interna,
       capacidadSlots: 50,
       idCreador: 'usr-config',
+      schemaName: null,
     });
   });
 

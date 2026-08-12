@@ -5,10 +5,13 @@ import {
   HttpStatus,
   Param,
   Patch,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -23,9 +26,14 @@ import { JwtAuthGuard } from '../../../core/guards/jwt-auth.guard';
 import { Roles } from '../../../core/guards/roles.decorator';
 import { RolesGuard } from '../../../core/guards/roles.guard';
 import { TenantGuard } from '../../../core/guards/tenant.guard';
+import { CreateEmpresaDto } from '../dto/create-empresa.dto';
+import { CreateEmpresaResponseDto } from '../dto/create-empresa-response.dto';
 import { UpdateEmpresaDto } from '../dto/update-empresa.dto';
 import { UpdateEmpresaResponseDto } from '../dto/update-empresa-response.dto';
-import type { UpdateEmpresaResult } from '../interfaces/empresa.interfaces';
+import type {
+  CreateEmpresaResult,
+  UpdateEmpresaResult,
+} from '../interfaces/empresa.interfaces';
 import { EmpresaService } from '../services/empresa.service';
 
 @ApiTags(SWAGGER_TAGS.CONFIGURACION_EMPRESAS)
@@ -35,6 +43,23 @@ import { EmpresaService } from '../services/empresa.service';
 @ApiBearerAuth('access-token')
 export class EmpresaController {
   constructor(private readonly empresaService: EmpresaService) {}
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Crear empresa + provisionar schema emp_*',
+    description:
+      'Inserta la empresa en public y crea el schema Postgres con todas las tablas de negocio (template_wms). Solo configurador.',
+  })
+  @ApiCreatedResponse({ type: CreateEmpresaResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
+  @ApiForbiddenResponse({
+    description: 'Solo configurador puede crear empresas',
+  })
+  @ApiConflictResponse({ description: 'Código de empresa ya existe' })
+  create(@Body() dto: CreateEmpresaDto): Promise<CreateEmpresaResult> {
+    return this.empresaService.create(dto);
+  }
 
   @Patch(':codigoEmpresa')
   @HttpCode(HttpStatus.OK)

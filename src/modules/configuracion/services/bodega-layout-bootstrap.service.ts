@@ -41,8 +41,10 @@ export class BodegaLayoutBootstrapService {
 
     this.assertTenantAccess(bodega.codigoCuenta, ctx);
 
-    const ubicacionesExistentes =
-      await this.layoutRepository.countUbicaciones(idBodega);
+    const ubicacionesExistentes = await this.layoutRepository.countUbicaciones(
+      idBodega,
+      bodega.schemaName,
+    );
 
     if (ubicacionesExistentes > 0) {
       throw new ConflictException(
