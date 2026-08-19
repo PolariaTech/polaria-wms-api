@@ -46,7 +46,9 @@ export class TenantSchemaLocator {
     return empresa?.schemaName ?? null;
   }
 
-  async findCuentaByCodigo(codigoCuenta: string): Promise<LocatedCuenta | null> {
+  async findCuentaByCodigo(
+    codigoCuenta: string,
+  ): Promise<LocatedCuenta | null> {
     const inPublic = await this.prisma.cuenta.findUnique({
       where: { codigoCuenta },
       select: {

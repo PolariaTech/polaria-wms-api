@@ -23,18 +23,15 @@ function poolOptionsForSearchPath(searchPath: string): string {
 }
 
 /**
- * Tipado: delegates de PrismaClient (empresa, cuenta, …) vía declaration merge.
- * Runtime: Proxy redirige delegates al client con search_path del tenant (ALS).
- */
-export interface PrismaService extends PrismaClient {}
-
-/**
  * Prisma sin multi-schema: las queries respetan search_path del pool.
  * - Legacy / plataforma: public,mateo_support
  * - Empresa con schema_name: emp_xxx,public,mateo_support
+ *
+ * Runtime: Proxy redirige delegates (empresa, cuenta, …) al client del tenant (ALS).
+ * Tipado: PrismaService = host + PrismaClient (sin declaration merging class/interface).
  */
 @Injectable()
-export class PrismaService implements OnModuleInit, OnModuleDestroy {
+class PrismaServiceHost implements OnModuleInit, OnModuleDestroy {
   private readonly connectionString: string;
   private readonly pools = new Map<string, Pool>();
   private readonly clients = new Map<string, PrismaClient>();
@@ -54,17 +51,19 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     this.pools.set(PLATFORM_SEARCH_PATH, this.rootPool);
     this.clients.set(PLATFORM_SEARCH_PATH, this.rootClient);
 
-    // eslint-disable-next-line no-constructor-return -- Proxy multi-tenant
     return new Proxy(this, {
-      get: (target, prop, receiver) => {
+      get: (target, prop, receiver): unknown => {
         if (typeof prop === 'string' && prop in target) {
-          const value = Reflect.get(target, prop, receiver);
-          return typeof value === 'function' ? value.bind(target) : value;
+          const value: unknown = Reflect.get(target, prop, receiver);
+          if (typeof value === 'function') {
+            return value.bind(target) as unknown;
+          }
+          return value;
         }
         const client = target.forSchema();
-        return Reflect.get(client, prop, client);
+        return Reflect.get(client, prop, client) as unknown;
       },
-    }) as unknown as PrismaService;
+    });
   }
 
   async onModuleInit(): Promise<void> {
@@ -83,7 +82,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     this.pools.clear();
   }
 
-  runWithSchema<T>(schemaName: string | null, fn: () => Promise<T>): Promise<T> {
+  runWithSchema<T>(
+    schemaName: string | null,
+    fn: () => Promise<T>,
+  ): Promise<T> {
     return this.als.run({ schemaName }, fn);
   }
 
@@ -128,3 +130,9 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return schema;
   }
 }
+
+export type PrismaService = PrismaServiceHost & PrismaClient;
+
+export const PrismaService = PrismaServiceHost as unknown as {
+  new (configService: ConfigService): PrismaService;
+};

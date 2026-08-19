@@ -26,7 +26,8 @@ export class TenantBodegaQueryDto {
 /** Query de reportes operativos con rango de fechas opcional (default = hoy). */
 export class BodegaReportesQueryDto extends TenantBodegaQueryDto {
   @ApiPropertyOptional({
-    description: 'Inicio del rango (YYYY-MM-DD). Default: hoy (America/Bogota).',
+    description:
+      'Inicio del rango (YYYY-MM-DD). Default: hoy (America/Bogota).',
     example: '2026-08-04',
   })
   @IsOptional()
