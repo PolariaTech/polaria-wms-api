@@ -91,10 +91,7 @@ export class BodegaLayoutRepository {
    */
   private async withTenantLayoutTx<T>(
     schemaName: string | null,
-    fn: (
-      tx: Prisma.TransactionClient,
-      schema: string,
-    ) => Promise<T>,
+    fn: (tx: Prisma.TransactionClient, schema: string) => Promise<T>,
   ): Promise<T> {
     const schema = this.schemaLocator.assertSafeSchemaIdent(
       schemaName ?? 'public',

@@ -35,6 +35,7 @@ import {
 } from '../constants/solicitud-compra.constants';
 import { CreateSolicitudCompraDto } from '../dto/create-solicitud-compra.dto';
 import { ListSolicitudesQueryDto } from '../dto/list-solicitudes-query.dto';
+import { EnviarAprobacionDto } from '../dto/enviar-aprobacion.dto';
 import { RechazarSolicitudDto } from '../dto/rechazar-solicitud.dto';
 import { SolicitudCompraResponseDto } from '../dto/solicitud-compra-response.dto';
 import { OrdenCompraResponseDto } from '../dto/orden-compra-response.dto';
@@ -108,13 +109,18 @@ export class SolicitudCompraController {
   @Post(':id/enviar-aprobacion')
   @Roles(...ROLES_SOL_ESCRITURA)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Enviar solicitud a aprobación' })
+  @ApiOperation({
+    summary: 'Enviar solicitud a aprobación',
+    description:
+      'Opcional: idProveedor en el body para asignarlo si la SOL llegó sin proveedor.',
+  })
   @ApiOkResponse({ type: SolicitudCompraResponseDto })
   enviarAprobacion(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EnviarAprobacionDto,
     @TenantCtx() ctx: TenantContext,
   ): Promise<SolicitudCompraResponse> {
-    return this.solicitudService.enviarAprobacion(id, ctx);
+    return this.solicitudService.enviarAprobacion(id, ctx, dto ?? {});
   }
 
   @Post(':id/aprobar')

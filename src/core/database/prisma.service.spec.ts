@@ -8,9 +8,7 @@ describe('PrismaService tenant search_path helpers', () => {
         : 'public,mateo_support';
 
     expect(searchPathFor(null)).toBe('public,mateo_support');
-    expect(searchPathFor('emp_andino')).toBe(
-      'emp_andino,public,mateo_support',
-    );
+    expect(searchPathFor('emp_andino')).toBe('emp_andino,public,mateo_support');
   });
 
   it('expone runWithSchema / forSchema / provisionEmpresaSchema en la clase', () => {

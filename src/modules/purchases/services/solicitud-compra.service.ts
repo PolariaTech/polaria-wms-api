@@ -119,14 +119,23 @@ export class SolicitudCompraService {
   async enviarAprobacion(
     idSolicitudCompra: string,
     ctx: TenantContext,
+    dto: { idProveedor?: string } = {},
   ): Promise<SolicitudCompraResponse> {
-    const solicitud = await this.getAccessibleSolicitud(idSolicitudCompra, ctx);
+    let solicitud = await this.getAccessibleSolicitud(idSolicitudCompra, ctx);
     this.assertTransition(solicitud.estado, EstadoSolicitudCompra.borrador);
 
     if (solicitud.lineas.length === 0) {
       throw new BadRequestException(
         'La solicitud debe tener al menos una línea',
       );
+    }
+
+    const idProveedor = dto.idProveedor?.trim();
+    if (idProveedor) {
+      await this.validateProveedor(idProveedor, solicitud.codigoCuenta);
+      solicitud = await this.repository.update(idSolicitudCompra, {
+        idProveedor,
+      });
     }
 
     if (!solicitud.idProveedor) {
