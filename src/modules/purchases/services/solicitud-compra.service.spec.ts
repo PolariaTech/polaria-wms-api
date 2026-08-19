@@ -251,6 +251,36 @@ describe('SolicitudCompraService', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('asigna proveedor al enviar a aprobación si la SOL no lo traía', async () => {
+    repository.findById.mockResolvedValue({
+      ...solicitudRecord,
+      idProveedor: null,
+    } as never);
+    repository.update.mockResolvedValue({
+      ...solicitudRecord,
+      idProveedor,
+    } as never);
+    repository.updateEstado.mockResolvedValue({
+      ...solicitudRecord,
+      idProveedor,
+      estado: EstadoSolicitudCompra.pendiente_aprobacion,
+    } as never);
+
+    const result = await service.enviarAprobacion(
+      idSolicitud,
+      operadorContext,
+      {
+        idProveedor,
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(idSolicitud, {
+      idProveedor,
+    });
+    expect(result.estado).toBe(EstadoSolicitudCompra.pendiente_aprobacion);
+    expect(result.idProveedor).toBe(idProveedor);
+  });
+
   it('aprueba solicitud pendiente', async () => {
     repository.findById.mockResolvedValue({
       ...solicitudRecord,

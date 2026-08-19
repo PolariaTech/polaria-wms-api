@@ -85,10 +85,12 @@ export class TenantService {
 
     const codigosCuentaEmpresa = usuario.codigoEmpresa
       ? (
-          await this.prisma.forSchema(usuario.empresa.schemaName).cuenta.findMany({
-            where: { codigoEmpresa: usuario.codigoEmpresa, estaActiva: true },
-            select: { codigoCuenta: true },
-          })
+          await this.prisma
+            .forSchema(usuario.empresa.schemaName)
+            .cuenta.findMany({
+              where: { codigoEmpresa: usuario.codigoEmpresa, estaActiva: true },
+              select: { codigoCuenta: true },
+            })
         ).map((c) => c.codigoCuenta)
       : [];
 

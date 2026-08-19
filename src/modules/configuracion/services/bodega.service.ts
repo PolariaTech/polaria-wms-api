@@ -72,7 +72,9 @@ export class BodegaService {
       // INSERT raw: el adapter a veces no mapea a P2002/P2003.
       const rawMessage =
         error instanceof Error ? error.message : String(error ?? '');
-      if (/unique|duplicate key|bodega_codigo_cuenta_codigo/i.test(rawMessage)) {
+      if (
+        /unique|duplicate key|bodega_codigo_cuenta_codigo/i.test(rawMessage)
+      ) {
         throw new ConflictException(
           'Ya existe una bodega con ese código en la cuenta',
         );
