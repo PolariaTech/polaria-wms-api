@@ -77,9 +77,11 @@ describe('CuentaService', () => {
       idsBodegas: ['bod-1', 'bod-2'],
     });
 
-    expect(repository.assignBodegasToCuenta).toHaveBeenCalledWith('49M04', [
-      'bod-2',
-    ]);
+    expect(repository.assignBodegasToCuenta).toHaveBeenCalledWith(
+      '49M04',
+      ['bod-2'],
+      undefined,
+    );
   });
 
   it('desvincula bodegas moviéndolas a otra cuenta de la empresa', async () => {
@@ -96,9 +98,11 @@ describe('CuentaService', () => {
       idsBodegas: ['bod-1'],
     });
 
-    expect(repository.assignBodegasToCuenta).toHaveBeenCalledWith('OTRA1', [
-      'bod-2',
-    ]);
+    expect(repository.assignBodegasToCuenta).toHaveBeenCalledWith(
+      'OTRA1',
+      ['bod-2'],
+      undefined,
+    );
   });
 
   it('rechaza desvincular si no hay otra cuenta en la empresa', async () => {
