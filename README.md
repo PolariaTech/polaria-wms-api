@@ -1,5 +1,7 @@
 # Polaria WMS API
 
+**Versión de producto: 2.4.3**
+
 API backend del sistema de gestión de almacenes (WMS) de Polaria. Construida con [NestJS 11](https://nestjs.com), TypeScript, Prisma y Supabase Auth.
 
 El proyecto implementa autenticación multitenant, SSO con Mateo, alta de usuarios por rol y un esquema de datos operativo completo en PostgreSQL (Supabase). Varios módulos de negocio están definidos como carpetas placeholder para desarrollo futuro.

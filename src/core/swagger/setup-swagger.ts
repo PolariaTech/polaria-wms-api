@@ -15,7 +15,7 @@ export function setupSwagger(app: INestApplication): void {
         'Integración con chatbot Mateo (handoff SSO y login por cliente). ' +
         `Header opcional \`${AUTH_CLIENT_HEADER}\`: \`wms\` (correo) | \`mateo\` (username).`,
     )
-    .setVersion('0.0.1')
+    .setVersion('2.4.3')
     .addBearerAuth(
       {
         type: 'http',
