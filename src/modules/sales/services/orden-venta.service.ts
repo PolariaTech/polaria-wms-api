@@ -51,8 +51,18 @@ export class OrdenVentaService {
   ): Promise<OrdenVentaEmitirResponse> {
     const orden = await this.getAccessibleOrden(idOrdenVenta, ctx);
 
+    // Idempotente: si ya se emitió (o avanzó en el flujo), no falla al reintentar.
     if (orden.estado !== EstadoOrdenVenta.borrador) {
-      throw new ConflictException('Solo se pueden emitir ventas en borrador');
+      if (
+        orden.estado === EstadoOrdenVenta.cancelada ||
+        orden.estado === EstadoOrdenVenta.cerrada
+      ) {
+        throw new ConflictException(
+          `No se puede emitir una venta en estado ${orden.estado}`,
+        );
+      }
+
+      return this.repository.toEmitirResponse(orden);
     }
 
     if (orden.lineas.length === 0) {
