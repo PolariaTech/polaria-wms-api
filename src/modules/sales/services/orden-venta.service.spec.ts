@@ -101,10 +101,28 @@ describe('OrdenVentaService.emitir', () => {
     expect(result.estado).toBe(EstadoOrdenVenta.confirmada);
   });
 
-  it('rechaza emitir OV que no está en borrador', async () => {
-    repository.findById.mockResolvedValue({
+  it('es idempotente si la OV ya está confirmada', async () => {
+    const ordenConfirmada = {
       ...ordenBorrador,
       estado: EstadoOrdenVenta.confirmada,
+    };
+    repository.findById.mockResolvedValue(ordenConfirmada as never);
+    repository.toEmitirResponse.mockReturnValue({
+      idOrdenVenta: idOrden,
+      venta: ordenBorrador.codigo,
+      estado: EstadoOrdenVenta.confirmada,
+    } as never);
+
+    const result = await service.emitir(idOrden, ctx);
+
+    expect(repository.emitir).not.toHaveBeenCalled();
+    expect(result.estado).toBe(EstadoOrdenVenta.confirmada);
+  });
+
+  it('rechaza emitir OV cancelada', async () => {
+    repository.findById.mockResolvedValue({
+      ...ordenBorrador,
+      estado: EstadoOrdenVenta.cancelada,
     } as never);
 
     await expect(service.emitir(idOrden, ctx)).rejects.toBeInstanceOf(
