@@ -5,12 +5,12 @@ import {
   EstadoSlot,
   EstadoTarea,
   Prisma,
-  TipoLineaOt,
   TipoMovimiento,
   TipoOrdenTrabajo,
   TipoTarea,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
+import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 import { assertWarehouseStateLockForMove } from '../../inventory/utils/assert-warehouse-state-lock.util';
 import { seleccionarWarehouseStateFefo } from '../../inventory/utils/fefo-warehouse-state.util';
 import { syncUbicacionEstadoSlot } from '../../inventory/utils/sync-ubicacion-estado-slot.util';
@@ -75,7 +75,10 @@ const FLUJO_TITULO: Record<FlujoOrdenTrabajo, string> = {
 
 @Injectable()
 export class OrdenTrabajoRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly schemaLocator: TenantSchemaLocator,
+  ) {}
 
   list(where: Prisma.OrdenTrabajoWhereInput): Promise<OrdenWithLineas[]> {
     return this.prisma.ordenTrabajo.findMany({
@@ -98,12 +101,24 @@ export class OrdenTrabajoRepository {
   ): Promise<OrdenWithLineas> {
     const registrarSalidaOv =
       input.tipoFlujo === 'a_salida' && Boolean(input.idOrdenVenta);
-
-    return this.prisma.$transaction((tx) =>
-      this.createInTransaction(tx, input, idSolicitante, {
-        registrarSalidaOv,
-      }),
+    const schema = this.schemaLocator.assertSafeSchemaIdent(
+      this.prisma.getActiveSchemaName() ?? 'public',
     );
+    const searchPath =
+      schema === 'public'
+        ? 'public,mateo_support'
+        : `${schema},public,mateo_support`;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `SELECT set_config('search_path', $1, true)`,
+        searchPath,
+      );
+      return this.createInTransaction(tx, input, idSolicitante, {
+        registrarSalidaOv,
+        schemaName: schema,
+      });
+    });
   }
 
   async createInTransaction(
@@ -112,58 +127,165 @@ export class OrdenTrabajoRepository {
     idSolicitante: string,
     opciones?: CreateOrdenTrabajoOpciones,
   ): Promise<OrdenWithLineas> {
+    const schema = this.schemaLocator.assertSafeSchemaIdent(
+      opciones?.schemaName ?? this.prisma.getActiveSchemaName() ?? 'public',
+    );
+
     const codigo = await this.nextCodigo(
       tx,
+      schema,
       input.codigoCuenta,
       input.idBodega,
     );
     const tipo = FLUJO_TIPO_OT[input.tipoFlujo];
+    const observaciones = buildObservacionesFlujo(
+      input.tipoFlujo,
+      input.observaciones,
+    );
 
-    const orden = await tx.ordenTrabajo.create({
-      data: {
-        codigoCuenta: input.codigoCuenta,
-        idBodega: input.idBodega,
-        codigo,
-        tipo,
-        estado: EstadoOrdenTrabajo.planificada,
-        idSolicitante,
-        idAsignado: input.idAsignado ?? null,
-        idLote: input.idLote ?? null,
-        idUbicacionOrigen: input.idUbicacionOrigen ?? null,
-        idUbicacionDestino: input.idUbicacionDestino ?? null,
-        idOrdenVenta: input.idOrdenVenta ?? null,
-        observaciones: buildObservacionesFlujo(
-          input.tipoFlujo,
-          input.observaciones,
-        ),
-        ...(input.idProducto && input.cantidad != null
-          ? {
-              lineas: {
-                create: {
-                  idProducto: input.idProducto,
-                  idUbicacion: input.idUbicacionOrigen ?? null,
-                  tipoLinea: TipoLineaOt.salida,
-                  cantidad: new Prisma.Decimal(input.cantidad),
-                },
-              },
-            }
-          : {}),
-      },
-      include: ordenInclude,
-    });
+    const createdRows = await tx.$queryRawUnsafe<
+      Array<{
+        idOrdenTrabajo: string;
+        codigoCuenta: string;
+        idBodega: string;
+        codigo: string;
+        estado: EstadoOrdenTrabajo;
+        tipo: TipoOrdenTrabajo;
+        idAsignado: string | null;
+        idSolicitante: string | null;
+        idLote: string | null;
+        idUbicacionOrigen: string | null;
+        idUbicacionDestino: string | null;
+        idSolicitudProcesamiento: string | null;
+        idOrdenVenta: string | null;
+        observaciones: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+      }>
+    >(
+      `INSERT INTO ${schema}.orden_trabajo (
+         codigo_cuenta,
+         id_bodega,
+         codigo,
+         tipo,
+         estado,
+         id_solicitante,
+         id_asignado,
+         id_lote,
+         id_ubicacion_origen,
+         id_ubicacion_destino,
+         id_orden_venta,
+         observaciones
+       ) VALUES (
+         $1,
+         $2::uuid,
+         $3,
+         $4,
+         'planificada',
+         $5::uuid,
+         $6::uuid,
+         $7::uuid,
+         $8::uuid,
+         $9::uuid,
+         $10::uuid,
+         $11
+       )
+       RETURNING
+         id_orden_trabajo AS "idOrdenTrabajo",
+         codigo_cuenta AS "codigoCuenta",
+         id_bodega AS "idBodega",
+         codigo,
+         estado,
+         tipo,
+         id_asignado AS "idAsignado",
+         id_solicitante AS "idSolicitante",
+         id_lote AS "idLote",
+         id_ubicacion_origen AS "idUbicacionOrigen",
+         id_ubicacion_destino AS "idUbicacionDestino",
+         id_solicitud_procesamiento AS "idSolicitudProcesamiento",
+         id_orden_venta AS "idOrdenVenta",
+         observaciones,
+         created_at AS "createdAt",
+         updated_at AS "updatedAt"`,
+      input.codigoCuenta,
+      input.idBodega,
+      codigo,
+      tipo,
+      idSolicitante,
+      input.idAsignado ?? null,
+      input.idLote ?? null,
+      input.idUbicacionOrigen ?? null,
+      input.idUbicacionDestino ?? null,
+      input.idOrdenVenta ?? null,
+      observaciones,
+    );
 
-    await tx.tareaCola.create({
-      data: {
-        codigoCuenta: input.codigoCuenta,
-        idBodega: input.idBodega,
-        tipo: FLUJO_TIPO_TAREA[input.tipoFlujo],
-        estado: EstadoTarea.pendiente,
-        idAsignado: input.idAsignado ?? null,
-        idOrdenTrabajo: orden.idOrdenTrabajo,
-        titulo: `${FLUJO_TITULO[input.tipoFlujo]} · ${codigo}`,
-        descripcion: input.observaciones?.trim() || null,
-      },
-    });
+    const created = createdRows[0];
+    if (!created) {
+      throw new Error(`No se pudo insertar orden_trabajo en ${schema}`);
+    }
+
+    const lineas: OrdenWithLineas['lineas'] = [];
+    if (input.idProducto && input.cantidad != null) {
+      const lineaRows = await tx.$queryRawUnsafe<OrdenWithLineas['lineas']>(
+        `INSERT INTO ${schema}.orden_trabajo_linea (
+           id_orden_trabajo,
+           id_producto,
+           id_ubicacion,
+           tipo_linea,
+           cantidad
+         ) VALUES (
+           $1::uuid,
+           $2::uuid,
+           $3::uuid,
+           'salida',
+           $4::numeric
+         )
+         RETURNING
+           id_linea_orden_trabajo AS "idLineaOrdenTrabajo",
+           id_orden_trabajo AS "idOrdenTrabajo",
+           id_producto AS "idProducto",
+           id_ubicacion AS "idUbicacion",
+           tipo_linea AS "tipoLinea",
+           cantidad`,
+        created.idOrdenTrabajo,
+        input.idProducto,
+        input.idUbicacionOrigen ?? null,
+        input.cantidad,
+      );
+      lineas.push(...lineaRows);
+    }
+
+    await tx.$executeRawUnsafe(
+      `INSERT INTO ${schema}.tarea_cola (
+         codigo_cuenta,
+         id_bodega,
+         tipo,
+         estado,
+         id_asignado,
+         id_orden_trabajo,
+         titulo,
+         descripcion
+       ) VALUES (
+         $1,
+         $2::uuid,
+         $3,
+         'pendiente',
+         $4::uuid,
+         $5::uuid,
+         $6,
+         $7
+       )`,
+      input.codigoCuenta,
+      input.idBodega,
+      FLUJO_TIPO_TAREA[input.tipoFlujo],
+      input.idAsignado ?? null,
+      created.idOrdenTrabajo,
+      `${FLUJO_TITULO[input.tipoFlujo]} · ${codigo}`,
+      input.observaciones?.trim() || null,
+    );
+
+    const orden = { ...created, lineas } as OrdenWithLineas;
 
     if (opciones?.registrarSalidaOv && input.idOrdenVenta) {
       await marcarOvEnPreparacion(tx, input.idOrdenVenta);
@@ -487,34 +609,31 @@ export class OrdenTrabajoRepository {
 
   private async nextCodigo(
     tx: Prisma.TransactionClient,
+    schema: string,
     codigoCuenta: string,
     idBodega: string,
   ): Promise<string> {
-    const existing = await tx.contador.findFirst({
-      where: {
-        codigoCuenta,
-        idBodega,
-        clave: CONTADOR_CLAVE_ORDEN_TRABAJO,
-      },
-    });
+    const rows = await tx.$queryRawUnsafe<Array<{ valor: bigint | string }>>(
+      `INSERT INTO ${schema}.contador (codigo_cuenta, id_bodega, clave, valor)
+       VALUES ($1, $2::uuid, $3, 1)
+       ON CONFLICT (codigo_cuenta, id_bodega, clave)
+       DO UPDATE SET
+         valor = ${schema}.contador.valor + 1,
+         updated_at = now()
+       RETURNING valor`,
+      codigoCuenta,
+      idBodega,
+      CONTADOR_CLAVE_ORDEN_TRABAJO,
+    );
 
-    if (existing) {
-      const updated = await tx.contador.update({
-        where: { idContador: existing.idContador },
-        data: { valor: { increment: 1 } },
-      });
-      return formatCodigoOrdenTrabajo(updated.valor);
+    const valor = rows[0]?.valor;
+    if (valor == null) {
+      throw new Error(`No se pudo obtener contador de OT en ${schema}`);
     }
 
-    const created = await tx.contador.create({
-      data: {
-        codigoCuenta,
-        idBodega,
-        clave: CONTADOR_CLAVE_ORDEN_TRABAJO,
-        valor: 1n,
-      },
-    });
-    return formatCodigoOrdenTrabajo(created.valor);
+    return formatCodigoOrdenTrabajo(
+      typeof valor === 'bigint' ? valor : BigInt(valor),
+    );
   }
 
   toResponse(orden: OrdenWithLineas): OrdenTrabajoResponse {

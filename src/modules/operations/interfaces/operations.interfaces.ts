@@ -114,6 +114,8 @@ export interface CreateOrdenTrabajoInput {
 export interface CreateOrdenTrabajoOpciones {
   /** Registro manual de salida por el jefe (transición OV + cancela OTs de emit). */
   registrarSalidaOv?: boolean;
+  /** Schema tenant (emp_*). Sin esto Prisma escribe en public. */
+  schemaName?: string | null;
 }
 
 export interface EjecutarOrdenTrabajoInput {

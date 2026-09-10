@@ -141,6 +141,20 @@ export class TenantSchemaLocator {
     return located?.schemaName ?? null;
   }
 
+  async listTenantSchemaNames(): Promise<string[]> {
+    const empresas = await this.prisma.empresa.findMany({
+      where: { schemaName: { not: null } },
+      select: { schemaName: true },
+    });
+    const names: string[] = [];
+    for (const empresa of empresas) {
+      if (!empresa.schemaName) continue;
+      const schema = this.assertSafeSchemaIdent(empresa.schemaName);
+      if (!names.includes(schema)) names.push(schema);
+    }
+    return names;
+  }
+
   private async queryCuentaInSchema(
     schemaName: string,
     codigoCuenta: string,

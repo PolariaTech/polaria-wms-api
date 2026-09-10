@@ -41,7 +41,7 @@ export class OrdenVentaService {
       ctx,
     );
 
-    const rows = await this.repository.list(where);
+    const rows = await this.repository.list(where, ctx.schemaName);
     return rows.map((row) => this.repository.toEmitirResponse(row));
   }
 
@@ -74,14 +74,14 @@ export class OrdenVentaService {
     // Temporal: se permite emitir aunque no haya stock suficiente (pedidos sin
     // inventario cargado). allocateFifo reserva lo disponible y no bloquea el resto.
     try {
-      return await this.repository.emitir(orden, ctx.idUsuario);
+      return await this.repository.emitir(orden, ctx.idUsuario, ctx.schemaName);
     } catch (error) {
       this.mapEmitirError(error);
     }
   }
 
   private async getAccessibleOrden(idOrdenVenta: string, ctx: TenantContext) {
-    const orden = await this.repository.findById(idOrdenVenta);
+    const orden = await this.repository.findById(idOrdenVenta, ctx.schemaName);
 
     if (!orden) {
       throw new NotFoundException('No se encontró la orden de venta');
@@ -131,12 +131,6 @@ export class OrdenVentaService {
     if (error instanceof Error) {
       if (error.message === 'OV_ESTADO_INVALIDO') {
         throw new ConflictException('Solo se pueden emitir ventas en borrador');
-      }
-
-      if (error.message === 'UBICACION_DESTINO_NOT_FOUND') {
-        throw new ConflictException(
-          'No hay slots libres en la zona de destino para despachar la venta',
-        );
       }
 
       if (error.message.startsWith('STOCK_INSUFICIENTE|')) {
