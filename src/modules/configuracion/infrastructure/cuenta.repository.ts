@@ -21,9 +21,14 @@ export class CuentaRepository {
     idBodegaDefault: true,
   } as const;
 
-  /** Busca en public y, si no está, en schemas emp_* de empresas. */
+  /** Busca en public y, si no está, en schemas emp_* de empresas.
+   * Siempre usa forSchema(null) para plataforma: el ALS del request
+   * puede estar en otro emp_* (TenantSchemaInterceptor) y romper el lookup.
+   */
   async findByCodigo(codigoCuenta: string): Promise<CuentaLocate | null> {
-    const inPublic = await this.prisma.cuenta.findUnique({
+    const platform = this.prisma.forSchema(null);
+
+    const inPublic = await platform.cuenta.findUnique({
       where: { codigoCuenta },
       select: this.cuentaSelect,
     });
@@ -31,7 +36,7 @@ export class CuentaRepository {
       return { ...inPublic, schemaName: null };
     }
 
-    const empresas = await this.prisma.empresa.findMany({
+    const empresas = await platform.empresa.findMany({
       where: { schemaName: { not: null } },
       select: { schemaName: true },
     });
