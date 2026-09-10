@@ -9,3 +9,9 @@ export interface CreateUsuarioResponse {
   correo: string;
   telefono: string | null;
 }
+
+export interface UpdateUsuarioInput {
+  nombre?: string;
+  correo?: string;
+  telefono?: string | null;
+}

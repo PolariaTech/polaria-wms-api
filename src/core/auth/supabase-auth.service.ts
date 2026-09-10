@@ -121,6 +121,40 @@ export class SupabaseAuthService {
     }
   }
 
+  async updateAuthUser(
+    idAuth: string,
+    patch: { email?: string; password?: string },
+  ): Promise<void> {
+    const email = patch.email?.trim().toLowerCase();
+    const password = patch.password;
+
+    if (!email && !password) {
+      throw new BadRequestException(
+        'Debes indicar correo o contraseña para actualizar Auth',
+      );
+    }
+
+    const { error } = await this.adminClient.auth.admin.updateUserById(idAuth, {
+      ...(email ? { email, email_confirm: true } : {}),
+      ...(password ? { password } : {}),
+    });
+
+    if (error) {
+      const message =
+        error.message ?? 'No se pudo actualizar el usuario en Auth';
+
+      if (
+        message.toLowerCase().includes('already') ||
+        message.toLowerCase().includes('registered')
+      ) {
+        throw new ConflictException('El correo ya está registrado');
+      }
+
+      this.logger.warn(`Error al actualizar usuario Auth: ${message}`);
+      throw new BadRequestException(message);
+    }
+  }
+
   async createSessionForEmail(email: string): Promise<SupabaseSessionTokens> {
     const { data: linkData, error: linkError } =
       await this.adminClient.auth.admin.generateLink({

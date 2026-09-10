@@ -13,7 +13,10 @@ import {
 } from '../../../shared/constants/roles';
 import { CreateUsuarioDto } from '../dto/create-usuario.dto';
 import { ConfiguradorUsuarioRepository } from '../infrastructure/configurador-usuario.repository';
-import type { CreateUsuarioResponse } from '../interfaces/usuarios.interfaces';
+import type {
+  CreateUsuarioResponse,
+  UpdateUsuarioInput,
+} from '../interfaces/usuarios.interfaces';
 
 @Injectable()
 export class ConfiguradorUsuariosService {
@@ -107,6 +110,111 @@ export class ConfiguradorUsuariosService {
       await this.supabaseAuth.deleteAuthUser(idAuth);
       throw error;
     }
+  }
+
+  async update(
+    idUsuario: string,
+    dto: UpdateUsuarioInput,
+  ): Promise<CreateUsuarioResponse> {
+    const usuario = await this.usuarioRepository.findById(idUsuario);
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const nombre = dto.nombre !== undefined ? dto.nombre.trim() : undefined;
+    const correo =
+      dto.correo !== undefined ? dto.correo.trim().toLowerCase() : undefined;
+    const telefono =
+      dto.telefono === undefined ? undefined : dto.telefono?.trim() || null;
+
+    if (nombre !== undefined && !nombre) {
+      throw new BadRequestException('El nombre es obligatorio');
+    }
+
+    if (correo !== undefined && !correo) {
+      throw new BadRequestException('El correo es obligatorio');
+    }
+
+    if (
+      nombre === undefined &&
+      correo === undefined &&
+      telefono === undefined
+    ) {
+      throw new BadRequestException(
+        'Debes indicar al menos un campo para actualizar',
+      );
+    }
+
+    if (correo && correo !== usuario.correo) {
+      const existingCorreo = await this.usuarioRepository.findByCorreo(correo);
+      if (existingCorreo && existingCorreo.idUsuario !== idUsuario) {
+        throw new ConflictException('El correo ya está en uso');
+      }
+    }
+
+    const previousCorreo = usuario.correo;
+    const correoChanged = Boolean(correo && correo !== previousCorreo);
+
+    if (correoChanged && correo) {
+      await this.supabaseAuth.updateAuthUser(usuario.idAuth, { email: correo });
+    }
+
+    try {
+      const updated = await this.usuarioRepository.updateUsuario(idUsuario, {
+        ...(nombre !== undefined ? { nombre } : {}),
+        ...(correoChanged && correo ? { correo } : {}),
+        ...(telefono !== undefined ? { telefono } : {}),
+      });
+
+      return this.toResponse(updated);
+    } catch (error) {
+      if (correoChanged) {
+        await this.supabaseAuth.updateAuthUser(usuario.idAuth, {
+          email: previousCorreo,
+        });
+      }
+      throw error;
+    }
+  }
+
+  async resetPassword(
+    idUsuario: string,
+    password: string,
+  ): Promise<CreateUsuarioResponse> {
+    const usuario = await this.usuarioRepository.findById(idUsuario);
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const clave = password.trim();
+    if (clave.length < 8) {
+      throw new BadRequestException(
+        'La clave debe tener al menos 8 caracteres',
+      );
+    }
+
+    await this.supabaseAuth.updateAuthUser(usuario.idAuth, { password: clave });
+    return this.toResponse(usuario);
+  }
+
+  private toResponse(usuario: {
+    idUsuario: string;
+    username: string;
+    nombre: string;
+    idRol: WmsRol;
+    codigoCuenta: string | null;
+    correo: string;
+    telefono: string | null;
+  }): CreateUsuarioResponse {
+    return {
+      idUsuario: usuario.idUsuario,
+      username: usuario.username,
+      nombre: usuario.nombre,
+      idRol: usuario.idRol,
+      codigoCuenta: usuario.codigoCuenta,
+      correo: usuario.correo,
+      telefono: usuario.telefono,
+    };
   }
 
   private validateTenantFields(input: {

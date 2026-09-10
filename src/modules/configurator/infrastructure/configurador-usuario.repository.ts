@@ -38,9 +38,29 @@ export class ConfiguradorUsuarioRepository {
     });
   }
 
+  findById(idUsuario: string) {
+    return this.prisma.usuario.findUnique({
+      where: { idUsuario },
+    });
+  }
+
   findByCorreo(correo: string) {
     return this.prisma.usuario.findUnique({
       where: { correo: correo.trim().toLowerCase() },
+    });
+  }
+
+  updateUsuario(
+    idUsuario: string,
+    data: {
+      nombre?: string;
+      correo?: string;
+      telefono?: string | null;
+    },
+  ) {
+    return this.prisma.usuario.update({
+      where: { idUsuario },
+      data,
     });
   }
 
