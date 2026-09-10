@@ -26,10 +26,12 @@ describe('ConfiguradorUsuariosService', () => {
           useValue: {
             findByUsername: jest.fn(),
             findByCorreo: jest.fn(),
+            findById: jest.fn(),
             findRol: jest.fn(),
             findCuentaWithEmpresa: jest.fn(),
             findBodega: jest.fn(),
             createUsuarioWithOptionalAsignacion: jest.fn(),
+            updateUsuario: jest.fn(),
           },
         },
         {
@@ -37,6 +39,7 @@ describe('ConfiguradorUsuariosService', () => {
           useValue: {
             createAuthUser: jest.fn(),
             deleteAuthUser: jest.fn(),
+            updateAuthUser: jest.fn(),
           },
         },
       ],
@@ -329,5 +332,83 @@ describe('ConfiguradorUsuariosService', () => {
     ).rejects.toThrow('db fail');
 
     expect(supabaseAuth.deleteAuthUser).toHaveBeenCalledWith('auth-new');
+  });
+
+  const usuarioExistente = {
+    idUsuario: 'usr-1',
+    idAuth: 'auth-1',
+    username: 'OPER01',
+    nombre: 'Operador Uno',
+    idRol: WmsRol.operador_cuenta,
+    codigoCuenta: 'CTA001',
+    correo: 'operador@test.com',
+    telefono: '+573001112233',
+  };
+
+  it('actualiza nombre y teléfono sin tocar Auth', async () => {
+    repository.findById.mockResolvedValue(usuarioExistente as never);
+    repository.updateUsuario.mockResolvedValue({
+      ...usuarioExistente,
+      nombre: 'Operador Editado',
+      telefono: '+573009998877',
+    } as never);
+
+    const result = await service.update('usr-1', {
+      nombre: 'Operador Editado',
+      telefono: '+573009998877',
+    });
+
+    expect(supabaseAuth.updateAuthUser).not.toHaveBeenCalled();
+    expect(repository.updateUsuario).toHaveBeenCalledWith('usr-1', {
+      nombre: 'Operador Editado',
+      telefono: '+573009998877',
+    });
+    expect(result.nombre).toBe('Operador Editado');
+  });
+
+  it('sincroniza el correo en Auth al actualizarlo', async () => {
+    repository.findById.mockResolvedValue(usuarioExistente as never);
+    repository.findByCorreo.mockResolvedValue(null);
+    repository.updateUsuario.mockResolvedValue({
+      ...usuarioExistente,
+      correo: 'nuevo@test.com',
+    } as never);
+
+    await service.update('usr-1', { correo: 'nuevo@test.com' });
+
+    expect(supabaseAuth.updateAuthUser).toHaveBeenCalledWith('auth-1', {
+      email: 'nuevo@test.com',
+    });
+  });
+
+  it('rechaza actualizar el correo si ya está en uso', async () => {
+    repository.findById.mockResolvedValue(usuarioExistente as never);
+    repository.findByCorreo.mockResolvedValue({
+      idUsuario: 'usr-otro',
+    } as never);
+
+    await expect(
+      service.update('usr-1', { correo: 'otro@test.com' }),
+    ).rejects.toThrow(ConflictException);
+    expect(supabaseAuth.updateAuthUser).not.toHaveBeenCalled();
+  });
+
+  it('restablece la contraseña en Auth', async () => {
+    repository.findById.mockResolvedValue(usuarioExistente as never);
+
+    const result = await service.resetPassword('usr-1', 'ClaveNueva1!');
+
+    expect(supabaseAuth.updateAuthUser).toHaveBeenCalledWith('auth-1', {
+      password: 'ClaveNueva1!',
+    });
+    expect(result.idUsuario).toBe('usr-1');
+  });
+
+  it('no permite restablecer contraseña de un usuario inexistente', async () => {
+    repository.findById.mockResolvedValue(null);
+
+    await expect(
+      service.resetPassword('usr-missing', 'ClaveNueva1!'),
+    ).rejects.toThrow(NotFoundException);
   });
 });

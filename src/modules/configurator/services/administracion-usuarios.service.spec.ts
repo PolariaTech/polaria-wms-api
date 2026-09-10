@@ -1,13 +1,21 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { RolNivel, WmsRol } from '../../../generated/prisma/client';
+import { ConfiguradorUsuarioRepository } from '../infrastructure/configurador-usuario.repository';
 import { AdministracionUsuariosService } from './administracion-usuarios.service';
 import { ConfiguradorUsuariosService } from './configurador-usuarios.service';
 
 describe('AdministracionUsuariosService', () => {
   let service: AdministracionUsuariosService;
   let configuradorUsuariosService: jest.Mocked<
-    Pick<ConfiguradorUsuariosService, 'create'>
+    Pick<ConfiguradorUsuariosService, 'create' | 'update' | 'resetPassword'>
+  >;
+  let usuarioRepository: jest.Mocked<
+    Pick<ConfiguradorUsuarioRepository, 'findById'>
   >;
 
   const adminContext = {
@@ -28,7 +36,14 @@ describe('AdministracionUsuariosService', () => {
   };
 
   beforeEach(async () => {
-    configuradorUsuariosService = { create: jest.fn() };
+    configuradorUsuariosService = {
+      create: jest.fn(),
+      update: jest.fn(),
+      resetPassword: jest.fn(),
+    };
+    usuarioRepository = {
+      findById: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -36,6 +51,10 @@ describe('AdministracionUsuariosService', () => {
         {
           provide: ConfiguradorUsuariosService,
           useValue: configuradorUsuariosService,
+        },
+        {
+          provide: ConfiguradorUsuarioRepository,
+          useValue: usuarioRepository,
         },
       ],
     }).compile();
@@ -105,5 +124,77 @@ describe('AdministracionUsuariosService', () => {
         codigoCuenta: null,
       }),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  const operadorCuenta = {
+    idUsuario: 'usr-op',
+    idAuth: 'auth-op',
+    idRol: WmsRol.operador_cuenta,
+    codigoCuenta: 'CTA001',
+    estaActivo: true,
+    nombre: 'Operador',
+    username: 'OPER01',
+    correo: 'operador@test.com',
+    telefono: '+573001112233',
+  };
+
+  it('actualiza un operador de la misma cuenta', async () => {
+    usuarioRepository.findById.mockResolvedValue(operadorCuenta as never);
+    configuradorUsuariosService.update.mockResolvedValue({
+      idUsuario: operadorCuenta.idUsuario,
+      username: operadorCuenta.username,
+      nombre: 'Operador Editado',
+      idRol: WmsRol.operador_cuenta,
+      codigoCuenta: 'CTA001',
+      correo: 'nuevo@test.com',
+      telefono: '+573009998877',
+    });
+
+    await service.update(
+      operadorCuenta.idUsuario,
+      { nombre: 'Operador Editado', correo: 'nuevo@test.com' },
+      adminContext,
+    );
+
+    expect(configuradorUsuariosService.update).toHaveBeenCalledWith(
+      operadorCuenta.idUsuario,
+      { nombre: 'Operador Editado', correo: 'nuevo@test.com' },
+    );
+  });
+
+  it('restablece la contraseña de un operador de la misma cuenta', async () => {
+    usuarioRepository.findById.mockResolvedValue(operadorCuenta as never);
+    configuradorUsuariosService.resetPassword.mockResolvedValue({
+      idUsuario: operadorCuenta.idUsuario,
+      username: operadorCuenta.username,
+      nombre: operadorCuenta.nombre,
+      idRol: WmsRol.operador_cuenta,
+      codigoCuenta: 'CTA001',
+      correo: operadorCuenta.correo,
+      telefono: operadorCuenta.telefono,
+    });
+
+    await service.resetPassword(
+      operadorCuenta.idUsuario,
+      'ClaveNueva1!',
+      adminContext,
+    );
+
+    expect(configuradorUsuariosService.resetPassword).toHaveBeenCalledWith(
+      operadorCuenta.idUsuario,
+      'ClaveNueva1!',
+    );
+  });
+
+  it('no actualiza un usuario de otra cuenta', async () => {
+    usuarioRepository.findById.mockResolvedValue({
+      ...operadorCuenta,
+      codigoCuenta: 'OTRA',
+    } as never);
+
+    await expect(
+      service.update(operadorCuenta.idUsuario, { nombre: 'X' }, adminContext),
+    ).rejects.toThrow(NotFoundException);
+    expect(configuradorUsuariosService.update).not.toHaveBeenCalled();
   });
 });

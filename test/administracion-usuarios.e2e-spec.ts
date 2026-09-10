@@ -10,12 +10,18 @@ import { TenantGuard } from '../src/core/guards/tenant.guard';
 import { TenantService } from '../src/core/tenant/tenant.service';
 import { RolNivel, WmsRol } from '../src/generated/prisma/client';
 import { AdministracionUsuariosController } from '../src/modules/configurator/controllers/administracion-usuarios.controller';
+import { ConfiguradorUsuarioRepository } from '../src/modules/configurator/infrastructure/configurador-usuario.repository';
 import { AdministracionUsuariosService } from '../src/modules/configurator/services/administracion-usuarios.service';
 import { ConfiguradorUsuariosService } from '../src/modules/configurator/services/configurador-usuarios.service';
 
 describe('AdministracionUsuariosController (e2e)', () => {
   let app: INestApplication<App>;
-  let configuradorUsuariosService: { create: jest.Mock };
+  let configuradorUsuariosService: {
+    create: jest.Mock;
+    update: jest.Mock;
+    resetPassword: jest.Mock;
+  };
+  let usuarioRepository: { findById: jest.Mock };
 
   const adminContext = {
     idUsuario: 'usr-admin',
@@ -36,7 +42,12 @@ describe('AdministracionUsuariosController (e2e)', () => {
   };
 
   beforeEach(async () => {
-    configuradorUsuariosService = { create: jest.fn() };
+    configuradorUsuariosService = {
+      create: jest.fn(),
+      update: jest.fn(),
+      resetPassword: jest.fn(),
+    };
+    usuarioRepository = { findById: jest.fn() };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [AdministracionUsuariosController],
@@ -45,6 +56,10 @@ describe('AdministracionUsuariosController (e2e)', () => {
         {
           provide: ConfiguradorUsuariosService,
           useValue: configuradorUsuariosService,
+        },
+        {
+          provide: ConfiguradorUsuarioRepository,
+          useValue: usuarioRepository,
         },
         {
           provide: SupabaseAuthService,
@@ -188,5 +203,88 @@ describe('AdministracionUsuariosController (e2e)', () => {
       }),
       adminContext.idUsuario,
     );
+  });
+
+  const idUsuario = '550e8400-e29b-41d4-a716-446655440099';
+
+  it('PATCH /administracion/usuarios/:idUsuario actualiza datos sin username', async () => {
+    usuarioRepository.findById.mockResolvedValue({
+      idUsuario,
+      idRol: WmsRol.operador_cuenta,
+      codigoCuenta: 'CTA001',
+      estaActivo: true,
+    });
+    configuradorUsuariosService.update.mockResolvedValue({
+      idUsuario,
+      username: 'OPER01',
+      nombre: 'Operador Editado',
+      idRol: WmsRol.operador_cuenta,
+      codigoCuenta: 'CTA001',
+      correo: 'nuevo@test.com',
+      telefono: '+573001112233',
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/administracion/usuarios/${idUsuario}`)
+      .set('Authorization', 'Bearer admin-token')
+      .send({
+        nombre: 'Operador Editado',
+        correo: 'nuevo@test.com',
+      })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.nombre).toBe('Operador Editado');
+        expect(res.body.username).toBe('OPER01');
+      });
+
+    expect(configuradorUsuariosService.update).toHaveBeenCalledWith(
+      idUsuario,
+      expect.objectContaining({
+        nombre: 'Operador Editado',
+        correo: 'nuevo@test.com',
+      }),
+    );
+  });
+
+  it('POST /administracion/usuarios/:idUsuario/password restablece la clave', async () => {
+    usuarioRepository.findById.mockResolvedValue({
+      idUsuario,
+      idRol: WmsRol.operador_cuenta,
+      codigoCuenta: 'CTA001',
+      estaActivo: true,
+    });
+    configuradorUsuariosService.resetPassword.mockResolvedValue({
+      idUsuario,
+      username: 'OPER01',
+      nombre: 'Operador',
+      idRol: WmsRol.operador_cuenta,
+      codigoCuenta: 'CTA001',
+      correo: 'operador@test.com',
+      telefono: null,
+    });
+
+    await request(app.getHttpServer())
+      .post(`/administracion/usuarios/${idUsuario}/password`)
+      .set('Authorization', 'Bearer admin-token')
+      .send({ password: 'ClaveNueva1!' })
+      .expect(200);
+
+    expect(configuradorUsuariosService.resetPassword).toHaveBeenCalledWith(
+      idUsuario,
+      'ClaveNueva1!',
+    );
+  });
+
+  it('POST /administracion/usuarios/:idUsuario/password responde 403 para operador', async () => {
+    const tenantService = app.get(TenantService);
+    (tenantService.buildContext as jest.Mock).mockResolvedValue(
+      operadorContext,
+    );
+
+    await request(app.getHttpServer())
+      .post(`/administracion/usuarios/${idUsuario}/password`)
+      .set('Authorization', 'Bearer operador-token')
+      .send({ password: 'ClaveNueva1!' })
+      .expect(403);
   });
 });
