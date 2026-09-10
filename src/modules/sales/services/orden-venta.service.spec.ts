@@ -22,8 +22,11 @@ describe('OrdenVentaService.emitir', () => {
     idUsuario: 'user-1',
     idRol: WmsRol.operador_cuenta,
     nivelRol: RolNivel.cuenta,
+    codigoEmpresa: 'EMP001',
     codigoCuenta: 'CTA001',
+    codigosCuentaEmpresa: ['CTA001'],
     idBodegas: [],
+    schemaName: 'emp_andino',
   };
 
   const idOrden = '550e8400-e29b-41d4-a716-446655440000';
@@ -96,7 +99,12 @@ describe('OrdenVentaService.emitir', () => {
 
     const result = await service.emitir(idOrden, ctx);
 
-    expect(repository.emitir).toHaveBeenCalledWith(ordenBorrador, 'user-1');
+    expect(repository.findById).toHaveBeenCalledWith(idOrden, 'emp_andino');
+    expect(repository.emitir).toHaveBeenCalledWith(
+      ordenBorrador,
+      'user-1',
+      'emp_andino',
+    );
     expect(result.estado).toBe(EstadoOrdenVenta.confirmada);
   });
 
@@ -150,7 +158,11 @@ describe('OrdenVentaService.emitir', () => {
 
     const result = await service.emitir(idOrden, ctx);
 
-    expect(repository.emitir).toHaveBeenCalledWith(ordenBorrador, 'user-1');
+    expect(repository.emitir).toHaveBeenCalledWith(
+      ordenBorrador,
+      'user-1',
+      ctx.schemaName,
+    );
     expect(result.estado).toBe(EstadoOrdenVenta.confirmada);
   });
 
@@ -190,8 +202,11 @@ describe('OrdenVentaService.list', () => {
     idUsuario: 'user-1',
     idRol: WmsRol.jefe_bodega,
     nivelRol: RolNivel.bodega,
+    codigoEmpresa: 'EMP001',
     codigoCuenta: 'CTA001',
+    codigosCuentaEmpresa: ['CTA001'],
     idBodegas: ['bodega-1'],
+    schemaName: 'emp_andino',
   };
 
   beforeEach(async () => {
@@ -241,6 +256,7 @@ describe('OrdenVentaService.list', () => {
         idBodega: 'bodega-1',
         estado: EstadoOrdenVenta.confirmada,
       }),
+      'emp_andino',
     );
     expect(result).toHaveLength(1);
     expect(result[0]?.estado).toBe(EstadoOrdenVenta.confirmada);
