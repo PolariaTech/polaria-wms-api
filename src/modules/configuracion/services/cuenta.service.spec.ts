@@ -12,6 +12,8 @@ describe('CuentaService', () => {
     codigoEmpresa: 'EVU53',
     nombreComercial: 'Tecno-Tech',
     estaActiva: true,
+    idBodegaDefault: null as string | null,
+    schemaName: null as string | null,
   };
 
   beforeEach(async () => {
@@ -36,9 +38,11 @@ describe('CuentaService', () => {
     repository = module.get(CuentaRepository);
     repository.findByCodigo.mockResolvedValue(cuenta);
     repository.update.mockResolvedValue({
-      ...cuenta,
+      codigoCuenta: cuenta.codigoCuenta,
+      codigoEmpresa: cuenta.codigoEmpresa,
       nombreComercial: 'Tecno Tech SA',
       estaActiva: false,
+      idBodegaDefault: null,
     });
     repository.findBodegasActivasDeCuenta.mockResolvedValue([]);
     repository.findOtrasCuentasEmpresa.mockResolvedValue([]);
@@ -57,7 +61,47 @@ describe('CuentaService', () => {
       codigoEmpresa: 'EVU53',
       nombreComercial: 'Tecno Tech SA',
       estaActiva: false,
+      idBodegaDefault: null,
     });
+  });
+
+  it('guarda bodega por defecto de la cuenta', async () => {
+    repository.findBodegasActivasDeCuenta.mockResolvedValue([
+      { idBodega: 'bod-1' },
+    ]);
+    repository.update.mockResolvedValue({
+      codigoCuenta: '49M04',
+      codigoEmpresa: 'EVU53',
+      nombreComercial: 'Tecno-Tech',
+      estaActiva: true,
+      idBodegaDefault: 'bod-1',
+    });
+
+    await expect(
+      service.update('49M04', { idBodegaDefault: 'bod-1' }),
+    ).resolves.toEqual({
+      codigoCuenta: '49M04',
+      codigoEmpresa: 'EVU53',
+      nombreComercial: 'Tecno-Tech',
+      estaActiva: true,
+      idBodegaDefault: 'bod-1',
+    });
+
+    expect(repository.update).toHaveBeenCalledWith(
+      '49M04',
+      { idBodegaDefault: 'bod-1' },
+      null,
+    );
+  });
+
+  it('rechaza bodega por defecto que no pertenece a la cuenta', async () => {
+    repository.findBodegasActivasDeCuenta.mockResolvedValue([
+      { idBodega: 'bod-1' },
+    ]);
+
+    await expect(
+      service.update('49M04', { idBodegaDefault: 'bod-ajena' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('asigna bodegas nuevas del set deseado', async () => {

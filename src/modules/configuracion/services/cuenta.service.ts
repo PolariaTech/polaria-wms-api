@@ -40,6 +40,14 @@ export class CuentaService {
 
     const schemaName = existing.schemaName;
 
+    if (dto.idBodegaDefault !== undefined) {
+      await this.assertBodegaDefaultDeCuenta(
+        codigo,
+        dto.idBodegaDefault,
+        schemaName,
+      );
+    }
+
     if (syncBodegas) {
       await this.syncBodegas(
         existing.codigoEmpresa,
@@ -73,7 +81,32 @@ export class CuentaService {
       data.estaActiva = dto.estaActiva;
     }
 
+    if (dto.idBodegaDefault !== undefined) {
+      data.idBodegaDefault = dto.idBodegaDefault.trim() || null;
+    }
+
     return data;
+  }
+
+  private async assertBodegaDefaultDeCuenta(
+    codigoCuenta: string,
+    idBodegaDefault: string,
+    schemaName: string | null,
+  ): Promise<void> {
+    const id = idBodegaDefault.trim();
+    if (!id) {
+      throw new BadRequestException('La bodega por defecto es obligatoria');
+    }
+
+    const bodegas = await this.cuentaRepository.findBodegasActivasDeCuenta(
+      codigoCuenta,
+      schemaName,
+    );
+    if (!bodegas.some((item) => item.idBodega === id)) {
+      throw new BadRequestException(
+        'La bodega por defecto debe estar activa y asignada a esta cuenta',
+      );
+    }
   }
 
   private normalizeIdsBodegas(ids: string[] | undefined): string[] {

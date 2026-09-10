@@ -261,16 +261,8 @@ export class OrdenVentaRepository {
       }
     }
 
-    if (restante.gt(0)) {
-      const producto = await tx.producto.findUnique({
-        where: { idProducto },
-        select: { descripcion: true, sku: true },
-      });
-      const nombre = producto?.descripcion ?? producto?.sku ?? idProducto;
-      const disponibleTotal = cantidadRequerida.sub(restante).toNumber();
-      throw new Error(`STOCK_INSUFICIENTE|${nombre}|${disponibleTotal}`);
-    }
-
+    // Temporal: si falta stock, se emite igual con la reserva parcial (o sin reserva).
+    // Antes se lanzaba STOCK_INSUFICIENTE y bloqueaba la OV.
     return allocations;
   }
 

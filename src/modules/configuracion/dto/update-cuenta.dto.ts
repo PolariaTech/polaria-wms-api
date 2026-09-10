@@ -46,4 +46,13 @@ export class UpdateCuentaDto {
   @IsOptional()
   @IsString()
   codigoCuentaDestinoDesvinculacion?: string;
+
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description:
+      'Bodega por defecto de la cuenta. Debe estar activa y asignada a esta cuenta.',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  idBodegaDefault?: string;
 }

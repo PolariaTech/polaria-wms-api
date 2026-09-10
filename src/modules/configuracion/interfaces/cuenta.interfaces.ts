@@ -3,11 +3,13 @@ export interface UpdateCuentaResult {
   codigoEmpresa: string;
   nombreComercial: string;
   estaActiva: boolean;
+  idBodegaDefault: string | null;
 }
 
 export interface UpdateCuentaData {
   nombreComercial?: string;
   estaActiva?: boolean;
+  idBodegaDefault?: string | null;
 }
 
 export interface CuentaRecord {
@@ -15,6 +17,7 @@ export interface CuentaRecord {
   codigoEmpresa: string;
   nombreComercial: string;
   estaActiva: boolean;
+  idBodegaDefault: string | null;
 }
 
 export interface BodegaAssignCandidate {

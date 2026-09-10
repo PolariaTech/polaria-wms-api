@@ -88,7 +88,6 @@ describe('OrdenVentaService.emitir', () => {
 
   it('emite OV en borrador con stock suficiente', async () => {
     repository.findById.mockResolvedValue(ordenBorrador as never);
-    repository.getDisponibleProducto.mockResolvedValue(new Prisma.Decimal(100));
     repository.emitir.mockResolvedValue({
       idOrdenVenta: idOrden,
       venta: ordenBorrador.codigo,
@@ -141,13 +140,18 @@ describe('OrdenVentaService.emitir', () => {
     );
   });
 
-  it('rechaza emitir OV con stock insuficiente', async () => {
+  it('emite OV aunque no haya stock suficiente', async () => {
     repository.findById.mockResolvedValue(ordenBorrador as never);
-    repository.getDisponibleProducto.mockResolvedValue(new Prisma.Decimal(2));
+    repository.emitir.mockResolvedValue({
+      idOrdenVenta: idOrden,
+      venta: ordenBorrador.codigo,
+      estado: EstadoOrdenVenta.confirmada,
+    } as never);
 
-    await expect(service.emitir(idOrden, ctx)).rejects.toThrow(
-      'No hay stock suficiente',
-    );
+    const result = await service.emitir(idOrden, ctx);
+
+    expect(repository.emitir).toHaveBeenCalledWith(ordenBorrador, 'user-1');
+    expect(result.estado).toBe(EstadoOrdenVenta.confirmada);
   });
 
   it('retorna 404 si OV no existe', async () => {

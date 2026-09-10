@@ -71,32 +71,8 @@ export class OrdenVentaService {
 
     this.validateEntidades(orden);
 
-    const demandaPorProducto = new Map<string, number>();
-    for (const linea of orden.lineas) {
-      const actual = demandaPorProducto.get(linea.idProducto) ?? 0;
-      demandaPorProducto.set(
-        linea.idProducto,
-        actual + linea.cantidadPedida.toNumber(),
-      );
-    }
-
-    for (const [idProducto, cantidad] of demandaPorProducto) {
-      const disponible = await this.repository.getDisponibleProducto(
-        orden.codigoCuenta,
-        orden.idBodega,
-        idProducto,
-      );
-
-      if (disponible.lt(cantidad)) {
-        const linea = orden.lineas.find((l) => l.idProducto === idProducto);
-        const nombre =
-          linea?.producto.descripcion ?? linea?.producto.sku ?? 'producto';
-        throw new ConflictException(
-          `No hay stock suficiente para ${nombre}. Disponible: ${disponible.toNumber()} kg`,
-        );
-      }
-    }
-
+    // Temporal: se permite emitir aunque no haya stock suficiente (pedidos sin
+    // inventario cargado). allocateFifo reserva lo disponible y no bloquea el resto.
     try {
       return await this.repository.emitir(orden, ctx.idUsuario);
     } catch (error) {

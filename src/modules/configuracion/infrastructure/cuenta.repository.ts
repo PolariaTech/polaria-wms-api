@@ -18,6 +18,7 @@ export class CuentaRepository {
     codigoEmpresa: true,
     nombreComercial: true,
     estaActiva: true,
+    idBodegaDefault: true,
   } as const;
 
   /** Busca en public y, si no está, en schemas emp_* de empresas. */
@@ -93,6 +94,7 @@ export class CuentaRepository {
         codigoEmpresa: true,
         nombreComercial: true,
         estaActiva: true,
+        idBodegaDefault: true,
       },
     });
   }
