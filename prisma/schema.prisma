@@ -965,6 +965,8 @@ model OrdenVentaLinea {
   idProducto         String                @map("id_producto") @db.Uuid
   cantidadPedida     Decimal               @map("cantidad_pedida") @db.Decimal(18, 4)
   cantidadDespachada Decimal               @default(0) @map("cantidad_despachada") @db.Decimal(18, 4)
+  cajas              Decimal?              @db.Decimal(18, 4)
+  presentacion       String?
   ordenVenta         OrdenVenta            @relation(fields: [idOrdenVenta], references: [idOrdenVenta], onDelete: Cascade)
   producto           Producto              @relation(fields: [idProducto], references: [idProducto])
   evidenciasTransporte EvidenciaTransporte[]
