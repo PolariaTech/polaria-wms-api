@@ -683,6 +683,8 @@ export class OrdenVentaRepository {
         idProducto: linea.idProducto,
         cantidadPedida: this.toDecimal(linea.cantidadPedida),
         cantidadDespachada: this.toDecimal(linea.cantidadDespachada),
+        cajas: null,
+        presentacion: null,
         producto: {
           idProducto: linea.idProducto,
           sku: linea.sku,
