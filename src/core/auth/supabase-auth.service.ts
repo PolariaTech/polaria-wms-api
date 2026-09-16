@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
+import { AUTH_SESSION_TTL_SECONDS } from '../../shared/constants/auth.constants';
 
 export interface SupabaseSessionTokens {
   accessToken: string;
@@ -57,7 +58,7 @@ export class SupabaseAuthService {
     return {
       accessToken: data.session.access_token,
       refreshToken: data.session.refresh_token,
-      expiresIn: data.session.expires_in ?? 3600,
+      expiresIn: data.session.expires_in ?? AUTH_SESSION_TTL_SECONDS,
       tokenType: 'bearer',
     };
   }
@@ -185,7 +186,7 @@ export class SupabaseAuthService {
     return {
       accessToken: sessionData.session.access_token,
       refreshToken: sessionData.session.refresh_token,
-      expiresIn: sessionData.session.expires_in ?? 3600,
+      expiresIn: sessionData.session.expires_in ?? AUTH_SESSION_TTL_SECONDS,
       tokenType: 'bearer',
     };
   }

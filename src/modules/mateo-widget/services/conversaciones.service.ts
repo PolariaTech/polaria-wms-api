@@ -54,7 +54,8 @@ export class ConversacionesService {
   ): Promise<MateoConversacionDetalle> {
     const created = await this.conversacionesRepository.create({
       idUsuario: ctx.idUsuario,
-      codigoCuenta: ctx.codigoCuenta,
+      // codigo_cuenta FK apunta a public.cuenta. En emp_* la cuenta no está ahí.
+      codigoCuenta: ctx.schemaName ? null : ctx.codigoCuenta,
       titulo: dto.titulo,
     });
 

@@ -43,6 +43,7 @@ export interface MeResponse {
   nombre: string;
   username: string;
   correo: string;
+  telefono: string | null;
   idRol: string;
   nombreRol: string;
   nivelRol: string;

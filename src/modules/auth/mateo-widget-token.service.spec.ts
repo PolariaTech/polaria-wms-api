@@ -53,7 +53,7 @@ describe('MateoWidgetTokenService', () => {
     await module.close();
   });
 
-  it('genera un JWT reutilizable con TTL de 300 segundos y claims n8n', () => {
+  it('genera un JWT reutilizable con TTL de 12 horas y claims n8n', () => {
     const result = service.generateToken(usuario);
 
     expect(result.expiresIn).toBe(MATEO_WIDGET_JWT_TTL_SECONDS);
@@ -100,6 +100,9 @@ describe('MateoWidgetTokenService', () => {
     ) as { kid?: string; alg?: string };
     expect(header.alg).toBe('HS256');
     expect(header.kid).toBe(MATEO_WIDGET_JWT_DEFAULT_KID);
+
+    const decoded = jwtService.decode(result.token);
+    expect(decoded.exp - decoded.iat).toBe(MATEO_WIDGET_JWT_TTL_SECONDS);
   });
 
   it('pone phone_number null si el usuario no tiene teléfono', () => {

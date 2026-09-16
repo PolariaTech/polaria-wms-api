@@ -77,6 +77,7 @@ describe('AuthService', () => {
             findActiveByCorreo: jest.fn(),
             findActiveByIdAuth: jest.fn(),
             findActiveByIdUsuario: jest.fn(),
+            updateProfile: jest.fn(),
             isConfigurador: jest.fn(
               (idRol: string) => idRol === WmsRol.configurador,
             ),
@@ -88,6 +89,7 @@ describe('AuthService', () => {
             signInWithPassword: jest.fn(),
             createSessionForEmail: jest.fn(),
             getUserFromToken: jest.fn(),
+            updateAuthUser: jest.fn(),
             signOut: jest.fn(),
           },
         },
@@ -271,7 +273,7 @@ describe('AuthService', () => {
       supabaseAuth.signInWithPassword.mockResolvedValue({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
-        expiresIn: 3600,
+        expiresIn: 43200,
         tokenType: 'bearer',
       });
 
@@ -370,7 +372,7 @@ describe('AuthService', () => {
       );
       mateoWidgetTokenService.generateToken.mockReturnValue({
         token: 'widget-jwt',
-        expiresIn: 300,
+        expiresIn: 43200,
       });
 
       const result = await service.createMateoWidgetToken('auth-tenant');
@@ -385,7 +387,7 @@ describe('AuthService', () => {
         nombre: mockTenantUser.nombre,
         telefono: '+573001112233',
       });
-      expect(result).toEqual({ token: 'widget-jwt', expiresIn: 300 });
+      expect(result).toEqual({ token: 'widget-jwt', expiresIn: 43200 });
     });
 
     it('lanza 404 si usuario no existe', async () => {
@@ -406,7 +408,7 @@ describe('AuthService', () => {
       supabaseAuth.createSessionForEmail.mockResolvedValue({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
-        expiresIn: 3600,
+        expiresIn: 43200,
         tokenType: 'bearer',
       });
 
@@ -496,6 +498,120 @@ describe('AuthService', () => {
       await expect(service.getMe(tenantContext)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('incluye teléfono en el perfil', async () => {
+      usuarioRepository.findActiveByIdUsuario.mockResolvedValue(
+        mockTenantUser as never,
+      );
+
+      const result = await service.getMe(tenantContext);
+
+      expect(result.telefono).toBe('+573001112233');
+    });
+  });
+
+  describe('updateMe', () => {
+    const tenantContext = {
+      idUsuario: 'usr-tenant',
+      idRol: WmsRol.administrador_cuenta,
+      nivelRol: 'cuenta' as const,
+      codigoEmpresa: 'EMP001',
+      codigoCuenta: null,
+      idBodegas: ['bodega-1'],
+      schemaName: null,
+    };
+
+    it('actualiza nombre y teléfono y retorna el perfil', async () => {
+      const updated = { ...mockTenantUser, nombre: 'Nuevo Nombre' };
+      usuarioRepository.findActiveByIdUsuario
+        .mockResolvedValueOnce(mockTenantUser as never)
+        .mockResolvedValueOnce(updated as never);
+      usuarioRepository.updateProfile.mockResolvedValue(updated as never);
+
+      const result = await service.updateMe(tenantContext, {
+        nombre: 'Nuevo Nombre',
+        telefono: '+573009998877',
+      });
+
+      expect(usuarioRepository.updateProfile).toHaveBeenCalledWith(
+        'usr-tenant',
+        { nombre: 'Nuevo Nombre', telefono: '+573009998877' },
+      );
+      expect(result.nombre).toBe('Nuevo Nombre');
+    });
+
+    it('lanza 404 si el usuario no está activo', async () => {
+      usuarioRepository.findActiveByIdUsuario.mockResolvedValue(null);
+
+      await expect(
+        service.updateMe(tenantContext, { nombre: 'Nuevo' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('changePassword', () => {
+    const tenantContext = {
+      idUsuario: 'usr-tenant',
+      idRol: WmsRol.administrador_cuenta,
+      nivelRol: 'cuenta' as const,
+      codigoEmpresa: 'EMP001',
+      codigoCuenta: null,
+      idBodegas: ['bodega-1'],
+      schemaName: null,
+    };
+
+    it('verifica la clave actual y actualiza en Auth', async () => {
+      usuarioRepository.findActiveByIdUsuario.mockResolvedValue(
+        mockTenantUser as never,
+      );
+      supabaseAuth.signInWithPassword.mockResolvedValue({
+        accessToken: 'tmp',
+        refreshToken: 'tmp',
+        expiresIn: 43200,
+        tokenType: 'bearer',
+      });
+      supabaseAuth.updateAuthUser.mockResolvedValue(undefined);
+
+      await service.changePassword(tenantContext, {
+        currentPassword: 'ClaveActual1!',
+        newPassword: 'ClaveNueva1!',
+      });
+
+      expect(supabaseAuth.signInWithPassword).toHaveBeenCalledWith(
+        'admin@empresa.com',
+        'ClaveActual1!',
+      );
+      expect(supabaseAuth.updateAuthUser).toHaveBeenCalledWith('auth-tenant', {
+        password: 'ClaveNueva1!',
+      });
+    });
+
+    it('lanza 401 si la contraseña actual es incorrecta', async () => {
+      usuarioRepository.findActiveByIdUsuario.mockResolvedValue(
+        mockTenantUser as never,
+      );
+      supabaseAuth.signInWithPassword.mockRejectedValue(
+        new UnauthorizedException('Credenciales inválidas'),
+      );
+
+      await expect(
+        service.changePassword(tenantContext, {
+          currentPassword: 'mala',
+          newPassword: 'ClaveNueva1!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(supabaseAuth.updateAuthUser).not.toHaveBeenCalled();
+    });
+
+    it('lanza 400 si la nueva contraseña es igual a la actual', async () => {
+      await expect(
+        service.changePassword(tenantContext, {
+          currentPassword: 'ClaveSegura1!',
+          newPassword: 'ClaveSegura1!',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(supabaseAuth.signInWithPassword).not.toHaveBeenCalled();
     });
   });
 

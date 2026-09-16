@@ -119,7 +119,7 @@ describe('AuthController (e2e)', () => {
     authService.login.mockResolvedValue({
       accessToken: 'token',
       refreshToken: 'refresh',
-      expiresIn: 3600,
+      expiresIn: 43200,
       tokenType: 'bearer',
       context: {
         idUsuario: 'usr-1',
@@ -210,7 +210,7 @@ describe('AuthController (e2e)', () => {
   it('POST /auth/mateo/widget-token responde 200 con Bearer', async () => {
     authService.createMateoWidgetToken.mockResolvedValue({
       token: 'widget-jwt',
-      expiresIn: 300,
+      expiresIn: 43200,
     });
 
     await request(app.getHttpServer())
@@ -219,7 +219,7 @@ describe('AuthController (e2e)', () => {
       .expect(200)
       .expect((res) => {
         expect(res.body.token).toBe('widget-jwt');
-        expect(res.body.expiresIn).toBe(300);
+        expect(res.body.expiresIn).toBe(43200);
       });
 
     expect(authService.createMateoWidgetToken).toHaveBeenCalledWith(

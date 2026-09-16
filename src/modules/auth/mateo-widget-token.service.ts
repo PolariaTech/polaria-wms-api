@@ -3,8 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import type { WmsRol } from '../../generated/prisma/client';
+import { AUTH_SESSION_TTL_SECONDS } from '../../shared/constants/auth.constants';
 
-export const MATEO_WIDGET_JWT_TTL_SECONDS = 300;
+export const MATEO_WIDGET_JWT_TTL_SECONDS = AUTH_SESSION_TTL_SECONDS;
 
 /** Defaults alineados al mock / guard POL-71 de n8n (iss/aud/kid). */
 export const MATEO_WIDGET_JWT_DEFAULT_ISSUER = 'bodega-frio-v2';

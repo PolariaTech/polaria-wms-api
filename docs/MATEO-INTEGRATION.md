@@ -31,7 +31,7 @@ Experiencia **dentro** de Polaria WMS (sin redirect SSO). El handoff one-time (`
 | Secreto | `MATEO_WIDGET_JWT_SECRET` (HS256, **distinto** de `MATEO_HANDOFF_SECRET`) |
 | Header JWT | `alg=HS256`, `kid` = `MATEO_WIDGET_JWT_KID` (default `local-dev-v1`) |
 | Issuer / Audience | `MATEO_WIDGET_JWT_ISSUER` / `MATEO_WIDGET_JWT_AUDIENCE` (defaults `bodega-frio-v2` / `mateo-support-widget`) |
-| TTL | 300 segundos (5 min) |
+| TTL | 43200 segundos (12 h) |
 | Uso | Reutilizable hasta `exp`; refresh con otro `POST` |
 | Response | `{ token: string, expiresIn: number }` |
 
@@ -53,12 +53,12 @@ Payload JWT:
   "iss": "bodega-frio-v2",
   "aud": "mateo-support-widget",
   "iat": 1710000000,
-  "exp": 1710000300
+  "exp": 1710043200
 }
 ```
 
 `idRol` y `rol` son el mismo valor (`usuario.id_rol` en BD). `phone_number` sale de `usuario.telefono` (null si no hay).  
-El widget reenvía en el **body** del webhook a n8n: `id_rol` / `rol` / `id_usuario` / `email` / `phone_number` / … (identidad) y **`conversation_id`** (UUID de `widget_conversacion`, solo en el body — **no** va en el JWT, porque cambia por cada chat y el token dura ~5 min).
+El widget reenvía en el **body** del webhook a n8n: `id_rol` / `rol` / `id_usuario` / `email` / `phone_number` / … (identidad) y **`conversation_id`** (UUID de `widget_conversacion`, solo en el body — **no** va en el JWT, porque cambia por cada chat y el token dura 12 h).
 
 **Contrato n8n (POL-71):** validar `Authorization: Bearer <token>` con el **mismo** `MATEO_WIDGET_JWT_SECRET`, comprobar `iss` / `aud` / `kid`, y resolver `sub` → `id_usuario` vía `resolve_web_user` en Supabase. Simple Memory debe clavear por `conversation_id` del body.
 
@@ -81,7 +81,7 @@ Guards: Bearer WMS + tenant. Ownership siempre por `id_usuario` del contexto. Pr
 
 | Capa | Evidencia |
 |------|-----------|
-| API | `POST /auth/mateo/widget-token` exige Bearer Supabase activo; emite JWT 300s con `idUsuario`, `codigoEmpresa`, `codigoCuenta`, `idRol` |
+| API | `POST /auth/mateo/widget-token` exige Bearer Supabase activo; emite JWT 12 h con `idUsuario`, `codigoEmpresa`, `codigoCuenta`, `idRol` |
 | API | `/mateo/conversaciones` filtra por `id_usuario` del tenant (404 si ajeno) |
 | Web | `MateoWidgetHost` no monta sin `accessToken`; `configureTokenFetcher` → widget-token |
 | Widget | `authToken.ts` rechaza sin fetcher; `embed.tsx` exige `tokenFetcher` o `configureTokenFetcher` previo |
@@ -388,7 +388,7 @@ curl -X POST http://localhost:3000/auth/mateo-exchange \
 ```bash
 curl -X POST http://localhost:3000/auth/mateo/widget-token \
   -H "Authorization: Bearer <wms_access_token>"
-# → { "token": "<jwt>", "expiresIn": 300 }
+# → { "token": "<jwt>", "expiresIn": 43200 }
 ```
 
 El JWT debe verificar en n8n con el **mismo** `MATEO_WIDGET_JWT_SECRET`, más `iss` / `aud` / `kid` (defaults arriba).

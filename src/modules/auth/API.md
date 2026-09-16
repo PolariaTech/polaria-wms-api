@@ -85,7 +85,7 @@ Autentica con Supabase Auth tras repetir validaciones de prelogin.
 {
   "accessToken": "eyJ...",
   "refreshToken": "v1...",
-  "expiresIn": 3600,
+  "expiresIn": 43200,
   "tokenType": "bearer",
   "context": {
     "idUsuario": "uuid",
@@ -157,13 +157,13 @@ Para **configurador**: `codigoEmpresa`, `codigoCuenta`, `razonSocialEmpresa` y `
 
 ## POST /auth/mateo/widget-token
 
-Emite JWT HS256 de vida corta (300s) para el **widget embebido** → n8n (POL-71/73).  
+Emite JWT HS256 de vida corta (12 h) para el **widget embebido** → n8n (POL-71/73).  
 Requiere Bearer de sesión WMS + tenant.
 
 ### Response `200`
 
 ```json
-{ "token": "<jwt>", "expiresIn": 300 }
+{ "token": "<jwt>", "expiresIn": 43200 }
 ```
 
 Claims relevantes: `sub` (= `id_auth`), `idUsuario`, `email`, `phone_number`, `given_name` / `family_name`, `iss`, `aud`; header `kid`.  

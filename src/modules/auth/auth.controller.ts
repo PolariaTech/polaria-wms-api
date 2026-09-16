@@ -4,10 +4,12 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
   ApiHeader,
@@ -37,6 +39,7 @@ import {
   MeResponseDto,
   PreloginResponseDto,
 } from './dto/auth-response.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { MateoExchangeDto } from './dto/mateo-exchange.dto';
 import {
@@ -45,6 +48,7 @@ import {
   MateoWidgetTokenResponseDto,
 } from './dto/mateo-response.dto';
 import { PreloginDto } from './dto/prelogin.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { SWAGGER_TAGS } from '../../core/swagger/swagger.constants';
 import { AuthThrottle } from '../../core/security/auth-throttle.decorator';
 import type {
@@ -137,7 +141,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Emitir JWT del widget Mateo embebido',
     description:
-      'Usuario autenticado (Bearer Supabase) obtiene un JWT HS256 (TTL 300s) para el widget Mateo. ' +
+      'Usuario autenticado (Bearer Supabase) obtiene un JWT HS256 (TTL 12 h) para el widget Mateo. ' +
       'Reutilizable hasta expirar; refrescar con otro POST. Distinto del handoff SSO one-time.',
   })
   @ApiOkResponse({ type: MateoWidgetTokenResponseDto })
@@ -183,6 +187,53 @@ export class AuthController {
   @ApiResponse({ status: 404, description: 'Usuario inactivo o no vinculado' })
   getMe(@TenantCtx() ctx: TenantContext): Promise<MeResponse> {
     return this.authService.getMe(ctx);
+  }
+
+  @Patch('me')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Actualizar perfil propio',
+    description:
+      'Permite al usuario autenticado editar su nombre y teléfono. El correo no es editable.',
+  })
+  @ApiBody({ type: UpdateMeDto })
+  @ApiOkResponse({ type: MeResponseDto })
+  @ApiBadRequestResponse({ description: 'Nombre vacío o datos inválidos' })
+  @ApiUnauthorizedResponse({
+    description: 'Token ausente, inválido o expirado',
+  })
+  @ApiNotFoundResponse({ description: 'Usuario inactivo o no vinculado' })
+  updateMe(
+    @TenantCtx() ctx: TenantContext,
+    @Body() dto: UpdateMeDto,
+  ): Promise<MeResponse> {
+    return this.authService.updateMe(ctx, dto);
+  }
+
+  @Post('me/password')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Cambiar contraseña propia',
+    description:
+      'Verifica la contraseña actual y actualiza la clave en Supabase Auth.',
+  })
+  @ApiBody({ type: ChangePasswordDto })
+  @ApiNoContentResponse({ description: 'Contraseña actualizada' })
+  @ApiBadRequestResponse({
+    description: 'La nueva contraseña es igual a la actual o no cumple reglas',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Token inválido o contraseña actual incorrecta',
+  })
+  @ApiNotFoundResponse({ description: 'Usuario inactivo o no vinculado' })
+  changePassword(
+    @TenantCtx() ctx: TenantContext,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<void> {
+    return this.authService.changePassword(ctx, dto);
   }
 
   @Post('logout')

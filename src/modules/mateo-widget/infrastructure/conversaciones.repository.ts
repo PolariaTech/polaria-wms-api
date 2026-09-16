@@ -47,12 +47,23 @@ export function shouldUpdateTitulo(
   return tituloActual === WIDGET_TITULO_IMAGEN && tipo === 'text';
 }
 
+/**
+ * Persistencia del widget Mateo: tablas en `mateo_support` (vistas en `public`).
+ * Siempre usa search_path de plataforma (`public,mateo_support`).
+ * Con TenantSchemaInterceptor el path es `emp_*,public,mateo_support` y
+ * `codigo_cuenta` FK a `public.cuenta` revienta en empresas schema-per-tenant.
+ */
 @Injectable()
 export class ConversacionesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Client sin schema emp_* — widget no es dato de tenant. */
+  private platform() {
+    return this.prisma.forSchema(null);
+  }
+
   listByUsuario(idUsuario: string) {
-    return this.prisma.widgetConversacion.findMany({
+    return this.platform().widgetConversacion.findMany({
       where: { idUsuario },
       orderBy: { updatedAt: 'desc' },
       select: {
@@ -73,7 +84,7 @@ export class ConversacionesRepository {
   }
 
   findByIdForUsuario(idConversacion: string, idUsuario: string) {
-    return this.prisma.widgetConversacion.findFirst({
+    return this.platform().widgetConversacion.findFirst({
       where: { idConversacion, idUsuario },
       include: {
         mensajes: {
@@ -96,7 +107,7 @@ export class ConversacionesRepository {
     codigoCuenta: string | null;
     titulo?: string | null;
   }) {
-    return this.prisma.widgetConversacion.create({
+    return this.platform().widgetConversacion.create({
       data: {
         idUsuario: data.idUsuario,
         codigoCuenta: data.codigoCuenta,
@@ -121,7 +132,7 @@ export class ConversacionesRepository {
     esError: boolean;
     createdAt?: Date;
   }) {
-    const owned = await this.prisma.widgetConversacion.findFirst({
+    const owned = await this.platform().widgetConversacion.findFirst({
       where: {
         idConversacion: params.idConversacion,
         idUsuario: params.idUsuario,
@@ -167,8 +178,8 @@ export class ConversacionesRepository {
     };
 
     try {
-      [mensaje] = await this.prisma.$transaction([
-        this.prisma.widgetMensaje.create({
+      [mensaje] = await this.platform().$transaction([
+        this.platform().widgetMensaje.create({
           data: {
             idConversacion: params.idConversacion,
             rol: params.rol,
@@ -179,7 +190,7 @@ export class ConversacionesRepository {
           },
           select: mensajeSelect,
         }),
-        this.prisma.widgetConversacion.update({
+        this.platform().widgetConversacion.update({
           where: { idConversacion: params.idConversacion },
           data: conversacionUpdate,
         }),
@@ -188,7 +199,7 @@ export class ConversacionesRepository {
       // Dedupe ante reintentos del cliente: si el INSERT choca con UNIQUE,
       // devolvemos el mensaje ya persistido en vez de fallar.
       if (isUniqueViolation(error)) {
-        const existing = await this.prisma.widgetMensaje.findFirst({
+        const existing = await this.platform().widgetMensaje.findFirst({
           where: {
             idConversacion: params.idConversacion,
             rol: params.rol,
@@ -201,7 +212,7 @@ export class ConversacionesRepository {
         });
 
         if (existing) {
-          await this.prisma.widgetConversacion.update({
+          await this.platform().widgetConversacion.update({
             where: { idConversacion: params.idConversacion },
             data: conversacionUpdate,
           });
@@ -216,7 +227,7 @@ export class ConversacionesRepository {
   }
 
   async deleteForUsuario(idConversacion: string, idUsuario: string) {
-    const owned = await this.prisma.widgetConversacion.findFirst({
+    const owned = await this.platform().widgetConversacion.findFirst({
       where: { idConversacion, idUsuario },
       select: { idConversacion: true },
     });
@@ -225,7 +236,7 @@ export class ConversacionesRepository {
       return false;
     }
 
-    await this.prisma.widgetConversacion.delete({
+    await this.platform().widgetConversacion.delete({
       where: { idConversacion },
     });
 

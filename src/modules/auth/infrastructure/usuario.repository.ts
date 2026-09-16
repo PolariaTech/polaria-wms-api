@@ -72,6 +72,20 @@ export class UsuarioRepository {
     });
   }
 
+  updateProfile(
+    idUsuario: string,
+    data: { nombre: string; telefono?: string | null },
+  ) {
+    return this.prisma.usuario.update({
+      where: { idUsuario },
+      data: {
+        nombre: data.nombre,
+        ...(data.telefono !== undefined ? { telefono: data.telefono } : {}),
+      },
+      include: this.activeInclude,
+    });
+  }
+
   isConfigurador(idRol: WmsRol): boolean {
     return idRol === WmsRol.configurador;
   }

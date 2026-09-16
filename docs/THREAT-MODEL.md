@@ -27,7 +27,7 @@ Documento STRIDE-lite para Supabase Auth + RLS + API NestJS.
 1. **Browser → PostgREST** — mitigado por RLS + anon key + JWT usuario.
 2. **Browser → API Nest** — mitigado por guards + validación tenant en Prisma.
 3. **Browser → Next route handlers** — secretos solo `SUPABASE_SERVICE_ROLE_KEY` server; sin `NEXT_PUBLIC_` fallback en prod.
-4. **Widget Mateo → n8n** — JWT efímero 300s; validación POL-137/138.
+4. **Widget Mateo → n8n** — JWT 12 h; validación POL-137/138.
 5. **Mateo SSO** — código one-time 60s firmado con `MATEO_HANDOFF_SECRET`.
 
 ## Controles pendientes (roadmap)

@@ -16,6 +16,7 @@ describe('ConversacionesService', () => {
     codigoCuenta: 'CTA001',
     codigosCuentaEmpresa: ['CTA001'],
     idBodegas: [] as string[],
+    schemaName: null as string | null,
   };
 
   beforeEach(async () => {
@@ -109,6 +110,24 @@ describe('ConversacionesService', () => {
       titulo: undefined,
     });
     expect(result.mensajes).toEqual([]);
+  });
+
+  it('no persiste codigoCuenta si la empresa vive en schema emp_*', async () => {
+    repository.create.mockResolvedValue({
+      idConversacion: 'conv-emp',
+      titulo: null,
+      codigoCuenta: null,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    await service.create({}, { ...ctx, schemaName: 'emp_jbr_cygnus' });
+
+    expect(repository.create).toHaveBeenCalledWith({
+      idUsuario: 'usr-1',
+      codigoCuenta: null,
+      titulo: undefined,
+    });
   });
 
   it('appendMensaje valida ownership', async () => {

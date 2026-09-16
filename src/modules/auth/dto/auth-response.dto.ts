@@ -65,7 +65,7 @@ export class LoginResponseDto {
   @ApiProperty({ example: 'v1.MRj...' })
   refreshToken!: string;
 
-  @ApiProperty({ example: 3600 })
+  @ApiProperty({ example: 43200 })
   expiresIn!: number;
 
   @ApiProperty({ example: 'bearer' })
@@ -90,6 +90,9 @@ export class MeResponseDto {
 
   @ApiProperty({ example: 'user@empresa.com' })
   correo!: string;
+
+  @ApiPropertyOptional({ example: '+573001112233', nullable: true })
+  telefono!: string | null;
 
   @ApiProperty({ example: 'administrador_cuenta' })
   idRol!: string;

@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { SupabaseAuthService } from '../../core/auth/supabase-auth.service';
@@ -17,8 +18,10 @@ import {
   ROL_CONFIGURADOR,
 } from '../../shared/constants/auth.constants';
 import { isValidEmail } from '../../shared/utils/email.util';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { PreloginDto } from './dto/prelogin.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import type {
   LoginResponse,
   MateoExchangeResponse,
@@ -183,6 +186,7 @@ export class AuthService {
       nombre: usuario.nombre,
       username: usuario.username,
       correo: usuario.correo,
+      telefono: usuario.telefono ?? null,
       idRol: usuario.idRol,
       nombreRol: usuario.rol.nombre,
       nivelRol: usuario.rol.nivel,
@@ -198,9 +202,57 @@ export class AuthService {
     };
   }
 
+  async updateMe(ctx: TenantContext, dto: UpdateMeDto): Promise<MeResponse> {
+    const usuario = await this.requireActiveUsuario(ctx.idUsuario);
+
+    await this.usuarioRepository.updateProfile(usuario.idUsuario, {
+      nombre: dto.nombre,
+      telefono: dto.telefono,
+    });
+
+    this.logger.log(`Perfil actualizado: usuario=${usuario.idUsuario}`);
+    return this.getMe(ctx);
+  }
+
+  async changePassword(
+    ctx: TenantContext,
+    dto: ChangePasswordDto,
+  ): Promise<void> {
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException(
+        'La nueva contraseña debe ser distinta a la actual',
+      );
+    }
+
+    const usuario = await this.requireActiveUsuario(ctx.idUsuario);
+
+    try {
+      await this.supabaseAuth.signInWithPassword(
+        usuario.correo,
+        dto.currentPassword,
+      );
+    } catch {
+      throw new UnauthorizedException('La contraseña actual no es correcta');
+    }
+
+    await this.supabaseAuth.updateAuthUser(usuario.idAuth, {
+      password: dto.newPassword,
+    });
+    this.logger.log(`Contraseña actualizada: usuario=${usuario.idUsuario}`);
+  }
+
   async logout(accessToken: string): Promise<void> {
     await this.supabaseAuth.signOut(accessToken);
     this.logger.log('Sesión cerrada correctamente');
+  }
+
+  private async requireActiveUsuario(idUsuario: string) {
+    const usuario =
+      await this.usuarioRepository.findActiveByIdUsuario(idUsuario);
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado o inactivo');
+    }
+    return usuario;
   }
 
   private async resolveUsuario(
