@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { WmsRol } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
+import { phoneLookupVariants } from '../../../shared/utils/phone.util';
 
 export interface CreateUsuarioRecordInput {
   idAuth: string;
@@ -13,6 +14,8 @@ export interface CreateUsuarioRecordInput {
   telefono?: string | null;
   idCreador: string;
   idBodega?: string;
+  accesoWms?: boolean;
+  accesoMateo?: boolean;
 }
 
 type CuentaLite = {
@@ -50,12 +53,24 @@ export class ConfiguradorUsuarioRepository {
     });
   }
 
+  findByTelefono(telefono: string) {
+    const variants = phoneLookupVariants(telefono);
+    if (variants.length === 0) return Promise.resolve(null);
+
+    return this.prisma.usuario.findFirst({
+      where: { telefono: { in: variants } },
+    });
+  }
+
   updateUsuario(
     idUsuario: string,
     data: {
       nombre?: string;
       correo?: string;
       telefono?: string | null;
+      estaActivo?: boolean;
+      accesoWms?: boolean;
+      accesoMateo?: boolean;
     },
   ) {
     return this.prisma.usuario.update({
@@ -233,6 +248,8 @@ export class ConfiguradorUsuarioRepository {
         correo: input.correo.trim().toLowerCase(),
         telefono: input.telefono?.trim() || null,
         idCreador: input.idCreador,
+        accesoWms: input.accesoWms ?? true,
+        accesoMateo: input.accesoMateo ?? true,
       },
     });
 

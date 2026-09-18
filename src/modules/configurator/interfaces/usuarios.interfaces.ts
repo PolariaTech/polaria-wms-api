@@ -8,10 +8,16 @@ export interface CreateUsuarioResponse {
   codigoCuenta: string | null;
   correo: string;
   telefono: string | null;
+  estaActivo?: boolean;
+  accesoWms?: boolean;
+  accesoMateo?: boolean;
 }
 
 export interface UpdateUsuarioInput {
   nombre?: string;
   correo?: string;
   telefono?: string | null;
+  estaActivo?: boolean;
+  accesoWms?: boolean;
+  accesoMateo?: boolean;
 }

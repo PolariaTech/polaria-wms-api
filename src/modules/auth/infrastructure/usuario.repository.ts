@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { phoneLookupVariants } from '../../../shared/utils/phone.util';
 import { WmsRol } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 
@@ -49,6 +50,15 @@ export class UsuarioRepository {
         correo: correo.trim(),
       },
       include: this.activeInclude,
+    });
+  }
+
+  findByTelefono(telefono: string) {
+    const variants = phoneLookupVariants(telefono);
+    if (variants.length === 0) return Promise.resolve(null);
+
+    return this.prisma.usuario.findFirst({
+      where: { telefono: { in: variants } },
     });
   }
 

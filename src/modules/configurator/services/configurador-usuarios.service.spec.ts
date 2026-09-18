@@ -26,6 +26,7 @@ describe('ConfiguradorUsuariosService', () => {
           useValue: {
             findByUsername: jest.fn(),
             findByCorreo: jest.fn(),
+            findByTelefono: jest.fn(),
             findById: jest.fn(),
             findRol: jest.fn(),
             findCuentaWithEmpresa: jest.fn(),
@@ -284,6 +285,9 @@ describe('ConfiguradorUsuariosService', () => {
       codigoCuenta: 'CTA001',
       correo: 'operario@test.com',
       telefono: null,
+      estaActivo: true,
+      accesoWms: true,
+      accesoMateo: true,
     });
     expect(supabaseAuth.createAuthUser).toHaveBeenCalledWith(
       'operario@test.com',
@@ -345,6 +349,46 @@ describe('ConfiguradorUsuariosService', () => {
     telefono: '+573001112233',
   };
 
+  it('actualiza productos WMS/Mateo del usuario', async () => {
+    repository.findById.mockResolvedValue({
+      ...usuarioExistente,
+      estaActivo: true,
+      accesoWms: true,
+      accesoMateo: true,
+    } as never);
+    repository.updateUsuario.mockResolvedValue({
+      ...usuarioExistente,
+      estaActivo: true,
+      accesoWms: true,
+      accesoMateo: false,
+    } as never);
+
+    const result = await service.update('usr-1', {
+      accesoWms: true,
+      accesoMateo: false,
+    });
+
+    expect(repository.updateUsuario).toHaveBeenCalledWith('usr-1', {
+      accesoWms: true,
+      accesoMateo: false,
+    });
+    expect(result.accesoWms).toBe(true);
+    expect(result.accesoMateo).toBe(false);
+  });
+
+  it('rechaza dejar al usuario sin WMS ni Mateo', async () => {
+    repository.findById.mockResolvedValue({
+      ...usuarioExistente,
+      accesoWms: true,
+      accesoMateo: true,
+    } as never);
+
+    await expect(
+      service.update('usr-1', { accesoWms: false, accesoMateo: false }),
+    ).rejects.toThrow(BadRequestException);
+    expect(repository.updateUsuario).not.toHaveBeenCalled();
+  });
+
   it('actualiza nombre y teléfono sin tocar Auth', async () => {
     repository.findById.mockResolvedValue(usuarioExistente as never);
     repository.updateUsuario.mockResolvedValue({
@@ -364,6 +408,41 @@ describe('ConfiguradorUsuariosService', () => {
       telefono: '+573009998877',
     });
     expect(result.nombre).toBe('Operador Editado');
+  });
+
+  it('rechaza teléfono duplicado al crear', async () => {
+    repository.findRol.mockResolvedValue({
+      idRol: WmsRol.operario,
+      nombre: 'Operario',
+      nivel: RolNivel.bodega,
+      puedeCrearRol: null,
+      descripcion: null,
+    });
+    repository.findByUsername.mockResolvedValue(null);
+    repository.findByCorreo.mockResolvedValue(null);
+    repository.findByTelefono.mockResolvedValue({
+      idUsuario: 'usr-otro',
+    } as never);
+
+    await expect(
+      service.create(
+        { ...baseDto, telefono: '+573001112233' },
+        idCreador,
+      ),
+    ).rejects.toThrow(ConflictException);
+    expect(supabaseAuth.createAuthUser).not.toHaveBeenCalled();
+  });
+
+  it('rechaza actualizar el teléfono si ya está en uso', async () => {
+    repository.findById.mockResolvedValue(usuarioExistente as never);
+    repository.findByTelefono.mockResolvedValue({
+      idUsuario: 'usr-otro',
+    } as never);
+
+    await expect(
+      service.update('usr-1', { telefono: '+573009998877' }),
+    ).rejects.toThrow(ConflictException);
+    expect(repository.updateUsuario).not.toHaveBeenCalled();
   });
 
   it('sincroniza el correo en Auth al actualizarlo', async () => {

@@ -55,6 +55,8 @@ export interface MeResponse {
   idBodegas: string[];
   /** Schema Postgres emp_* (null = legacy public). */
   schemaName: string | null;
+  accesoWms: boolean;
+  accesoMateo: boolean;
 }
 
 export interface ValidatedUserContext {

@@ -18,6 +18,18 @@ export class UpdateCuentaResponseDto {
   estaActiva!: boolean;
 
   @ApiProperty({
+    example: true,
+    description: 'La cuenta puede operar Polaria WMS',
+  })
+  accesoWms!: boolean;
+
+  @ApiProperty({
+    example: true,
+    description: 'La cuenta puede entrar a Mateo IA',
+  })
+  accesoMateo!: boolean;
+
+  @ApiProperty({
     example: '550e8400-e29b-41d4-a716-446655440000',
     nullable: true,
     description: 'Bodega por defecto de la cuenta, si está definida',

@@ -21,7 +21,7 @@ export class UpdateMeDto {
   @ApiPropertyOptional({
     example: '+573001112233',
     nullable: true,
-    description: 'Teléfono de contacto. Enviar null o vacío para quitarlo.',
+    description: 'Teléfono E.164 del perfil. Único entre usuarios. Enviar null o vacío para quitarlo.',
   })
   @Transform(({ value }: { value: unknown }): string | null | undefined => {
     if (value === undefined) return undefined;

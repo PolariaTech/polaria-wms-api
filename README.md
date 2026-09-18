@@ -1,6 +1,6 @@
 # Polaria WMS API
 
-**Versión de producto: 2.4.9**
+**Versión de producto: 2.7.5**
 
 API backend del sistema de gestión de almacenes (WMS) de Polaria. Construida con [NestJS 11](https://nestjs.com), TypeScript, Prisma y Supabase Auth.
 

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
   UnauthorizedException,
@@ -75,6 +76,7 @@ describe('AuthService', () => {
             findActiveByIdentificador: jest.fn(),
             findActiveByUsername: jest.fn(),
             findActiveByCorreo: jest.fn(),
+            findByTelefono: jest.fn(),
             findActiveByIdAuth: jest.fn(),
             findActiveByIdUsuario: jest.fn(),
             updateProfile: jest.fn(),
@@ -162,14 +164,6 @@ describe('AuthService', () => {
       expect(result.userPreview.codigoEmpresa).toBe('EMP001');
     });
 
-    it('client=wms rechaza username sin @', async () => {
-      await expect(
-        service.prelogin({ identificador: 'admin.cuenta' }, AUTH_CLIENT.WMS),
-      ).rejects.toThrow(BadRequestException);
-
-      expect(usuarioRepository.findActiveByCorreo).not.toHaveBeenCalled();
-    });
-
     it('client=wms busca por correo', async () => {
       usuarioRepository.findActiveByCorreo.mockResolvedValue(
         mockTenantUser as never,
@@ -187,6 +181,14 @@ describe('AuthService', () => {
         'admin@empresa.com',
       );
       expect(result.flow).toBe('tenant');
+    });
+
+    it('client=wms rechaza username sin @', async () => {
+      await expect(
+        service.prelogin({ identificador: 'admin.cuenta' }, AUTH_CLIENT.WMS),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(usuarioRepository.findActiveByCorreo).not.toHaveBeenCalled();
     });
 
     it('client=mateo rechaza correo como identificador', async () => {
@@ -346,14 +348,20 @@ describe('AuthService', () => {
 
       expect(fromWmsSession).toEqual(fromMateoSession);
       expect(mateoHandoffService.generateCode).toHaveBeenCalledTimes(2);
-      expect(mateoHandoffService.generateCode).toHaveBeenNthCalledWith(
-        1,
-        'auth-tenant',
+    });
+
+    it('rechaza handoff si el usuario no tiene acceso a Mateo IA', async () => {
+      usuarioRepository.findActiveByIdAuth.mockResolvedValue({
+        ...mockTenantUser,
+        codigoCuenta: 'CTA001',
+        accesoWms: true,
+        accesoMateo: false,
+      } as never);
+
+      await expect(service.createMateoHandoff('auth-tenant')).rejects.toThrow(
+        ForbiddenException,
       );
-      expect(mateoHandoffService.generateCode).toHaveBeenNthCalledWith(
-        2,
-        'auth-tenant',
-      );
+      expect(mateoHandoffService.generateCode).not.toHaveBeenCalled();
     });
 
     it('lanza 404 si usuario no existe', async () => {
@@ -477,6 +485,8 @@ describe('AuthService', () => {
       expect(result.codigoCuenta).toBeNull();
       expect(result.idBodegas).toEqual([]);
       expect(result.schemaName).toBeNull();
+      expect(result.accesoWms).toBe(true);
+      expect(result.accesoMateo).toBe(true);
     });
 
     it('retorna scope tenant con datos de empresa e idBodegas', async () => {
@@ -490,6 +500,8 @@ describe('AuthService', () => {
       expect(result.razonSocialEmpresa).toBe('Empresa Demo SA');
       expect(result.idBodegas).toEqual(['bodega-1']);
       expect(result.schemaName).toBeNull();
+      expect(result.accesoWms).toBe(true);
+      expect(result.accesoMateo).toBe(true);
     });
 
     it('lanza 404 si no hay usuario activo', async () => {
@@ -539,6 +551,43 @@ describe('AuthService', () => {
         { nombre: 'Nuevo Nombre', telefono: '+573009998877' },
       );
       expect(result.nombre).toBe('Nuevo Nombre');
+    });
+
+    it('rechaza teléfono ya usado por otra cuenta', async () => {
+      usuarioRepository.findActiveByIdUsuario.mockResolvedValue(
+        mockTenantUser as never,
+      );
+      usuarioRepository.findByTelefono.mockResolvedValue({
+        idUsuario: 'usr-otro',
+      } as never);
+
+      await expect(
+        service.updateMe(tenantContext, {
+          nombre: 'Nuevo Nombre',
+          telefono: '+573009998877',
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(usuarioRepository.updateProfile).not.toHaveBeenCalled();
+    });
+
+    it('permite conservar el mismo teléfono del usuario', async () => {
+      usuarioRepository.findActiveByIdUsuario
+        .mockResolvedValueOnce(mockTenantUser as never)
+        .mockResolvedValueOnce(mockTenantUser as never);
+      usuarioRepository.findByTelefono.mockResolvedValue({
+        idUsuario: 'usr-tenant',
+      } as never);
+      usuarioRepository.updateProfile.mockResolvedValue(
+        mockTenantUser as never,
+      );
+
+      await service.updateMe(tenantContext, {
+        nombre: 'Admin Cuenta',
+        telefono: '+573001112233',
+      });
+
+      expect(usuarioRepository.updateProfile).toHaveBeenCalled();
     });
 
     it('lanza 404 si el usuario no está activo', async () => {

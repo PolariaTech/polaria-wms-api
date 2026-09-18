@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   MinLength,
+  IsBoolean,
 } from 'class-validator';
 import { WmsRol } from '../../../generated/prisma/client';
 
@@ -49,7 +50,7 @@ export class CreateUsuarioDto {
 
   @ApiPropertyOptional({
     example: '+573001112233',
-    description: 'Teléfono en formato internacional E.164 (opcional)',
+    description: 'Teléfono E.164 del perfil. Único entre usuarios. Opcional.',
   })
   @IsOptional()
   @IsString()
@@ -64,4 +65,20 @@ export class CreateUsuarioDto {
   @IsString()
   @MinLength(8)
   password!: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Si es true, este usuario opera Polaria WMS. Default true.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  accesoWms?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Si es true, este usuario puede entrar a Mateo IA. Default true.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  accesoMateo?: boolean;
 }

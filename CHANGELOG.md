@@ -1,6 +1,12 @@
 ﻿# Changelog — polaria-wms-api
 
-Versión de producto alineada con Polaria WMS. Swagger: `2.4.9`.
+Versión de producto alineada con Polaria WMS. Swagger: `2.7.5`.
+
+## 2.7.5 — 2026-09-17
+
+- Acceso WMS/Mateo en `usuario` (`acceso_wms` / `acceso_mateo`).
+- PATCH de usuarios del configurador y sesión con esos flags.
+- Versión OpenAPI / Swagger fijada a 2.7.5.
 
 ## 2.4.9 — 2026-09-03
 

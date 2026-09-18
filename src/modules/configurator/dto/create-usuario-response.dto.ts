@@ -25,4 +25,13 @@ export class CreateUsuarioResponseDto {
     nullable: true,
   })
   telefono!: string | null;
+
+  @ApiProperty({ example: true })
+  estaActivo!: boolean;
+
+  @ApiProperty({ example: true })
+  accesoWms!: boolean;
+
+  @ApiProperty({ example: true })
+  accesoMateo!: boolean;
 }

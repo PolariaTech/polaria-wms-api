@@ -3,12 +3,16 @@ export interface UpdateCuentaResult {
   codigoEmpresa: string;
   nombreComercial: string;
   estaActiva: boolean;
+  accesoWms: boolean;
+  accesoMateo: boolean;
   idBodegaDefault: string | null;
 }
 
 export interface UpdateCuentaData {
   nombreComercial?: string;
   estaActiva?: boolean;
+  accesoWms?: boolean;
+  accesoMateo?: boolean;
   idBodegaDefault?: string | null;
 }
 
@@ -17,6 +21,8 @@ export interface CuentaRecord {
   codigoEmpresa: string;
   nombreComercial: string;
   estaActiva: boolean;
+  accesoWms: boolean;
+  accesoMateo: boolean;
   idBodegaDefault: string | null;
 }
 

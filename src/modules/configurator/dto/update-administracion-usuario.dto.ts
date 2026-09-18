@@ -15,7 +15,7 @@ export class UpdateAdministracionUsuarioDto {
   @ApiPropertyOptional({
     example: '+573001112233',
     nullable: true,
-    description: 'Teléfono en formato internacional E.164 (opcional)',
+    description: 'Teléfono E.164 del perfil. Único entre usuarios. Opcional.',
   })
   @IsOptional()
   @IsString()
