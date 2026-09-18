@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -18,6 +19,11 @@ import {
   ROL_CONFIGURADOR,
 } from '../../shared/constants/auth.constants';
 import { isValidEmail } from '../../shared/utils/email.util';
+import {
+  parseProfileTelefono,
+  TELEFONO_DUPLICADO,
+  TELEFONO_INVALIDO,
+} from '../../shared/utils/phone.util';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { PreloginDto } from './dto/prelogin.dto';
@@ -104,6 +110,13 @@ export class AuthService {
       throw new NotFoundException('Usuario no encontrado o inactivo');
     }
 
+    const access = await this.resolveProductoAccess(usuario);
+    if (!access.accesoMateo) {
+      throw new ForbiddenException(
+        'Este usuario no tiene acceso a Mateo IA.',
+      );
+    }
+
     return this.mateoHandoffService.generateCode(idAuth);
   }
 
@@ -114,6 +127,13 @@ export class AuthService {
 
     if (!usuario) {
       throw new NotFoundException('Usuario no encontrado o inactivo');
+    }
+
+    const access = await this.resolveProductoAccess(usuario);
+    if (!access.accesoMateo) {
+      throw new ForbiddenException(
+        'Este usuario no tiene acceso a Mateo IA.',
+      );
     }
 
     return this.mateoWidgetTokenService.generateToken({
@@ -166,18 +186,16 @@ export class AuthService {
     let nombreComercialCuenta: string | null = isConfigurador
       ? null
       : (usuario.cuenta?.nombreComercial ?? null);
+    const access = await this.resolveProductoAccess(usuario);
 
-    if (
-      !isConfigurador &&
-      !nombreComercialCuenta &&
-      usuario.codigoCuenta &&
-      schemaName
-    ) {
+    if (!isConfigurador && usuario.codigoCuenta && schemaName) {
       const cuenta = await this.prisma.forSchema(schemaName).cuenta.findUnique({
         where: { codigoCuenta: usuario.codigoCuenta },
         select: { nombreComercial: true },
       });
-      nombreComercialCuenta = cuenta?.nombreComercial ?? null;
+      if (cuenta) {
+        nombreComercialCuenta = cuenta.nombreComercial;
+      }
     }
 
     return {
@@ -199,15 +217,33 @@ export class AuthService {
       scope: isConfigurador ? AUTH_SCOPE.PLATFORM : AUTH_SCOPE.TENANT,
       idBodegas: ctx.idBodegas,
       schemaName,
+      accesoWms: access.accesoWms,
+      accesoMateo: access.accesoMateo,
     };
   }
 
   async updateMe(ctx: TenantContext, dto: UpdateMeDto): Promise<MeResponse> {
     const usuario = await this.requireActiveUsuario(ctx.idUsuario);
 
+    let telefono = dto.telefono;
+    if (dto.telefono !== undefined) {
+      const parsed = parseProfileTelefono(dto.telefono);
+      if (parsed.kind === 'invalid') {
+        throw new BadRequestException(TELEFONO_INVALIDO);
+      }
+      telefono = parsed.kind === 'ok' ? parsed.value : null;
+
+      if (telefono) {
+        const taken = await this.usuarioRepository.findByTelefono(telefono);
+        if (taken && taken.idUsuario !== usuario.idUsuario) {
+          throw new ConflictException(TELEFONO_DUPLICADO);
+        }
+      }
+    }
+
     await this.usuarioRepository.updateProfile(usuario.idUsuario, {
       nombre: dto.nombre,
-      telefono: dto.telefono,
+      ...(dto.telefono !== undefined ? { telefono } : {}),
     });
 
     this.logger.log(`Perfil actualizado: usuario=${usuario.idUsuario}`);
@@ -347,6 +383,19 @@ export class AuthService {
       usuario,
       flow: AUTH_FLOW.TENANT,
       scope: AUTH_SCOPE.TENANT,
+    };
+  }
+
+  private async resolveProductoAccess(
+    usuario: UsuarioWithRelations,
+  ): Promise<{ accesoWms: boolean; accesoMateo: boolean }> {
+    if (this.usuarioRepository.isConfigurador(usuario.idRol)) {
+      return { accesoWms: true, accesoMateo: true };
+    }
+
+    return {
+      accesoWms: usuario.accesoWms !== false,
+      accesoMateo: usuario.accesoMateo !== false,
     };
   }
 

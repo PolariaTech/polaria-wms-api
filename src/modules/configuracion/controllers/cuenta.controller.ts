@@ -44,6 +44,7 @@ export class CuentaController {
       'Actualiza nombre comercial, credenciales/acceso (estaActiva) y sincroniza ' +
       'bodegas (idsBodegas). Al desmarcar una bodega se mueve a otra cuenta de la ' +
       'misma empresa. Si estaActiva=false, los usuarios no pueden iniciar sesión. ' +
+      'accesoWms / accesoMateo definen el producto: solo WMS, solo Mateo IA, o ambos. ' +
       'Rol: configurador.',
   })
   @ApiParam({

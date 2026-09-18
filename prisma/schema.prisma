@@ -290,6 +290,8 @@ model Cuenta {
   codigoEmpresa      String              @map("codigo_empresa") @db.VarChar(32)
   nombreComercial    String              @map("nombre_comercial") @db.VarChar(255)
   estaActiva         Boolean             @default(true) @map("esta_activa")
+  accesoWms          Boolean             @default(true) @map("acceso_wms")
+  accesoMateo        Boolean             @default(true) @map("acceso_mateo")
   idCreador          String?             @map("id_creador") @db.Uuid
   idBodegaDefault    String?             @map("id_bodega_default") @db.Uuid
   createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -424,8 +426,10 @@ model Usuario {
   nombre                 String                 @db.VarChar(255)
   username               String                 @unique
   correo                 String                 @unique
-  telefono               String?                @db.VarChar(32)
+  telefono               String?                @unique(map: "uq_usuario_telefono") @db.VarChar(32)
   estaActivo             Boolean                @default(true) @map("esta_activo")
+  accesoWms              Boolean                @default(true) @map("acceso_wms")
+  accesoMateo            Boolean                @default(true) @map("acceso_mateo")
   createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   rol                    Rol                    @relation(fields: [idRol], references: [idRol])

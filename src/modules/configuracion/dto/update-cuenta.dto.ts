@@ -24,6 +24,24 @@ export class UpdateCuentaDto {
   estaActiva?: boolean;
 
   @ApiPropertyOptional({
+    example: true,
+    description:
+      'Si es true, los usuarios de la cuenta operan Polaria WMS. Debe haber al menos un producto (WMS o Mateo).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  accesoWms?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Si es true, los usuarios pueden entrar a Mateo IA. Debe haber al menos un producto (WMS o Mateo).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  accesoMateo?: boolean;
+
+  @ApiPropertyOptional({
     type: [String],
     example: ['550e8400-e29b-41d4-a716-446655440000'],
     description:

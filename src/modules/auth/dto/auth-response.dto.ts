@@ -131,4 +131,18 @@ export class MeResponseDto {
     description: 'Schema Postgres del tenant (null = legacy en public)',
   })
   schemaName!: string | null;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Este usuario opera Polaria WMS. Configurador: siempre true.',
+  })
+  accesoWms!: boolean;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Este usuario puede entrar a Mateo IA. Configurador: siempre true.',
+  })
+  accesoMateo!: boolean;
 }

@@ -11,6 +11,11 @@ import {
   ROLES_NIVEL_BODEGA,
   ROLES_NIVEL_CUENTA,
 } from '../../../shared/constants/roles';
+import {
+  parseProfileTelefono,
+  TELEFONO_DUPLICADO,
+  TELEFONO_INVALIDO,
+} from '../../../shared/utils/phone.util';
 import { CreateUsuarioDto } from '../dto/create-usuario.dto';
 import { ConfiguradorUsuarioRepository } from '../infrastructure/configurador-usuario.repository';
 import type {
@@ -63,6 +68,19 @@ export class ConfiguradorUsuariosService {
       throw new ConflictException('El correo ya está en uso');
     }
 
+    const parsedPhone = parseProfileTelefono(dto.telefono);
+    if (parsedPhone.kind === 'invalid') {
+      throw new BadRequestException(TELEFONO_INVALIDO);
+    }
+    const telefono = parsedPhone.kind === 'ok' ? parsedPhone.value : null;
+    if (telefono) {
+      const existingTelefono =
+        await this.usuarioRepository.findByTelefono(telefono);
+      if (existingTelefono) {
+        throw new ConflictException(TELEFONO_DUPLICADO);
+      }
+    }
+
     this.validateTenantFields({
       idRol: dto.idRol,
       nivelRol: rol.nivel,
@@ -79,10 +97,13 @@ export class ConfiguradorUsuariosService {
       await this.assertBodegaCoherente(idBodega!, codigoCuenta!);
     }
 
+    const accesoWms = dto.accesoWms !== false;
+    const accesoMateo = dto.accesoMateo !== false;
+    this.assertProductoAccess(accesoWms, accesoMateo);
+
     const idAuth = await this.supabaseAuth.createAuthUser(correo, dto.password);
 
     try {
-      const telefono = dto.telefono?.trim() || null;
       const usuario =
         await this.usuarioRepository.createUsuarioWithOptionalAsignacion({
           idAuth,
@@ -95,17 +116,11 @@ export class ConfiguradorUsuariosService {
           telefono,
           idCreador,
           idBodega: idBodega ?? undefined,
+          accesoWms,
+          accesoMateo,
         });
 
-      return {
-        idUsuario: usuario.idUsuario,
-        username: usuario.username,
-        nombre: usuario.nombre,
-        idRol: usuario.idRol,
-        codigoCuenta: usuario.codigoCuenta,
-        correo: usuario.correo,
-        telefono: usuario.telefono,
-      };
+      return this.toResponse(usuario);
     } catch (error) {
       await this.supabaseAuth.deleteAuthUser(idAuth);
       throw error;
@@ -124,8 +139,14 @@ export class ConfiguradorUsuariosService {
     const nombre = dto.nombre !== undefined ? dto.nombre.trim() : undefined;
     const correo =
       dto.correo !== undefined ? dto.correo.trim().toLowerCase() : undefined;
-    const telefono =
-      dto.telefono === undefined ? undefined : dto.telefono?.trim() || null;
+    let telefono: string | null | undefined;
+    if (dto.telefono !== undefined) {
+      const parsedPhone = parseProfileTelefono(dto.telefono);
+      if (parsedPhone.kind === 'invalid') {
+        throw new BadRequestException(TELEFONO_INVALIDO);
+      }
+      telefono = parsedPhone.kind === 'ok' ? parsedPhone.value : null;
+    }
 
     if (nombre !== undefined && !nombre) {
       throw new BadRequestException('El nombre es obligatorio');
@@ -135,10 +156,19 @@ export class ConfiguradorUsuariosService {
       throw new BadRequestException('El correo es obligatorio');
     }
 
+    const accesoWms = dto.accesoWms ?? usuario.accesoWms ?? true;
+    const accesoMateo = dto.accesoMateo ?? usuario.accesoMateo ?? true;
+    if (dto.accesoWms !== undefined || dto.accesoMateo !== undefined) {
+      this.assertProductoAccess(accesoWms, accesoMateo);
+    }
+
     if (
       nombre === undefined &&
       correo === undefined &&
-      telefono === undefined
+      telefono === undefined &&
+      dto.estaActivo === undefined &&
+      dto.accesoWms === undefined &&
+      dto.accesoMateo === undefined
     ) {
       throw new BadRequestException(
         'Debes indicar al menos un campo para actualizar',
@@ -149,6 +179,14 @@ export class ConfiguradorUsuariosService {
       const existingCorreo = await this.usuarioRepository.findByCorreo(correo);
       if (existingCorreo && existingCorreo.idUsuario !== idUsuario) {
         throw new ConflictException('El correo ya está en uso');
+      }
+    }
+
+    if (telefono) {
+      const existingTelefono =
+        await this.usuarioRepository.findByTelefono(telefono);
+      if (existingTelefono && existingTelefono.idUsuario !== idUsuario) {
+        throw new ConflictException(TELEFONO_DUPLICADO);
       }
     }
 
@@ -164,6 +202,9 @@ export class ConfiguradorUsuariosService {
         ...(nombre !== undefined ? { nombre } : {}),
         ...(correoChanged && correo ? { correo } : {}),
         ...(telefono !== undefined ? { telefono } : {}),
+        ...(dto.estaActivo !== undefined ? { estaActivo: dto.estaActivo } : {}),
+        ...(dto.accesoWms !== undefined ? { accesoWms } : {}),
+        ...(dto.accesoMateo !== undefined ? { accesoMateo } : {}),
       });
 
       return this.toResponse(updated);
@@ -205,6 +246,9 @@ export class ConfiguradorUsuariosService {
     codigoCuenta: string | null;
     correo: string;
     telefono: string | null;
+    estaActivo?: boolean;
+    accesoWms?: boolean;
+    accesoMateo?: boolean;
   }): CreateUsuarioResponse {
     return {
       idUsuario: usuario.idUsuario,
@@ -214,7 +258,18 @@ export class ConfiguradorUsuariosService {
       codigoCuenta: usuario.codigoCuenta,
       correo: usuario.correo,
       telefono: usuario.telefono,
+      estaActivo: usuario.estaActivo ?? true,
+      accesoWms: usuario.accesoWms ?? true,
+      accesoMateo: usuario.accesoMateo ?? true,
     };
+  }
+
+  private assertProductoAccess(accesoWms: boolean, accesoMateo: boolean): void {
+    if (!accesoWms && !accesoMateo) {
+      throw new BadRequestException(
+        'El usuario debe tener acceso a Polaria WMS, a Mateo IA, o a ambos.',
+      );
+    }
   }
 
   private validateTenantFields(input: {

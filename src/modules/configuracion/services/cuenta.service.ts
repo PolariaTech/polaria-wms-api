@@ -38,6 +38,14 @@ export class CuentaService {
       throw new NotFoundException('Cuenta no encontrada');
     }
 
+    const accesoWms = data.accesoWms ?? existing.accesoWms;
+    const accesoMateo = data.accesoMateo ?? existing.accesoMateo;
+    if (!accesoWms && !accesoMateo) {
+      throw new BadRequestException(
+        'La cuenta debe tener acceso a Polaria WMS, a Mateo IA, o a ambos.',
+      );
+    }
+
     const schemaName = existing.schemaName;
 
     if (dto.idBodegaDefault !== undefined) {
@@ -79,6 +87,14 @@ export class CuentaService {
 
     if (dto.estaActiva !== undefined) {
       data.estaActiva = dto.estaActiva;
+    }
+
+    if (dto.accesoWms !== undefined) {
+      data.accesoWms = dto.accesoWms;
+    }
+
+    if (dto.accesoMateo !== undefined) {
+      data.accesoMateo = dto.accesoMateo;
     }
 
     if (dto.idBodegaDefault !== undefined) {

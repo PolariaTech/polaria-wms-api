@@ -12,6 +12,8 @@ describe('CuentaService', () => {
     codigoEmpresa: 'EVU53',
     nombreComercial: 'Tecno-Tech',
     estaActiva: true,
+    accesoWms: true,
+    accesoMateo: true,
     idBodegaDefault: null as string | null,
     schemaName: null as string | null,
   };
@@ -42,6 +44,8 @@ describe('CuentaService', () => {
       codigoEmpresa: cuenta.codigoEmpresa,
       nombreComercial: 'Tecno Tech SA',
       estaActiva: false,
+      accesoWms: true,
+      accesoMateo: true,
       idBodegaDefault: null,
     });
     repository.findBodegasActivasDeCuenta.mockResolvedValue([]);
@@ -61,6 +65,8 @@ describe('CuentaService', () => {
       codigoEmpresa: 'EVU53',
       nombreComercial: 'Tecno Tech SA',
       estaActiva: false,
+      accesoWms: true,
+      accesoMateo: true,
       idBodegaDefault: null,
     });
   });
@@ -74,6 +80,8 @@ describe('CuentaService', () => {
       codigoEmpresa: 'EVU53',
       nombreComercial: 'Tecno-Tech',
       estaActiva: true,
+      accesoWms: true,
+      accesoMateo: true,
       idBodegaDefault: 'bod-1',
     });
 
@@ -84,6 +92,8 @@ describe('CuentaService', () => {
       codigoEmpresa: 'EVU53',
       nombreComercial: 'Tecno-Tech',
       estaActiva: true,
+      accesoWms: true,
+      accesoMateo: true,
       idBodegaDefault: 'bod-1',
     });
 
@@ -121,9 +131,11 @@ describe('CuentaService', () => {
       idsBodegas: ['bod-1', 'bod-2'],
     });
 
-    expect(repository.assignBodegasToCuenta).toHaveBeenCalledWith('49M04', [
-      'bod-2',
-    ]);
+    expect(repository.assignBodegasToCuenta).toHaveBeenCalledWith(
+      '49M04',
+      ['bod-2'],
+      null,
+    );
   });
 
   it('desvincula bodegas moviéndolas a otra cuenta de la empresa', async () => {
@@ -140,9 +152,11 @@ describe('CuentaService', () => {
       idsBodegas: ['bod-1'],
     });
 
-    expect(repository.assignBodegasToCuenta).toHaveBeenCalledWith('OTRA1', [
-      'bod-2',
-    ]);
+    expect(repository.assignBodegasToCuenta).toHaveBeenCalledWith(
+      'OTRA1',
+      ['bod-2'],
+      null,
+    );
   });
 
   it('rechaza desvincular si no hay otra cuenta en la empresa', async () => {
@@ -153,6 +167,12 @@ describe('CuentaService', () => {
 
     await expect(
       service.update('49M04', { idsBodegas: [] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rechaza dejar la cuenta sin WMS ni Mateo IA', async () => {
+    await expect(
+      service.update('49M04', { accesoWms: false, accesoMateo: false }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 

@@ -9,46 +9,41 @@ import type {
 
 type CuentaLocate = CuentaRecord & { schemaName: string | null };
 
+const CUENTA_SELECT_SQL = `
+  codigo_cuenta AS "codigoCuenta",
+  codigo_empresa AS "codigoEmpresa",
+  nombre_comercial AS "nombreComercial",
+  esta_activa AS "estaActiva",
+  acceso_wms AS "accesoWms",
+  acceso_mateo AS "accesoMateo",
+  id_bodega_default AS "idBodegaDefault"
+`;
+
 @Injectable()
 export class CuentaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  private readonly cuentaSelect = {
-    codigoCuenta: true,
-    codigoEmpresa: true,
-    nombreComercial: true,
-    estaActiva: true,
-    idBodegaDefault: true,
-  } as const;
-
-  /** Busca en public y, si no está, en schemas emp_* de empresas.
-   * Siempre usa forSchema(null) para plataforma: el ALS del request
-   * puede estar en otro emp_* (TenantSchemaInterceptor) y romper el lookup.
+  /**
+   * Busca en public y, si no está, en schemas emp_* de empresas.
+   * SQL calificado: Prisma + search_path del pool no alcanza tablas emp_*.
    */
   async findByCodigo(codigoCuenta: string): Promise<CuentaLocate | null> {
-    const platform = this.prisma.forSchema(null);
-
-    const inPublic = await platform.cuenta.findUnique({
-      where: { codigoCuenta },
-      select: this.cuentaSelect,
-    });
+    const inPublic = await this.findCuentaInSchema('public', codigoCuenta);
     if (inPublic) {
       return { ...inPublic, schemaName: null };
     }
 
-    const empresas = await platform.empresa.findMany({
+    const empresas = await this.prisma.forSchema(null).empresa.findMany({
       where: { schemaName: { not: null } },
       select: { schemaName: true },
     });
 
     for (const empresa of empresas) {
       if (!empresa.schemaName) continue;
-      const found = await this.prisma
-        .forSchema(empresa.schemaName)
-        .cuenta.findUnique({
-          where: { codigoCuenta },
-          select: this.cuentaSelect,
-        });
+      const found = await this.findCuentaInSchema(
+        empresa.schemaName,
+        codigoCuenta,
+      );
       if (found) {
         return { ...found, schemaName: empresa.schemaName };
       }
@@ -86,22 +81,58 @@ export class CuentaRepository {
     });
   }
 
-  update(
+  async update(
     codigoCuenta: string,
     data: UpdateCuentaData,
     schemaName?: string | null,
   ): Promise<UpdateCuentaResult> {
-    return this.prisma.forSchema(schemaName ?? null).cuenta.update({
-      where: { codigoCuenta },
-      data,
-      select: {
-        codigoCuenta: true,
-        codigoEmpresa: true,
-        nombreComercial: true,
-        estaActiva: true,
-        idBodegaDefault: true,
-      },
-    });
+    const schema = this.assertSafeSchemaIdent(schemaName ?? 'public');
+    const sets: string[] = [];
+    const values: unknown[] = [];
+
+    const push = (column: string, value: unknown) => {
+      values.push(value);
+      sets.push(`${column} = $${values.length}`);
+    };
+
+    if (data.nombreComercial !== undefined) {
+      push('nombre_comercial', data.nombreComercial);
+    }
+    if (data.estaActiva !== undefined) {
+      push('esta_activa', data.estaActiva);
+    }
+    if (data.accesoWms !== undefined) {
+      push('acceso_wms', data.accesoWms);
+    }
+    if (data.accesoMateo !== undefined) {
+      push('acceso_mateo', data.accesoMateo);
+    }
+    if (data.idBodegaDefault !== undefined) {
+      push('id_bodega_default', data.idBodegaDefault);
+    }
+
+    if (sets.length === 0) {
+      const existing = await this.findCuentaInSchema(schema, codigoCuenta);
+      if (!existing) {
+        throw new Error(`Cuenta ${codigoCuenta} no encontrada`);
+      }
+      return existing;
+    }
+
+    values.push(codigoCuenta);
+    const rows = await this.prisma.$queryRawUnsafe<UpdateCuentaResult[]>(
+      `UPDATE ${schema}.cuenta
+          SET ${sets.join(', ')}
+        WHERE codigo_cuenta = $${values.length}
+        RETURNING ${CUENTA_SELECT_SQL}`,
+      ...values,
+    );
+
+    const updated = rows[0];
+    if (!updated) {
+      throw new Error(`Cuenta ${codigoCuenta} no encontrada`);
+    }
+    return updated;
   }
 
   findBodegasByIds(
@@ -136,5 +167,27 @@ export class CuentaRepository {
       where: { idBodega: { in: idsBodega } },
       data: { codigoCuenta },
     });
+  }
+
+  private assertSafeSchemaIdent(schema: string): string {
+    if (!/^[a-z][a-z0-9_]*$/.test(schema)) {
+      throw new Error(`Nombre de schema inválido: ${schema}`);
+    }
+    return schema;
+  }
+
+  private async findCuentaInSchema(
+    schemaName: string,
+    codigoCuenta: string,
+  ): Promise<CuentaRecord | null> {
+    const schema = this.assertSafeSchemaIdent(schemaName);
+    const rows = await this.prisma.$queryRawUnsafe<CuentaRecord[]>(
+      `SELECT ${CUENTA_SELECT_SQL}
+         FROM ${schema}.cuenta
+        WHERE codigo_cuenta = $1
+        LIMIT 1`,
+      codigoCuenta,
+    );
+    return rows[0] ?? null;
   }
 }
