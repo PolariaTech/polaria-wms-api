@@ -376,7 +376,7 @@ Resumen de **todos** los endpoints implementados. Base URL: `http://localhost:30
 {
   "accessToken": "eyJ...",
   "refreshToken": "v1...",
-  "expiresIn": 2592000,
+  "expiresIn": 1987200,
   "tokenType": "bearer",
   "context": {
     "idUsuario": "uuid",

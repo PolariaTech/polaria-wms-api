@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+﻿import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -108,7 +108,7 @@ describe('AuthController (e2e)', () => {
       });
   });
 
-  it('POST /auth/prelogin responde 400 con body inválido', async () => {
+  it('POST /auth/prelogin responde 400 con body invÃ¡lido', async () => {
     await request(app.getHttpServer())
       .post('/auth/prelogin')
       .send({})
@@ -119,7 +119,7 @@ describe('AuthController (e2e)', () => {
     authService.login.mockResolvedValue({
       accessToken: 'token',
       refreshToken: 'refresh',
-      expiresIn: 2592000,
+      expiresIn: 1987200,
       tokenType: 'bearer',
       context: {
         idUsuario: 'usr-1',
@@ -185,7 +185,7 @@ describe('AuthController (e2e)', () => {
       .expect(204);
   });
 
-  it('POST /auth/mateo-handoff responde 200 con Bearer (sesión WMS o Mateo)', async () => {
+  it('POST /auth/mateo-handoff responde 200 con Bearer (sesiÃ³n WMS o Mateo)', async () => {
     authService.createMateoHandoff.mockResolvedValue({
       code: 'handoff-jwt',
       expiresIn: 60,
@@ -210,7 +210,7 @@ describe('AuthController (e2e)', () => {
   it('POST /auth/mateo/widget-token responde 200 con Bearer', async () => {
     authService.createMateoWidgetToken.mockResolvedValue({
       token: 'widget-jwt',
-      expiresIn: 2592000,
+      expiresIn: 1987200,
     });
 
     await request(app.getHttpServer())
@@ -219,7 +219,7 @@ describe('AuthController (e2e)', () => {
       .expect(200)
       .expect((res) => {
         expect(res.body.token).toBe('widget-jwt');
-        expect(res.body.expiresIn).toBe(2592000);
+        expect(res.body.expiresIn).toBe(1987200);
       });
 
     expect(authService.createMateoWidgetToken).toHaveBeenCalledWith(
@@ -233,7 +233,7 @@ describe('AuthController (e2e)', () => {
       .expect(401);
   });
 
-  it('POST /auth/mateo-exchange responde 200 con código válido', async () => {
+  it('POST /auth/mateo-exchange responde 200 con cÃ³digo vÃ¡lido', async () => {
     authService.exchangeMateoCode.mockResolvedValue({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
