@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -229,7 +229,7 @@ describe('AuthService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('lanza 422 si tenant no envía codigoEmpresa', async () => {
+    it('lanza 422 si tenant no envÃ­a codigoEmpresa', async () => {
       usuarioRepository.findActiveByIdentificador.mockResolvedValue(
         mockTenantUser as never,
       );
@@ -252,7 +252,7 @@ describe('AuthService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('lanza 403 si empresa está inactiva', async () => {
+    it('lanza 403 si empresa estÃ¡ inactiva', async () => {
       usuarioRepository.findActiveByIdentificador.mockResolvedValue({
         ...mockTenantUser,
         empresa: { ...mockTenantUser.empresa, estaActiva: false },
@@ -275,7 +275,7 @@ describe('AuthService', () => {
       supabaseAuth.signInWithPassword.mockResolvedValue({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
-        expiresIn: 2592000,
+        expiresIn: 1987200,
         tokenType: 'bearer',
       });
 
@@ -304,7 +304,7 @@ describe('AuthService', () => {
         mockConfigurador as never,
       );
       supabaseAuth.signInWithPassword.mockRejectedValue(
-        new UnauthorizedException('Credenciales inválidas'),
+        new UnauthorizedException('Credenciales invÃ¡lidas'),
       );
 
       await expect(
@@ -317,7 +317,7 @@ describe('AuthService', () => {
   });
 
   describe('createMateoHandoff', () => {
-    it('genera código para usuario activo', async () => {
+    it('genera cÃ³digo para usuario activo', async () => {
       usuarioRepository.findActiveByIdAuth.mockResolvedValue(
         mockTenantUser as never,
       );
@@ -380,7 +380,7 @@ describe('AuthService', () => {
       );
       mateoWidgetTokenService.generateToken.mockReturnValue({
         token: 'widget-jwt',
-        expiresIn: 2592000,
+        expiresIn: 1987200,
       });
 
       const result = await service.createMateoWidgetToken('auth-tenant');
@@ -395,7 +395,7 @@ describe('AuthService', () => {
         nombre: mockTenantUser.nombre,
         telefono: '+573001112233',
       });
-      expect(result).toEqual({ token: 'widget-jwt', expiresIn: 2592000 });
+      expect(result).toEqual({ token: 'widget-jwt', expiresIn: 1987200 });
     });
 
     it('lanza 404 si usuario no existe', async () => {
@@ -408,7 +408,7 @@ describe('AuthService', () => {
   });
 
   describe('exchangeMateoCode', () => {
-    it('canjea código y retorna tokens + usuario', async () => {
+    it('canjea cÃ³digo y retorna tokens + usuario', async () => {
       mateoHandoffService.redeemCode.mockReturnValue('auth-tenant');
       usuarioRepository.findActiveByIdAuth.mockResolvedValue(
         mockTenantUser as never,
@@ -416,7 +416,7 @@ describe('AuthService', () => {
       supabaseAuth.createSessionForEmail.mockResolvedValue({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
-        expiresIn: 2592000,
+        expiresIn: 1987200,
         tokenType: 'bearer',
       });
 
@@ -441,9 +441,9 @@ describe('AuthService', () => {
       });
     });
 
-    it('propaga 401 si el código es inválido', async () => {
+    it('propaga 401 si el cÃ³digo es invÃ¡lido', async () => {
       mateoHandoffService.redeemCode.mockImplementation(() => {
-        throw new UnauthorizedException('Código inválido o expirado');
+        throw new UnauthorizedException('CÃ³digo invÃ¡lido o expirado');
       });
 
       await expect(service.exchangeMateoCode('bad-code')).rejects.toThrow(
@@ -512,7 +512,7 @@ describe('AuthService', () => {
       );
     });
 
-    it('incluye teléfono en el perfil', async () => {
+    it('incluye telÃ©fono en el perfil', async () => {
       usuarioRepository.findActiveByIdUsuario.mockResolvedValue(
         mockTenantUser as never,
       );
@@ -534,7 +534,7 @@ describe('AuthService', () => {
       schemaName: null,
     };
 
-    it('actualiza nombre y teléfono y retorna el perfil', async () => {
+    it('actualiza nombre y telÃ©fono y retorna el perfil', async () => {
       const updated = { ...mockTenantUser, nombre: 'Nuevo Nombre' };
       usuarioRepository.findActiveByIdUsuario
         .mockResolvedValueOnce(mockTenantUser as never)
@@ -553,7 +553,7 @@ describe('AuthService', () => {
       expect(result.nombre).toBe('Nuevo Nombre');
     });
 
-    it('rechaza teléfono ya usado por otra cuenta', async () => {
+    it('rechaza telÃ©fono ya usado por otra cuenta', async () => {
       usuarioRepository.findActiveByIdUsuario.mockResolvedValue(
         mockTenantUser as never,
       );
@@ -571,7 +571,7 @@ describe('AuthService', () => {
       expect(usuarioRepository.updateProfile).not.toHaveBeenCalled();
     });
 
-    it('permite conservar el mismo teléfono del usuario', async () => {
+    it('permite conservar el mismo telÃ©fono del usuario', async () => {
       usuarioRepository.findActiveByIdUsuario
         .mockResolvedValueOnce(mockTenantUser as never)
         .mockResolvedValueOnce(mockTenantUser as never);
@@ -590,7 +590,7 @@ describe('AuthService', () => {
       expect(usuarioRepository.updateProfile).toHaveBeenCalled();
     });
 
-    it('lanza 404 si el usuario no está activo', async () => {
+    it('lanza 404 si el usuario no estÃ¡ activo', async () => {
       usuarioRepository.findActiveByIdUsuario.mockResolvedValue(null);
 
       await expect(
@@ -617,7 +617,7 @@ describe('AuthService', () => {
       supabaseAuth.signInWithPassword.mockResolvedValue({
         accessToken: 'tmp',
         refreshToken: 'tmp',
-        expiresIn: 2592000,
+        expiresIn: 1987200,
         tokenType: 'bearer',
       });
       supabaseAuth.updateAuthUser.mockResolvedValue(undefined);
@@ -636,12 +636,12 @@ describe('AuthService', () => {
       });
     });
 
-    it('lanza 401 si la contraseña actual es incorrecta', async () => {
+    it('lanza 401 si la contraseÃ±a actual es incorrecta', async () => {
       usuarioRepository.findActiveByIdUsuario.mockResolvedValue(
         mockTenantUser as never,
       );
       supabaseAuth.signInWithPassword.mockRejectedValue(
-        new UnauthorizedException('Credenciales inválidas'),
+        new UnauthorizedException('Credenciales invÃ¡lidas'),
       );
 
       await expect(
@@ -653,7 +653,7 @@ describe('AuthService', () => {
       expect(supabaseAuth.updateAuthUser).not.toHaveBeenCalled();
     });
 
-    it('lanza 400 si la nueva contraseña es igual a la actual', async () => {
+    it('lanza 400 si la nueva contraseÃ±a es igual a la actual', async () => {
       await expect(
         service.changePassword(tenantContext, {
           currentPassword: 'ClaveSegura1!',
@@ -665,7 +665,7 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('delega cierre de sesión a Supabase', async () => {
+    it('delega cierre de sesiÃ³n a Supabase', async () => {
       supabaseAuth.signOut.mockResolvedValue(undefined);
 
       await service.logout('access-token');
