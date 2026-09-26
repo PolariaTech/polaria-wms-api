@@ -5,7 +5,7 @@ Versión de producto alineada con Polaria WMS. Swagger: `2.7.15`.
 ## 2.7.15 — 2026-09-25
 
 - Versión OpenAPI / Swagger fijada a 2.7.15.
-- TTL de sesión WMS y JWT del widget Mateo: **1 mes** (2592000 s). El handoff SSO one-time sigue en **60 s**.
+- TTL de sesión WMS y JWT del widget Mateo: **23 días** (1987200 s). El handoff SSO one-time sigue en **60 s**.
 
 ## 2.7.5 — 2026-09-17
 

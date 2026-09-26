@@ -65,7 +65,7 @@ export class LoginResponseDto {
   @ApiProperty({ example: 'v1.MRj...' })
   refreshToken!: string;
 
-  @ApiProperty({ example: 2592000 })
+  @ApiProperty({ example: 1987200 })
   expiresIn!: number;
 
   @ApiProperty({ example: 'bearer' })

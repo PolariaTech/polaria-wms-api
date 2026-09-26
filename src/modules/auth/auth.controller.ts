@@ -141,7 +141,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Emitir JWT del widget Mateo embebido',
     description:
-      'Usuario autenticado (Bearer Supabase) obtiene un JWT HS256 (TTL 1 mes) para el widget Mateo. ' +
+      'Usuario autenticado (Bearer Supabase) obtiene un JWT HS256 (TTL 23 días) para el widget Mateo. ' +
       'Reutilizable hasta expirar; refrescar con otro POST. Distinto del handoff SSO one-time.',
   })
   @ApiOkResponse({ type: MateoWidgetTokenResponseDto })
