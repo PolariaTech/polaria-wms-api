@@ -275,7 +275,7 @@ describe('AuthService', () => {
       supabaseAuth.signInWithPassword.mockResolvedValue({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
-        expiresIn: 43200,
+        expiresIn: 2592000,
         tokenType: 'bearer',
       });
 
@@ -380,7 +380,7 @@ describe('AuthService', () => {
       );
       mateoWidgetTokenService.generateToken.mockReturnValue({
         token: 'widget-jwt',
-        expiresIn: 43200,
+        expiresIn: 2592000,
       });
 
       const result = await service.createMateoWidgetToken('auth-tenant');
@@ -395,7 +395,7 @@ describe('AuthService', () => {
         nombre: mockTenantUser.nombre,
         telefono: '+573001112233',
       });
-      expect(result).toEqual({ token: 'widget-jwt', expiresIn: 43200 });
+      expect(result).toEqual({ token: 'widget-jwt', expiresIn: 2592000 });
     });
 
     it('lanza 404 si usuario no existe', async () => {
@@ -416,7 +416,7 @@ describe('AuthService', () => {
       supabaseAuth.createSessionForEmail.mockResolvedValue({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
-        expiresIn: 43200,
+        expiresIn: 2592000,
         tokenType: 'bearer',
       });
 
@@ -617,7 +617,7 @@ describe('AuthService', () => {
       supabaseAuth.signInWithPassword.mockResolvedValue({
         accessToken: 'tmp',
         refreshToken: 'tmp',
-        expiresIn: 43200,
+        expiresIn: 2592000,
         tokenType: 'bearer',
       });
       supabaseAuth.updateAuthUser.mockResolvedValue(undefined);

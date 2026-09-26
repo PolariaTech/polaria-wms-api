@@ -14,5 +14,5 @@ export const AUTH_SCOPE = {
 
 export type AuthScope = (typeof AUTH_SCOPE)[keyof typeof AUTH_SCOPE];
 
-/** Access token WMS (Supabase JWT) y JWT del widget Mateo. El código one-time de handoff sigue en 60 s. */
-export const AUTH_SESSION_TTL_SECONDS = 12 * 60 * 60;
+/** Access token WMS (Supabase JWT) y JWT del widget Mateo: 1 mes. El código one-time de handoff sigue en 60 s. */
+export const AUTH_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;

@@ -53,7 +53,7 @@ describe('MateoWidgetTokenService', () => {
     await module.close();
   });
 
-  it('genera un JWT reutilizable con TTL de 12 horas y claims n8n', () => {
+  it('genera un JWT reutilizable con TTL de 1 mes y claims n8n', () => {
     const result = service.generateToken(usuario);
 
     expect(result.expiresIn).toBe(MATEO_WIDGET_JWT_TTL_SECONDS);

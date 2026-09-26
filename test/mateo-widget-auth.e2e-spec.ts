@@ -9,6 +9,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { SupabaseAuthService } from '../src/core/auth/supabase-auth.service';
+import { PrismaService } from '../src/core/database/prisma.service';
 import { GlobalExceptionFilter } from '../src/core/filters/global-exception.filter';
 import { JwtAuthGuard } from '../src/core/guards/jwt-auth.guard';
 import { TenantGuard } from '../src/core/guards/tenant.guard';
@@ -30,7 +31,10 @@ describe('Mateo widget auth (e2e)', () => {
   let app: INestApplication<App>;
   let jwtService: JwtService;
   let supabaseAuth: { getUserFromToken: jest.Mock };
-  let usuarioRepository: { findActiveByIdAuth: jest.Mock };
+  let usuarioRepository: {
+    findActiveByIdAuth: jest.Mock;
+    isConfigurador: jest.Mock;
+  };
 
   const mockUsuario = {
     idAuth: '33333333-3333-3333-3333-333333333333',
@@ -41,6 +45,8 @@ describe('Mateo widget auth (e2e)', () => {
     correo: 'ops@acme.test',
     nombre: 'Operador ACME',
     estaActivo: true,
+    accesoWms: true,
+    accesoMateo: true,
   };
 
   const mockTenantContext = {
@@ -59,6 +65,7 @@ describe('Mateo widget auth (e2e)', () => {
     };
     usuarioRepository = {
       findActiveByIdAuth: jest.fn().mockResolvedValue(mockUsuario),
+      isConfigurador: jest.fn().mockReturnValue(false),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -77,6 +84,14 @@ describe('Mateo widget auth (e2e)', () => {
         },
         { provide: UsuarioRepository, useValue: usuarioRepository },
         { provide: SupabaseAuthService, useValue: supabaseAuth },
+        {
+          provide: PrismaService,
+          useValue: {
+            forSchema: jest.fn().mockReturnValue({
+              cuenta: { findUnique: jest.fn().mockResolvedValue(null) },
+            }),
+          },
+        },
         {
           provide: TenantService,
           useValue: {
@@ -114,7 +129,9 @@ describe('Mateo widget auth (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   it('POST /auth/mateo/widget-token responde 401 sin Bearer', async () => {
