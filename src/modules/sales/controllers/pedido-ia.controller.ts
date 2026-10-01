@@ -1,62 +1,61 @@
 import {
   Body,
   Controller,
-  Headers,
   HttpCode,
   HttpStatus,
   Post,
-  UnauthorizedException,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import {
-  ApiBearerAuth,
   ApiBody,
   ApiConsumes,
   ApiHeader,
   ApiOkResponse,
   ApiOperation,
+  ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { ConfigService } from '@nestjs/config';
-import { TenantCtx } from '../../../core/decorators/tenant-context.decorator';
 import { SWAGGER_TAGS } from '../../../core/swagger/swagger.constants';
-import { JwtAuthGuard } from '../../../core/guards/jwt-auth.guard';
-import { Roles } from '../../../core/guards/roles.decorator';
-import { RolesGuard } from '../../../core/guards/roles.guard';
-import { TenantGuard } from '../../../core/guards/tenant.guard';
-import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
-import { ROLES_OV_ESCRITURA } from '../constants/orden-venta.constants';
 import {
   ArchivoExtraidoResponseDto,
   PedidoExtraidoResponseDto,
 } from '../dto/pedido-ia-response.dto';
 import { PedidoIaService } from '../services/pedido-ia.service';
 import { LeerPedidoBodyDto } from '../dto/leer-pedido-body.dto';
+import { PedidoIaApiKeyGuard } from '../guards/pedido-ia-api-key.guard';
 
 @ApiTags(SWAGGER_TAGS.VENTAS_OV)
 @Controller('ventas')
+@UseGuards(PedidoIaApiKeyGuard)
+@ApiSecurity('pedido-ia-api-key')
 export class PedidoIaController {
-  constructor(
-    private readonly pedidoIaService: PedidoIaService,
-    private readonly config: ConfigService,
-  ) {}
+  constructor(private readonly pedidoIaService: PedidoIaService) {}
 
   @Post('leer-pedido')
-  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
-  @Roles(...ROLES_OV_ESCRITURA)
-  @ApiBearerAuth('access-token')
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FilesInterceptor('archivos', 8))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: 'Leer pedido con IA (texto y/o archivos)',
+    summary: 'Leer pedido con IA (texto y/o archivos) — API pública de integración',
     description:
-      'Extrae PDF/Excel/Word/HTML/.eml/fotos, llama a OpenAI y devuelve el pedido estructurado ' +
-      'para prellenar el formulario de OV. Mismo contrato que el BFF Next anterior.',
+      'Sin login de usuario. Autenticación por API key (X-Api-Key). ' +
+      'Extrae PDF/Excel/Word/HTML/.eml/fotos, usa OpenAI del servidor y devuelve el pedido estructurado. ' +
+      'Requiere codigoCuenta para resolver el catálogo del tenant.',
+  })
+  @ApiHeader({
+    name: 'X-Api-Key',
+    required: true,
+    description: 'Clave de integración (env PEDIDO_IA_API_KEY).',
+  })
+  @ApiHeader({
+    name: 'X-Internal-Api-Key',
+    required: false,
+    description:
+      'Alternativa (env INTERNAL_API_KEY). Usa una de las dos keys.',
   })
   @ApiBody({
     schema: {
@@ -82,14 +81,12 @@ export class PedidoIaController {
   leerPedido(
     @UploadedFiles() files: Express.Multer.File[] | undefined,
     @Body() body: LeerPedidoBodyDto,
-    @TenantCtx() ctx: TenantContext,
   ): Promise<PedidoExtraidoResponseDto> {
     return this.pedidoIaService.leerPedido({
       codigoCuenta: body.codigoCuenta ?? '',
       cliente: body.cliente,
       texto: body.texto ?? '',
       files: files ?? [],
-      ctx,
     });
   }
 
@@ -98,15 +95,19 @@ export class PedidoIaController {
   @UseInterceptors(FilesInterceptor('archivos', 8))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: 'Extraer contenido de archivos (PDF, Excel, .eml, imagen…)',
+    summary: 'Extraer contenido de archivos — API pública de integración',
     description:
-      'Parsers sin OpenAI. Server-to-server (captura QR) con header X-Internal-Api-Key.',
+      'Sin login. Parsers (PDF, Excel, .eml, imagen…) sin OpenAI. Auth por X-Api-Key.',
+  })
+  @ApiHeader({
+    name: 'X-Api-Key',
+    required: true,
+    description: 'Clave de integración (env PEDIDO_IA_API_KEY).',
   })
   @ApiHeader({
     name: 'X-Internal-Api-Key',
-    required: true,
-    description:
-      'Clave server-to-server (misma env INTERNAL_API_KEY en web y Nest).',
+    required: false,
+    description: 'Alternativa (env INTERNAL_API_KEY).',
   })
   @ApiBody({
     schema: {
@@ -120,16 +121,9 @@ export class PedidoIaController {
     },
   })
   @ApiOkResponse({ type: ArchivoExtraidoResponseDto, isArray: true })
-  async extraerArchivos(
+  extraerArchivos(
     @UploadedFiles() files: Express.Multer.File[] | undefined,
-    @Headers('x-internal-api-key') internalKey?: string,
   ): Promise<ArchivoExtraidoResponseDto[]> {
-    const expected = this.config.get<string>('INTERNAL_API_KEY')?.trim();
-    if (!expected || internalKey?.trim() !== expected) {
-      throw new UnauthorizedException(
-        'X-Internal-Api-Key inválida o ausente.',
-      );
-    }
     return this.pedidoIaService.extraerArchivos(files ?? []);
   }
 }

@@ -24,6 +24,16 @@ export function setupSwagger(app: INestApplication): void {
         description: 'Token JWT obtenido en POST /auth/login',
       },
       'access-token',
+    )
+    .addApiKey(
+      {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-Api-Key',
+        description:
+          'Clave de integración IA (env PEDIDO_IA_API_KEY). Para POST /ventas/leer-pedido y /ventas/ai/extraer-archivos.',
+      },
+      'pedido-ia-api-key',
     );
 
   for (const tag of SWAGGER_TAG_ORDER) {
