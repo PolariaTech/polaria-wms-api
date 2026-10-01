@@ -4,8 +4,8 @@ Versión de producto alineada con Polaria WMS. Swagger: `2.8.20`.
 
 ## 2.8.20 — 2026-10-01
 
-- Endpoints IA pedidos (opcionales / listos): `POST /ventas/leer-pedido`, `POST /ventas/ai/extraer-archivos`.
-- En runtime actual el web sigue usando su BFF; estos endpoints requieren `OPENAI_API_KEY` (+ `INTERNAL_API_KEY` para extraer-archivos) en el API si se activan.
+- Endpoints IA de integración (sin login de usuario): `POST /ventas/leer-pedido` y `POST /ventas/ai/extraer-archivos` con `X-Api-Key` (`PEDIDO_IA_API_KEY`) o `X-Internal-Api-Key`.
+- OpenAI sigue solo en el servidor (`OPENAI_API_KEY` / `OPENAI_MODEL`).
 
 ## 2.8.12 — 2026-09-30
 

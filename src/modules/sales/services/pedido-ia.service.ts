@@ -1,13 +1,17 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import { RolNivel, WmsRol } from '../../../generated/prisma/client';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import { PrismaService } from '../../../core/database/prisma.service';
+import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 import {
   extractFiles,
   type ArchivoExtraido,
@@ -44,6 +48,7 @@ export class PedidoIaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly tenantLocator: TenantSchemaLocator,
   ) {}
 
   async extraerArchivos(files: Express.Multer.File[]): Promise<ArchivoExtraido[]> {
@@ -57,7 +62,8 @@ export class PedidoIaService {
     cliente?: string;
     texto: string;
     files: Express.Multer.File[];
-    ctx: TenantContext;
+    /** Si viene de JWT+tenant; si no, se resuelve por codigoCuenta (API key). */
+    ctx?: TenantContext | null;
   }): Promise<PedidoExtraido & { textoOrigen: string | null }> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY')?.trim();
     if (!apiKey) {
@@ -77,11 +83,13 @@ export class PedidoIaService {
     }
     this.assertFiles(input.files);
 
+    const ctx =
+      input.ctx?.schemaName != null || input.ctx?.codigoCuenta
+        ? input.ctx
+        : await this.buildIntegrationTenantContext(codigoCuenta);
+
     const inicio = Date.now();
-    const catalogoClaves = await this.listCatalogoClaves(
-      codigoCuenta,
-      input.ctx,
-    );
+    const catalogoClaves = await this.listCatalogoClaves(codigoCuenta, ctx);
 
     if (catalogoClaves.length === 0) {
       throw new BadRequestException(
@@ -138,11 +146,43 @@ export class PedidoIaService {
           'El servicio de IA no está disponible en este momento. Intenta de nuevo.',
         );
       }
-      if (err instanceof BadRequestException || err instanceof ServiceUnavailableException) {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof ServiceUnavailableException ||
+        err instanceof NotFoundException ||
+        err instanceof ForbiddenException
+      ) {
         throw err;
       }
       throw err;
     }
+  }
+
+  /** Contexto sintético para llamadas con API key (sin JWT). */
+  private async buildIntegrationTenantContext(
+    codigoCuenta: string,
+  ): Promise<TenantContext> {
+    const located = await this.tenantLocator.findCuentaByCodigo(codigoCuenta);
+    if (!located) {
+      throw new NotFoundException(`Cuenta no encontrada: ${codigoCuenta}`);
+    }
+    if (!located.empresaEstaActiva) {
+      throw new ForbiddenException('La empresa está inactiva');
+    }
+    if (!located.estaActiva) {
+      throw new ForbiddenException('La cuenta está inactiva');
+    }
+
+    return {
+      idUsuario: 'integration:pedido-ia',
+      idRol: WmsRol.operador_cuenta,
+      nivelRol: RolNivel.cuenta,
+      codigoEmpresa: located.codigoEmpresa,
+      codigoCuenta: located.codigoCuenta,
+      codigosCuentaEmpresa: [located.codigoCuenta],
+      idBodegas: [],
+      schemaName: located.schemaName,
+    };
   }
 
   private assertFiles(files: Express.Multer.File[]): void {
@@ -164,7 +204,6 @@ export class PedidoIaService {
     }));
   }
 
-  /** Claves EXACTAS para el prompt OpenAI: "NOMBRE (SKU)". */
   private async listCatalogoClaves(
     codigoCuenta: string,
     ctx: TenantContext,
