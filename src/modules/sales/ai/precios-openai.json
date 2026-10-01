@@ -1,0 +1,4 @@
+{
+  "_nota": "USD por 1,000,000 de tokens, tier de contexto corto (la mayoría de las solicitudes de este backend caen ahí — órdenes de texto/archivos pequeños, no acercan al umbral de contexto largo). Solo se incluye el modelo configurado en OPENAI_MODEL (.env) — el usuario pidió no agregar los demás modelos de la tabla original porque no se usan aquí. Fuente: tabla dada por el usuario el 2026-09-04, confirmada contra https://developers.openai.com/api/docs/pricing.",
+  "gpt-5.6-luna": { "input": 0.20, "cachedInput": 0.02, "cacheWrites": 0.25, "output": 1.20 }
+}
