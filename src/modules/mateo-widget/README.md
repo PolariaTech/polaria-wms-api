@@ -29,7 +29,7 @@ Guards: `JwtAuthGuard` + `TenantGuard` (Bearer **sesión WMS**, no el JWT de n8n
 
 Tablas Supabase: `mateo_support.widget_conversacion` / `mateo_support.widget_mensaje`  
 Migración: `polaria-wms-db` → `051` + `055_widget_tables_mateo_support_schema.sql` + `057_widget_mensaje_dedupe_reintento.sql`  
-Prisma: `WidgetConversacion` / `WidgetMensaje` vía `PrismaService.forMateo()` (`search_path=mateo_support,public`)
+Prisma: `WidgetConversacion` / `WidgetMensaje` con `@@schema("mateo_support")` + `PrismaService.forMateo()`
 
 ## Docs
 
