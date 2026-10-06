@@ -18,6 +18,8 @@ export interface DespachoLineaInput {
 
 const ESTADOS_PERMITIDOS_DESPACHO: EstadoOrdenVenta[] = [
   EstadoOrdenVenta.confirmada,
+  EstadoOrdenVenta.alistamiento,
+  EstadoOrdenVenta.alistada,
   EstadoOrdenVenta.en_preparacion,
   EstadoOrdenVenta.parcialmente_despachada,
 ];
@@ -35,7 +37,13 @@ export async function marcarOvEnPreparacion(
     throw new OrdenVentaEstadoError('OV_NOT_FOUND');
   }
 
-  if (orden.estado !== EstadoOrdenVenta.confirmada) {
+  const estadosPermitidos: EstadoOrdenVenta[] = [
+    EstadoOrdenVenta.confirmada,
+    EstadoOrdenVenta.alistamiento,
+    EstadoOrdenVenta.alistada,
+  ];
+
+  if (!estadosPermitidos.includes(orden.estado)) {
     throw new OrdenVentaEstadoError('OV_ESTADO_INVALIDO');
   }
 

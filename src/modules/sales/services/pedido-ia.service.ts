@@ -208,25 +208,33 @@ export class PedidoIaService {
     codigoCuenta: string,
     ctx: TenantContext,
   ): Promise<string[]> {
-    return this.prisma.runWithSchema(ctx.schemaName, async () => {
-      const rows = await this.prisma.producto.findMany({
-        where: {
-          codigoCuenta,
-          estaActivo: true,
-        },
-        select: {
-          sku: true,
-          descripcion: true,
-          metadatosCatalogo: true,
-        },
-        take: 5000,
-      });
+    // No usar search_path del pool: Supabase/pgbouncer lo ignora y Prisma
+    // sigue leyendo public (Tecno funciona; emp_* queda vacío / falla).
+    const schema = this.tenantLocator.assertSafeSchemaIdent(
+      ctx.schemaName?.trim() || 'public',
+    );
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        sku: string | null;
+        descripcion: string | null;
+        metadatosCatalogo: unknown;
+      }>
+    >(
+      `SELECT sku,
+              descripcion,
+              metadatos_catalogo AS "metadatosCatalogo"
+       FROM ${schema}.producto
+       WHERE codigo_cuenta = $1
+         AND esta_activo = true
+       ORDER BY descripcion ASC NULLS LAST
+       LIMIT 5000`,
+      codigoCuenta,
+    );
 
-      return rows.map((row) => {
-        const titulo = tituloFromMetadatos(row.metadatosCatalogo);
-        const nombre = (titulo || row.descripcion || row.sku).trim();
-        return catalogKey(nombre, row.sku);
-      });
+    return rows.map((row) => {
+      const titulo = tituloFromMetadatos(row.metadatosCatalogo);
+      const nombre = (titulo || row.descripcion || row.sku || '').trim();
+      return catalogKey(nombre, row.sku ?? '');
     });
   }
 }

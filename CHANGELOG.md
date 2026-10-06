@@ -1,6 +1,11 @@
 ﻿# Changelog — polaria-wms-api
 
-Versión de producto alineada con Polaria WMS. Swagger: `2.8.20`.
+Versión de producto alineada con Polaria WMS. Swagger: `2.9.12`.
+
+## 2.9.12 — 2026-10-06
+
+- Estados de OV **alistamiento** / **alistada** en el flujo operativo.
+- Listado de OV por `created_at` (más reciente primero).
 
 ## 2.8.20 — 2026-10-01
 
