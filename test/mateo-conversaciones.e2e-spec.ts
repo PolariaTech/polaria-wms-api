@@ -61,6 +61,7 @@ describe('Mateo conversaciones auth (e2e)', () => {
       rol: 'user' | 'ai';
       tipo: 'text' | 'image';
       contenido: string;
+      urlImagen?: string | null;
       esError: boolean;
       createdAt: Date;
     }>;
@@ -126,6 +127,7 @@ describe('Mateo conversaciones auth (e2e)', () => {
         rol: 'user' | 'ai';
         tipo: 'text' | 'image';
         contenido: string;
+        urlImagen?: string | null;
         esError: boolean;
         createdAt?: Date;
       }) => {
@@ -133,11 +135,13 @@ describe('Mateo conversaciones auth (e2e)', () => {
         if (!conv || conv.idUsuario !== params.idUsuario) return null;
 
         const ts = params.createdAt ?? new Date();
+        const urlImagen = params.urlImagen ?? null;
         const duplicate = conv.mensajes.find(
           (m) =>
             m.rol === params.rol &&
             m.tipo === params.tipo &&
             m.contenido === params.contenido &&
+            (m.urlImagen ?? null) === urlImagen &&
             m.esError === params.esError &&
             m.createdAt.getTime() === ts.getTime(),
         );
@@ -153,6 +157,7 @@ describe('Mateo conversaciones auth (e2e)', () => {
           rol: params.rol,
           tipo: params.tipo,
           contenido: params.contenido,
+          urlImagen,
           esError: params.esError,
           createdAt: ts,
         };

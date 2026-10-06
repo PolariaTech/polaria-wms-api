@@ -12,7 +12,7 @@ Guards: `JwtAuthGuard` + `TenantGuard` (Bearer **sesión WMS**, no el JWT de n8n
 | GET | `/` | Lista del usuario autenticado |
 | GET | `/:id` | Detalle + mensajes (`ParseUUIDPipe`) |
 | POST | `/` | Crear `{ titulo? }` |
-| POST | `/:id/mensajes` | Append `{ rol, tipo?, contenido, esError?, createdAt? }` |
+| POST | `/:id/mensajes` | Append `{ rol, tipo?, contenido?, urlImagen?, esError?, createdAt? }` — en `image`, `urlImagen` es la Cloudinary URL y `contenido` el pie |
 | DELETE | `/:id` | Eliminar si es dueño |
 
 `POST /:id/mensajes` es idempotente frente a reintentos normales del mismo payload

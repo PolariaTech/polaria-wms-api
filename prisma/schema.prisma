@@ -1216,6 +1216,8 @@ model WidgetMensaje {
   rol            String             @db.VarChar(10)
   tipo           String             @default("text") @db.VarChar(10)
   contenido      String
+  /** URL Cloudinary cuando tipo = image; NULL en texto. */
+  urlImagen      String?            @map("url_imagen")
   esError        Boolean            @default(false) @map("es_error")
   createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   conversacion   WidgetConversacion @relation(fields: [idConversacion], references: [idConversacion], onDelete: Cascade)

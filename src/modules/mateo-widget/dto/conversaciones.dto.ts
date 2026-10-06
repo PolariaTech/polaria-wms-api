@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateConversacionDto {
@@ -35,10 +36,25 @@ export class AppendMensajeDto {
   @IsIn(['text', 'image'])
   tipo?: 'text' | 'image';
 
-  @ApiProperty({ example: '¿Cuántas cajas hay en frío?' })
+  @ApiPropertyOptional({
+    description:
+      'Texto del mensaje. En tipo image es el pie (caption); la URL va en urlImagen.',
+    example: '¿Cuántas cajas hay en frío?',
+  })
+  @ValidateIf((o: AppendMensajeDto) => (o.tipo ?? 'text') !== 'image')
   @IsString()
   @IsNotEmpty()
-  contenido!: string;
+  contenido?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'URL Cloudinary (secure_url). Requerido cuando tipo = image.',
+    example: 'https://res.cloudinary.com/demo/image/upload/v1/evidencia.jpg',
+  })
+  @ValidateIf((o: AppendMensajeDto) => (o.tipo ?? 'text') === 'image')
+  @IsString()
+  @IsNotEmpty()
+  urlImagen?: string;
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
