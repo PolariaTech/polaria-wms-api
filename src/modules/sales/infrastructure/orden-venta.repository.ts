@@ -466,7 +466,7 @@ export class OrdenVentaRepository {
       cantidadKg: cantidadKg.toNumber(),
       total: total.toNumber(),
       estado: orden.estado,
-      fecha: this.toDate(orden.fechaPedido).toISOString(),
+      fecha: this.toDate(orden.createdAt ?? orden.fechaPedido).toISOString(),
       destino,
     };
   }
@@ -595,7 +595,7 @@ export class OrdenVentaRepository {
          AND ($2::text IS NULL OR ov.codigo_cuenta = $2)
          AND ${bodegaClause}
          AND ($3::text IS NULL OR ov.estado::text = $3)
-       ORDER BY ov.fecha_pedido DESC, ov.created_at DESC`,
+       ORDER BY ov.created_at DESC, ov.id_orden_venta DESC`,
       ...params,
     );
 

@@ -112,6 +112,8 @@ enum TipoLineaOt {
 enum EstadoOrdenVenta {
   borrador
   confirmada
+  alistamiento
+  alistada
   en_preparacion
   parcialmente_despachada
   despachada
