@@ -8,6 +8,13 @@ import { PrismaClient } from '../../generated/prisma/client';
 /** Sin espacios: libpq parte `options` por whitespace y dejaba `search_path=public,`. */
 const PLATFORM_SEARCH_PATH = 'public,mateo_support';
 
+/**
+ * Widget Mateo: las tablas viven en mateo_support.
+ * public va después para resolver FK a usuario/cuenta sin que una vista
+ * public.widget_* sombree la tabla real.
+ */
+const MATEO_SEARCH_PATH = 'mateo_support,public';
+
 type TenantStore = {
   schemaName: string | null;
 };
@@ -96,8 +103,15 @@ class PrismaServiceHost implements OnModuleInit, OnModuleDestroy {
   forSchema(schemaName?: string | null): PrismaClient {
     const resolved =
       schemaName === undefined ? this.getActiveSchemaName() : schemaName;
-    const searchPath = buildSearchPath(resolved ?? null);
+    return this.clientForSearchPath(buildSearchPath(resolved ?? null));
+  }
 
+  /** Tablas del widget en mateo_support, fuera del search_path de tenant. */
+  forMateo(): PrismaClient {
+    return this.clientForSearchPath(MATEO_SEARCH_PATH);
+  }
+
+  private clientForSearchPath(searchPath: string): PrismaClient {
     const existing = this.clients.get(searchPath);
     if (existing) {
       return existing;
