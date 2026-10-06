@@ -28,9 +28,9 @@ describe('ConversacionesRepository.appendMensaje', () => {
         findFirst: jest.fn(),
       },
       $transaction: jest.fn(),
-      forSchema: jest.fn(),
+      forMateo: jest.fn(),
     } as any;
-    prisma.forSchema.mockReturnValue(prisma);
+    prisma.forMateo.mockReturnValue(prisma);
 
     const repo = new ConversacionesRepository(prisma);
     return { repo, prisma };
