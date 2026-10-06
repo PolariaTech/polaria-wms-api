@@ -63,6 +63,7 @@ describe('ConversacionesRepository.appendMensaje', () => {
       rol: baseParams.rol,
       tipo: baseParams.tipo,
       contenido: baseParams.contenido,
+      urlImagen: null,
       esError: baseParams.esError,
       createdAt: baseParams.createdAt,
     };
@@ -80,6 +81,7 @@ describe('ConversacionesRepository.appendMensaje', () => {
           rol: baseParams.rol,
           tipo: baseParams.tipo,
           contenido: baseParams.contenido,
+          urlImagen: null,
           esError: baseParams.esError,
           createdAt: baseParams.createdAt,
         }),
@@ -158,9 +160,8 @@ describe('ConversacionesRepository.appendMensaje', () => {
 describe('tituloFromUserMensaje / shouldUpdateTitulo', () => {
   it('deriva título de texto truncado e imagen', () => {
     expect(tituloFromUserMensaje('text', '  hola mundo  ')).toBe('hola mundo');
-    expect(tituloFromUserMensaje('image', 'https://cdn.example/a.png')).toBe(
-      WIDGET_TITULO_IMAGEN,
-    );
+    expect(tituloFromUserMensaje('image', '')).toBe(WIDGET_TITULO_IMAGEN);
+    expect(tituloFromUserMensaje('image', 'pallet dañado')).toBe('pallet dañado');
     expect(tituloFromUserMensaje('text', '   ')).toBeNull();
   });
 

@@ -70,12 +70,21 @@ export class ConversacionesService {
     dto: AppendMensajeDto,
     ctx: TenantContext,
   ): Promise<MateoMensajeDto> {
+    const tipo = dto.tipo ?? 'text';
+    const contenido =
+      tipo === 'image'
+        ? (dto.contenido ?? '').trim()
+        : (dto.contenido ?? '').trim();
+    const urlImagen =
+      tipo === 'image' ? (dto.urlImagen ?? '').trim() || null : null;
+
     const mensaje = await this.conversacionesRepository.appendMensaje({
       idConversacion,
       idUsuario: ctx.idUsuario,
       rol: dto.rol,
-      tipo: dto.tipo ?? 'text',
-      contenido: dto.contenido.trim(),
+      tipo,
+      contenido,
+      urlImagen,
       esError: dto.esError ?? false,
       createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
     });
@@ -109,13 +118,14 @@ export class ConversacionesService {
       tipo: string;
       rol?: string;
       esError?: boolean;
+      urlImagen?: string | null;
     }>;
   }): MateoConversacionListItem {
     const preview = row.mensajes?.find(
       (m) =>
         (m.rol === undefined || m.rol === 'user') &&
         !m.esError &&
-        m.contenido.trim(),
+        (m.contenido.trim() || m.tipo === 'image'),
     );
     const tituloDerivado = preview
       ? tituloFromUserMensaje(preview.tipo, preview.contenido)
@@ -135,6 +145,7 @@ export class ConversacionesService {
     rol: string;
     tipo: string;
     contenido: string;
+    urlImagen?: string | null;
     esError: boolean;
     createdAt: Date;
   }): MateoMensajeDto {
@@ -143,6 +154,7 @@ export class ConversacionesService {
       rol: row.rol as MateoMensajeRol,
       tipo: row.tipo as MateoMensajeTipo,
       contenido: row.contenido,
+      urlImagen: row.urlImagen ?? null,
       esError: row.esError,
       createdAt: row.createdAt.toISOString(),
     };

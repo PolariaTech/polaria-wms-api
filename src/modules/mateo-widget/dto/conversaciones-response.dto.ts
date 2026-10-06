@@ -10,8 +10,16 @@ export class MateoMensajeResponseDto {
   @ApiProperty({ enum: ['text', 'image'] })
   tipo!: 'text' | 'image';
 
-  @ApiProperty()
+  @ApiProperty({
+    description: 'Texto o pie de imagen (no la URL)',
+  })
   contenido!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'URL Cloudinary cuando tipo = image',
+  })
+  urlImagen!: string | null;
 
   @ApiProperty()
   esError!: boolean;

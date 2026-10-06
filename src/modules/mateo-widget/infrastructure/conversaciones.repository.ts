@@ -26,8 +26,12 @@ export function tituloFromUserMensaje(
   contenido: string,
 ): string | null {
   const trimmed = contenido.trim();
+  if (tipo === 'image') {
+    return trimmed
+      ? trimmed.slice(0, WIDGET_TITULO_MAX_LEN)
+      : WIDGET_TITULO_IMAGEN;
+  }
   if (!trimmed) return null;
-  if (tipo === 'image') return WIDGET_TITULO_IMAGEN;
   return trimmed.slice(0, WIDGET_TITULO_MAX_LEN);
 }
 
@@ -77,7 +81,7 @@ export class ConversacionesRepository {
           where: { rol: 'user', esError: false },
           orderBy: { createdAt: 'asc' },
           take: 1,
-          select: { contenido: true, tipo: true },
+          select: { contenido: true, tipo: true, urlImagen: true },
         },
       },
     });
@@ -94,6 +98,7 @@ export class ConversacionesRepository {
             rol: true,
             tipo: true,
             contenido: true,
+            urlImagen: true,
             esError: true,
             createdAt: true,
           },
@@ -129,6 +134,7 @@ export class ConversacionesRepository {
     rol: MateoMensajeRol;
     tipo: MateoMensajeTipo;
     contenido: string;
+    urlImagen?: string | null;
     esError: boolean;
     createdAt?: Date;
   }) {
@@ -145,11 +151,14 @@ export class ConversacionesRepository {
     }
 
     const createdAt = params.createdAt ?? new Date();
+    const urlImagen =
+      params.tipo === 'image' ? (params.urlImagen?.trim() || null) : null;
     const mensajeSelect = {
       idMensaje: true,
       rol: true,
       tipo: true,
       contenido: true,
+      urlImagen: true,
       esError: true,
       createdAt: true,
     } as const;
@@ -173,6 +182,7 @@ export class ConversacionesRepository {
       rol: string;
       tipo: string;
       contenido: string;
+      urlImagen: string | null;
       esError: boolean;
       createdAt: Date;
     };
@@ -185,6 +195,7 @@ export class ConversacionesRepository {
             rol: params.rol,
             tipo: params.tipo,
             contenido: params.contenido,
+            urlImagen,
             esError: params.esError,
             createdAt,
           },
@@ -205,6 +216,7 @@ export class ConversacionesRepository {
             rol: params.rol,
             tipo: params.tipo,
             contenido: params.contenido,
+            urlImagen,
             esError: params.esError,
             createdAt,
           },

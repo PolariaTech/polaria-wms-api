@@ -6,6 +6,8 @@ export interface MateoMensajeDto {
   rol: MateoMensajeRol;
   tipo: MateoMensajeTipo;
   contenido: string;
+  /** URL Cloudinary cuando tipo = image. */
+  urlImagen: string | null;
   esError: boolean;
   createdAt: string;
 }
