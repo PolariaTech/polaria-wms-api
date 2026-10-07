@@ -202,12 +202,7 @@ export class PedidoIaService {
       ctx.schemaName?.trim() || 'public',
     );
 
-    const idBodega = await this.resolveIdBodegaIngest(
-      schema,
-      input.codigoCuenta.trim(),
-      input.idBodega,
-    );
-
+    const codigoCuenta = input.codigoCuenta.trim();
     const first = origenCorreo[0]!;
     const pick = (...vals: Array<string | null | undefined>) => {
       for (const v of vals) {
@@ -216,6 +211,22 @@ export class PedidoIaService {
       }
       return null;
     };
+
+    const idBodega = await this.resolveIdBodegaIngest(
+      schema,
+      codigoCuenta,
+      input.idBodega,
+    );
+    const idCliente = await this.resolveIdClienteIngest(schema, codigoCuenta);
+    const idComprador = await this.resolveIdCompradorIngest(
+      schema,
+      codigoCuenta,
+      pick(
+        pedido.nombreCliente,
+        first['Nombre cliente'],
+        input.cliente,
+      ),
+    );
 
     const fechaRaw = pick(pedido.fechaEntrega, first.Fecha);
     const fechaEntrega =
@@ -232,69 +243,93 @@ export class PedidoIaService {
             .join(', ')
         : null);
 
-    const rows = await this.prisma.$queryRawUnsafe<
-      Array<{ idOrdenVenta: string; codigo: string }>
-    >(
-      `INSERT INTO ${schema}.orden_venta (
-         codigo,
-         codigo_cuenta,
-         id_bodega,
-         estado,
-         origen_correo,
-         origen_texto,
-         origen_archivos,
-         orden_compra_hotel,
-         centro_consumo,
-         contacto_entrega,
-         fecha_entrega,
-         ventana_desde,
-         ventana_hasta,
-         direccion_entrega,
-         anden,
-         telefono_contacto,
-         notas_almacen,
-         prioridad
-       ) VALUES (
-         '',
-         $1,
-         $2::uuid,
-         'por_confirmar',
-         $3::jsonb,
-         $4,
-         $5,
-         $6,
-         $7,
-         $8,
-         $9,
-         $10,
-         $11,
-         $12,
-         $13,
-         $14,
-         $15,
-         $16
-       )
-       RETURNING id_orden_venta AS "idOrdenVenta", codigo`,
-      input.codigoCuenta.trim(),
-      idBodega,
-      JSON.stringify(origenCorreo),
-      pedido.textoOrigen,
-      origenArchivos,
-      pick(pedido.ordenCompraHotel, first['Numero pedido']),
-      pick(pedido.centroConsumo, first.Almacen),
-      pick(pedido.contacto, first['Responsable externo']),
-      fechaEntrega,
-      pick(pedido.horarioDesde, first['Ventana desde']),
-      pick(pedido.horarioHasta, first['Ventana hasta']),
-      pick(pedido.direccion, first['Direccion entrega'], first.Destino),
-      pick(pedido.anden, first.Anden),
-      pick(pedido.telefono, first['Telefono contacto']),
-      pick(
-        pedido.observaciones,
-        first['Notas generales'],
-      ),
-      pick(first.Prioridad),
-    );
+    let rows: Array<{ idOrdenVenta: string; codigo: string }>;
+    try {
+      rows = await this.prisma.$queryRawUnsafe<
+        Array<{ idOrdenVenta: string; codigo: string }>
+      >(
+        `INSERT INTO ${schema}.orden_venta (
+           codigo,
+           codigo_cuenta,
+           id_bodega,
+           id_cliente,
+           id_comprador,
+           estado,
+           origen_correo,
+           origen_texto,
+           origen_archivos,
+           orden_compra_hotel,
+           centro_consumo,
+           contacto_entrega,
+           fecha_entrega,
+           ventana_desde,
+           ventana_hasta,
+           direccion_entrega,
+           anden,
+           telefono_contacto,
+           notas_almacen,
+           prioridad
+         ) VALUES (
+           '',
+           $1,
+           $2::uuid,
+           $3::uuid,
+           $4::uuid,
+           'por_confirmar',
+           $5::jsonb,
+           $6,
+           $7,
+           $8,
+           $9,
+           $10,
+           $11,
+           $12,
+           $13,
+           $14,
+           $15,
+           $16,
+           $17,
+           $18
+         )
+         RETURNING id_orden_venta AS "idOrdenVenta", codigo`,
+        codigoCuenta,
+        idBodega,
+        idCliente,
+        idComprador,
+        JSON.stringify(origenCorreo),
+        pedido.textoOrigen,
+        origenArchivos,
+        pick(pedido.ordenCompraHotel, first['Numero pedido']),
+        pick(pedido.centroConsumo, first.Almacen),
+        pick(pedido.contacto, first['Responsable externo']),
+        fechaEntrega,
+        pick(pedido.horarioDesde, first['Ventana desde']),
+        pick(pedido.horarioHasta, first['Ventana hasta']),
+        pick(pedido.direccion, first['Direccion entrega'], first.Destino),
+        pick(pedido.anden, first.Anden),
+        pick(pedido.telefono, first['Telefono contacto']),
+        pick(pedido.observaciones, first['Notas generales']),
+        pick(first.Prioridad),
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        JSON.stringify({
+          evento: 'ingestar-pedido',
+          exito: false,
+          codigoCuenta,
+          error: msg,
+        }),
+      );
+      if (/cliente .* no pertenece/i.test(msg)) {
+        throw new BadRequestException(
+          'No se pudo asignar un cliente de catálogo a la OV. Revisa que la cuenta tenga al menos un cliente activo.',
+        );
+      }
+      throw new BadRequestException(
+        `No se pudo crear la OV: ${msg.slice(0, 240)}`,
+      );
+    }
 
     const created = rows[0];
     if (!created) {
@@ -319,6 +354,85 @@ export class PedidoIaService {
       codigo: created.codigo,
       pedido,
     };
+  }
+
+  /** Cliente de catálogo obligatorio en orden_venta (trigger de referencias). */
+  private async resolveIdClienteIngest(
+    schema: string,
+    codigoCuenta: string,
+  ): Promise<string> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ idCliente: string }>
+    >(
+      `SELECT id_cliente AS "idCliente"
+       FROM ${schema}.cliente
+       WHERE codigo_cuenta = $1
+         AND esta_activo = true
+       ORDER BY nombre ASC NULLS LAST
+       LIMIT 1`,
+      codigoCuenta,
+    );
+    const id = rows[0]?.idCliente?.trim();
+    if (!id) {
+      throw new BadRequestException(
+        `No hay cliente activo en la cuenta ${codigoCuenta}.`,
+      );
+    }
+    return id;
+  }
+
+  /** Comprador por nombre (IA/correo); null si no hay match claro. */
+  private async resolveIdCompradorIngest(
+    schema: string,
+    codigoCuenta: string,
+    nombreRaw: string | null,
+  ): Promise<string | null> {
+    const nombre = (nombreRaw ?? '').trim();
+    if (!nombre) return null;
+
+    const exact = await this.prisma.$queryRawUnsafe<
+      Array<{ idComprador: string }>
+    >(
+      `SELECT id_comprador AS "idComprador"
+       FROM ${schema}.comprador
+       WHERE codigo_cuenta = $1
+         AND esta_activo = true
+         AND lower(trim(nombre)) = lower(trim($2))
+       LIMIT 1`,
+      codigoCuenta,
+      nombre,
+    );
+    if (exact[0]?.idComprador) return exact[0].idComprador;
+
+    const tokens = nombre
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 6)
+      .sort((a, b) => b.length - a.length);
+
+    for (const tok of tokens.slice(0, 4)) {
+      const fuzzy = await this.prisma.$queryRawUnsafe<
+        Array<{ idComprador: string }>
+      >(
+        `SELECT id_comprador AS "idComprador"
+         FROM ${schema}.comprador
+         WHERE codigo_cuenta = $1
+           AND esta_activo = true
+           AND (
+             lower(nombre) LIKE '%' || $2 || '%'
+             OR lower(coalesce(codigo, '')) LIKE '%' || $2 || '%'
+           )
+         ORDER BY length(nombre) ASC
+         LIMIT 1`,
+        codigoCuenta,
+        tok,
+      );
+      if (fuzzy[0]?.idComprador) return fuzzy[0].idComprador;
+    }
+
+    return null;
   }
 
   /** Bodega explícita, default de cuenta, o primera activa del tenant. */

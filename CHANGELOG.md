@@ -4,7 +4,7 @@ Versión de producto alineada con Polaria WMS. Swagger: `2.9.16`.
 
 ## 2.9.16 — 2026-10-07
 
-- `POST /ventas/ingestar-pedido`: el bot/n8n crea la OV `por_confirmar` con `origen_correo` + `origen_texto` + entrega (ventana, dirección, teléfono, notas) ya llenos — no armar el JSON a mano. `idBodega` es opcional (bodega default de la cuenta).
+- `POST /ventas/ingestar-pedido`: el bot/n8n crea la OV `por_confirmar` con `origen_correo` + `origen_texto` + entrega (ventana, dirección, teléfono, notas) ya llenos — no armar el JSON a mano. `idBodega` es opcional (bodega default de la cuenta). Asigna `id_cliente` (obligatorio en BD) y `id_comprador` si hay match por nombre.
 - `POST /ventas/leer-pedido`: opcional `numeroCorreo` / `horario` se sellan en cada renglón de `origenCorreo` sin borrar entrega.
 
 ## 2.9.15 — 2026-10-07
