@@ -24,6 +24,14 @@ export interface OrigenCorreoRenglon {
   "Responsable externo"?: string;
   "Responsable interno"?: string;
   "Referencia del cliente"?: string;
+  "Ventana desde"?: string;
+  "Ventana hasta"?: string;
+  Destino?: string;
+  "Direccion entrega"?: string;
+  Anden?: string;
+  "Telefono contacto"?: string;
+  Prioridad?: string;
+  "Notas generales"?: string;
   /** Índice en el array original / vínculo con línea del formulario. */
   _lineaIndex?: number;
 }
