@@ -19,4 +19,22 @@ export class LeerPedidoBodyDto {
   @IsOptional()
   @IsString()
   texto?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Id del mensaje de correo (Gmail/hash). Se sella en cada renglón origenCorreo.',
+    example: '1a118678f75792b1',
+  })
+  @IsOptional()
+  @IsString()
+  numeroCorreo?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Timestamp de ingestión (YYYY-MM-DD HH:mm:ss). Default: ahora.',
+    example: '2026-10-07 17:06:26',
+  })
+  @IsOptional()
+  @IsString()
+  horario?: string;
 }
