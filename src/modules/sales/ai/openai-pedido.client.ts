@@ -46,13 +46,10 @@ export interface PedidoExtraido {
    */
   nombreCliente: string | null;
   rfc: string | null;
-  // Petición del usuario (2026-09-04) — nueva regla de precedencia: estos son datos de
-  // la FICHA del cliente (normalmente ya registrados y cargados aparte desde la BD), pero
-  // si el pedido los declara explícitamente para esta entrega en particular, el pedido
-  // manda sobre lo registrado (el frontend marca el campo en naranja cuando difieren y
-  // pide confirmación antes de enviar — ver aguacates_captura_polaria_v2.html). La IA
-  // solo debe llenarlos cuando el mensaje/documento los menciona de forma explícita;
-  // en la inmensa mayoría de los pedidos reales van a quedar null.
+  // Entrega (dirección, andén, contacto, teléfono, ventana): Mateo la extrae del
+  // correo, mensaje o PDF. La ficha del comprador solo rellena lo que no vino.
+  // Régimen, tolerancia, sustituciones, lote y temperatura siguen siendo de ficha
+  // salvo que el documento los declare.
   regimen: (typeof REGIMENES)[number] | null;
   direccion: string | null;
   anden: string | null;
@@ -253,12 +250,9 @@ const RESPONSE_SCHEMA = {
         description:
           "RFC del cliente/hotel SOLO si aparece literal en el mensaje o en algún documento adjunto (ej. 'nuestro RFC es XAXX010101000'). null si no se menciona — no lo inventes ni lo deduzcas del nombre del cliente.",
       },
-      // Petición del usuario (2026-09-04): estos 10 campos son datos de la FICHA del
-      // cliente — normalmente ya están registrados aparte y el formulario los prellena
-      // solo. Aquí SOLO se extraen si el pedido los declara explícito para ESTA entrega en
-      // particular (ej. avisan un cambio de dirección o de andén solo por esta vez). En la
-      // inmensa mayoría de los pedidos reales van a quedar null — no se deben inferir ni
-      // asumir el valor habitual del cliente.
+      // Entrega: extraer SIEMPRE del correo, mensaje o PDF (Ship To / Deliver To /
+      // Enviar a / Andén / Contacto / Tel / hora). null solo si ese dato no aparece.
+      // Régimen y políticas siguen siendo null salvo mención explícita.
       regimen: {
         type: ["string", "null"],
         enum: [...REGIMENES, null],
@@ -268,32 +262,32 @@ const RESPONSE_SCHEMA = {
       direccion: {
         type: ["string", "null"],
         description:
-          "Dirección de entrega SOLO si el mensaje/documento la declara explícita para este pedido (ej. una dirección distinta a la habitual, solo por esta vez). null si no se menciona.",
+          "Dirección de ENTREGA tal como aparece en el correo, mensaje o PDF. Busca Ship To, Deliver To, Enviar a, Entregar en, Domicilio de entrega, Dirección de envío. Copia calle, número, colonia, ciudad y CP si vienen. Si hay Bill To (facturación) y Ship To (entrega), usa Ship To. null solo si el documento no trae ninguna dirección de entrega.",
       },
       anden: {
         type: ["string", "null"],
         description:
-          "Andén o punto de recepción SOLO si el mensaje/documento lo declara explícito. null si no se menciona.",
+          "Andén, muelle, dock, puerta o punto de recepción si aparece en el correo, mensaje o PDF (Andén, Dock, Puerta, Muelle, Receiving). Copia el texto tal cual. null solo si no aparece.",
       },
       contacto: {
         type: ["string", "null"],
         description:
-          "Nombre de la persona de contacto para recibir esta entrega SOLO si el mensaje/documento lo declara explícito. null si no se menciona.",
+          "Nombre de quien recibe esta entrega si aparece en el correo, mensaje o PDF (Contacto, Attn, Recibe, Atención, Buyer de recepción). null solo si no aparece.",
       },
       telefono: {
         type: ["string", "null"],
         description:
-          "Teléfono de contacto SOLO si el mensaje/documento lo declara explícito. null si no se menciona.",
+          "Teléfono de la entrega o del contacto si aparece en el correo, mensaje o PDF (Tel, Teléfono, Phone, Cel, WhatsApp). Copia el número tal cual. null solo si no aparece.",
       },
       horarioDesde: {
         type: ["string", "null"],
         description:
-          "Hora de INICIO de la ventana de recepción, en formato 24h HH:MM, SOLO si el mensaje/documento menciona explícito una hora de inicio para recibir ESTE pedido (ej. 'a partir de las 7am' → '07:00'). null si no se menciona.",
+          "Hora de INICIO de la ventana de recepción, 24h HH:MM, tomada del correo, mensaje o PDF (hora de entrega, delivery time, ventana, a partir de). Ej. 'a partir de las 7am' → '07:00'. Si solo hay una hora de entrega, ponla aquí. null solo si no hay hora.",
       },
       horarioHasta: {
         type: ["string", "null"],
         description:
-          "Hora de FIN de la ventana de recepción, en formato 24h HH:MM, SOLO si el mensaje/documento la menciona explícita. null si no se menciona.",
+          "Hora de FIN de la ventana de recepción, 24h HH:MM, si el correo, mensaje o PDF indica un rango (hasta, before, entre X y Y). null si solo hay una hora o no hay fin.",
       },
       tolerancia: {
         type: ["string", "null"],
@@ -337,7 +331,7 @@ const RESPONSE_SCHEMA = {
             productoCatalogo: {
               type: ["string", "null"],
               description:
-                "La clave EXACTA de la lista de catálogo inyectada en el prompt que mejor coincide con este producto, o null si ninguna coincide con confianza. Copia la clave tal cual aparece en esa lista (ej. 'AGUACATE EXTRA HASS (115001005)'); no inventes ni reformatees claves.",
+                "SOLO si hay UNA coincidencia inequívoca: la clave EXACTA de la lista de catálogo inyectada (copia carácter por carácter, ej. 'AGUACATE EXTRA HASS (115001005)'). null si: (a) ninguna clave encaja, (b) hay 2+ claves parecidas (misma fruta/verdura con distinta talla, calibre, grado, presentación o SKU) y el documento no distingue cuál, o (c) solo hay parecido parcial. Nunca inventes ni reformatees claves. Si dejas null, el usuario verá sugerencias cercanas y podrá elegir, cambiar o borrar la línea.",
             },
             cantidad: {
               type: ["number", "null"],
@@ -594,6 +588,41 @@ export function resolverFechaEntrega(
   return resultado ? formatISO(resultado) : null;
 }
 
+
+/** Valida/coacciona la clave de Mateo contra el catálogo real. */
+function coerceProductoCatalogo(
+  value: string | null | undefined,
+  catalogoClaves: readonly string[],
+): string | null {
+  if (!value?.trim() || catalogoClaves.length === 0) return null;
+  const raw = value.trim();
+  if (catalogoClaves.includes(raw)) return raw;
+
+  const normalize = (s: string) =>
+    s
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .replace(/\s+/g, " ");
+
+  const rawNorm = normalize(raw);
+  const byNorm = catalogoClaves.find((k) => normalize(k) === rawNorm);
+  if (byNorm) return byNorm;
+
+  const codigoMatch = raw.match(/\(([^()]+)\)\s*$/);
+  const codigo = codigoMatch?.[1]?.trim().toLowerCase();
+  if (codigo) {
+    const hits = catalogoClaves.filter((k) => {
+      const m = k.match(/\(([^()]+)\)\s*$/);
+      return m?.[1]?.trim().toLowerCase() === codigo;
+    });
+    if (hits.length === 1) return hits[0] ?? null;
+  }
+
+  return null;
+}
+
 export async function extraerPedido({
   texto,
   archivosExtraidos,
@@ -621,7 +650,7 @@ export async function extraerPedido({
 
   const systemPrompt = [
     `Eres un asistente que lee pedidos de fruta y verdura escritos por vendedores para hoteles y extrae datos estructurados.`,
-    `Catálogo de productos disponible (usa la clave EXACTA, o null si no hay coincidencia confiable):`,
+    `Catálogo de productos disponible (usa la clave EXACTA solo con coincidencia inequívoca; si hay duda o varias parecidas → null — el usuario verá sugerencias y elegirá):`,
     buildCatalogoContext(catalogoClaves),
     `Presentaciones disponibles (usa el texto EXACTO solo si el mensaje la menciona explícitamente):`,
     buildPresentacionesContext(presentaciones),
@@ -633,11 +662,19 @@ export async function extraerPedido({
     `- Una línea por cada fila de producto del documento. Si hay VARIOS Numero pedido / PO, o el MISMO PO con DISTINTOS Almacén / centro de consumo (ej. BAWH Bar Whisky vs COPM Coc Plaza Mx), emite una línea por cada producto×destino con numeroPedido y almacen de ESA fila. NO mezcles destinos ni pedidos en una sola línea. NO omitas filas de páginas intermedias.`,
     `- "numeroPedido" + "almacen" separan órdenes de trabajo: mismo PO + distinto almacén = otra hija; distinto PO = otra hija aunque el almacén coincida. Copia el texto completo del almacén de la columna (código + nombre).`,
     `- "precioUnitario": si el documento trae columna Precio / P.U. / Importe unitario por fila, cópialo en cada línea (número). No uses el total/importe de la fila; solo el precio unitario.`,
+    `- Matching de "productoCatalogo" (crítico):`,
+    `  1) Copia la clave EXACTA de la lista (mismo texto entre comillas, con paréntesis y SKU). Nunca inventes, acortes ni reformatees.`,
+    `  2) Asigna clave SOLO si es inequívoca: mismo producto (nombre/sinónimo claro) Y misma variante (talla, calibre, grado, presentación, color). Ej. "chile jalapeño 6-8 cm" ≠ "chile jalapeño 8-10 cm".`,
+    `  3) Si en el catálogo hay 2+ claves parecidas y el documento no distingue (ej. solo dice "aguacate hass" y hay Extra/Primera/Segunda), deja productoCatalogo en null.`,
+    `  4) Si el documento trae código/SKU del cliente ("codigoProductoCliente") y ese código coincide con el SKU entre paréntesis de UNA sola clave del catálogo, usa esa clave.`,
+    `  5) Si no hay coincidencia clara → null. El usuario aceptará una sugerencia, elegirá otro del catálogo o borrará la línea. Mejor null que un producto equivocado.`,
+    `  6) "textoOriginal" siempre es cómo el cliente nombró el producto, aunque productoCatalogo sea null.`,
     `- "cantidad" es el número TOTAL si viene explícito y directo (ej. '40 kilos'); si el mensaje solo da cajas + presentación sin decir el total, deja "cantidad" en null.`,
     `- "observaciones" es del pedido completo, no repitas ahí lo que ya va en una línea.`,
     `- "ordenCompraHotel": interpreta cuál es el identificador de la orden de compra del hotel/cliente. El nombre del campo en el documento VARÍA (PO NUMBER, PO #, Purchase Order, Orden de compra, OC, Nº OC, Order No., Customer PO, etc.). Devuelve solo el código/número (ej. CUNMC0046026), no confundas con Customer Account #, fechas ni el título "PURCHASE ORDER". null solo si no hay ningún identificador de OC/PO.`,
     `- "rfc" solo si el mensaje/documento lo declara explícitamente; nunca lo infieras del nombre del cliente.`,
-    `- "regimen", "direccion", "anden", "contacto", "telefono", "horarioDesde", "horarioHasta", "tolerancia", "sustituciones", "lote" y "temperatura": si el pedido los declara para ESTA entrega, llénalos (aunque suelan vivir en la ficha del cliente). Si no aparecen, null — no inventes el valor habitual.`,
+    `- "direccion", "anden", "contacto", "telefono", "horarioDesde" y "horarioHasta" salen del correo, mensaje o PDF (Ship To, Deliver To, Enviar a, Andén, Dock, Contacto, Tel, hora de entrega). Llénalos siempre que el dato aparezca; null solo si no está. No inventes ni uses un valor habitual que el documento no diga.`,
+    `- "regimen", "tolerancia", "sustituciones", "lote" y "temperatura": llénalos solo si el documento los declara. Si no aparecen, null.`,
     `- "unidad" siempre debe ser exactamente KGM, CJ o UN (o null) — nunca un texto libre como "kilos" o "kg".`,
     `- "centroConsumo" debe quedar null si el mensaje expresa incertidumbre sobre cuál es, incluso si menciona un valor tentativo de pasada.`,
     `- "fechaEntregaTexto" se extrae aunque sea la única palabra de fecha del mensaje (ej. un mensaje que es solo "mañana").`,
@@ -713,7 +750,7 @@ export async function extraerPedido({
 
   const lineas: LineaExtraida[] = parsed.lineas.map((l) => ({
     textoOriginal: l.textoOriginal,
-    productoCatalogo: l.productoCatalogo,
+    productoCatalogo: coerceProductoCatalogo(l.productoCatalogo, catalogoClaves),
     // El cálculo determinista manda siempre que sea posible (cajas + presentación con
     // peso parseable); el número que haya dado la IA solo se usa cuando no hay nada
     // que calcular — así el resultado no depende de si el modelo decidió o no hacer
@@ -738,6 +775,17 @@ export async function extraerPedido({
   }));
 
   const fechaLabel = parsed.fechaEntregaTexto?.trim() || null;
+  const nombreClienteCabecera =
+    (typeof parsed.nombreCliente === "string"
+      ? parsed.nombreCliente.trim()
+      : "") || "";
+  const direccionCabecera = parsed.direccion?.trim() || "";
+  const andenCabecera = parsed.anden?.trim() || "";
+  const contactoCabecera = parsed.contacto?.trim() || "";
+  const telefonoCabecera = parsed.telefono?.trim() || "";
+  const ventanaDesdeCabecera = parsed.horarioDesde?.trim() || "";
+  const ventanaHastaCabecera = parsed.horarioHasta?.trim() || "";
+  const notasCabecera = parsed.observaciones?.trim() || "";
   const origenCorreo = lineas.map((l, index) => ({
     Fecha: fechaLabel || "",
     Unidad: l.unidad === "KGM" ? "KGS" : l.unidad || "",
@@ -753,16 +801,21 @@ export async function extraerPedido({
         : "",
     "Numero correo": "",
     "Numero pedido": l.numeroPedido || parsed.ordenCompraHotel || "",
-    "Nombre cliente":
-      (typeof parsed.nombreCliente === "string"
-        ? parsed.nombreCliente.trim()
-        : "") || "",
+    "Nombre cliente": nombreClienteCabecera,
     "Numero almacen": l.numeroAlmacen || "",
     "Codigo producto": l.codigoProductoCliente || "",
     "Referencia pedido": l.referenciaPedido || "",
-    "Responsable externo": l.responsableExterno || "",
+    "Responsable externo": l.responsableExterno || contactoCabecera || "",
     "Responsable interno": "",
     "Referencia del cliente": "",
+    "Ventana desde": ventanaDesdeCabecera,
+    "Ventana hasta": ventanaHastaCabecera,
+    Destino: direccionCabecera,
+    "Direccion entrega": direccionCabecera,
+    Anden: andenCabecera,
+    "Telefono contacto": telefonoCabecera,
+    Prioridad: "",
+    "Notas generales": notasCabecera,
     _lineaIndex: index,
   }));
 

@@ -2,6 +2,14 @@
 
 Versión de producto alineada con Polaria WMS. Swagger: `2.9.12`.
 
+## 2.9.15 — 2026-10-07
+
+- Leer pedido (Mateo): al armar `origenCorreo` ahora persiste también entrega (dirección, andén, teléfono, ventanas, notas, contacto) que ya extraía OpenAI pero no copiaba al JSON.
+
+## 2.9.14 — 2026-10-07
+
+- Leer pedido (Mateo): prompt de matching de catálogo más estricto (null si hay variantes ambiguas); validación/coacción de `productoCatalogo` contra claves reales del catálogo.
+
 ## 2.9.12 — 2026-10-06
 
 - Estados de OV **alistamiento** / **alistada** en el flujo operativo.
