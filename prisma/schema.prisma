@@ -120,7 +120,7 @@ enum TipoLineaOt {
 }
 
 enum EstadoOrdenVenta {
-  borrador
+  por_confirmar
   confirmada
   alistamiento
   alistada
@@ -1001,7 +1001,7 @@ model OrdenVenta {
   idCreador        String?          @map("id_creador") @db.Uuid
   idBodegaDestino  String?          @map("id_bodega_destino") @db.Uuid
   codigo           String           @db.VarChar(32)
-  estado           EstadoOrdenVenta @default(borrador)
+  estado           EstadoOrdenVenta @default(por_confirmar)
   fechaPedido      DateTime         @default(now()) @map("fecha_pedido") @db.Date
   observaciones    String?
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
