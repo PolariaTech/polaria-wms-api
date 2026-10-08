@@ -38,7 +38,7 @@ describe('OrdenVentaService.emitir', () => {
     idBodega,
     idBodegaDestino: null,
     codigo: 'OV-20260709-160103',
-    estado: EstadoOrdenVenta.borrador,
+    estado: EstadoOrdenVenta.por_confirmar,
     fechaPedido: new Date('2026-07-08'),
     observaciones: null,
     cliente: { idCliente: 'cli-1', nombre: 'Cliente', estaActivo: true },
@@ -89,7 +89,7 @@ describe('OrdenVentaService.emitir', () => {
     service = module.get(OrdenVentaService);
   });
 
-  it('emite OV en borrador con stock suficiente', async () => {
+  it('emite OV en por_confirmar con stock suficiente', async () => {
     repository.findById.mockResolvedValue(ordenBorrador as never);
     repository.emitir.mockResolvedValue({
       idOrdenVenta: idOrden,

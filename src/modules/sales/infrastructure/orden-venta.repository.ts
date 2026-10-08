@@ -161,7 +161,7 @@ export class OrdenVentaRepository {
          SET estado = 'confirmada',
              updated_at = now()
          WHERE id_orden_venta = $1::uuid
-           AND estado = 'borrador'
+           AND estado = 'por_confirmar'
          RETURNING id_orden_venta AS "idOrdenVenta"`,
         orden.idOrdenVenta,
       );

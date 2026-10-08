@@ -61,7 +61,7 @@ export class OrdenVentaController {
   @Roles(...ROLES_OV_ESCRITURA)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Emitir orden de venta (borrador → confirmada)',
+    summary: 'Emitir orden de venta (por_confirmar → confirmada)',
     description:
       'Reserva stock en almacenamiento (FIFO), crea órdenes de trabajo y tareas en cola para despacho.',
   })

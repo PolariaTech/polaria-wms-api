@@ -52,7 +52,7 @@ export class OrdenVentaService {
     const orden = await this.getAccessibleOrden(idOrdenVenta, ctx);
 
     // Idempotente: si ya se emitió (o avanzó en el flujo), no falla al reintentar.
-    if (orden.estado !== EstadoOrdenVenta.borrador) {
+    if (orden.estado !== EstadoOrdenVenta.por_confirmar) {
       if (
         orden.estado === EstadoOrdenVenta.cancelada ||
         orden.estado === EstadoOrdenVenta.cerrada
@@ -130,7 +130,9 @@ export class OrdenVentaService {
   private mapEmitirError(error: unknown): never {
     if (error instanceof Error) {
       if (error.message === 'OV_ESTADO_INVALIDO') {
-        throw new ConflictException('Solo se pueden emitir ventas en borrador');
+        throw new ConflictException(
+          'Solo se pueden emitir ventas en por_confirmar',
+        );
       }
 
       if (error.message.startsWith('STOCK_INSUFICIENTE|')) {
