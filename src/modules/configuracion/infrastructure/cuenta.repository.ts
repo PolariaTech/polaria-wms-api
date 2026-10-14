@@ -25,7 +25,7 @@ export class CuentaRepository {
 
   /**
    * Busca en public y, si no está, en schemas emp_* de empresas.
-   * SQL calificado: Prisma + search_path del pool no alcanza tablas emp_*.
+   * SQL calificado: Prisma @@schema("public") no alcanza tablas emp_*.
    */
   async findByCodigo(codigoCuenta: string): Promise<CuentaLocate | null> {
     const inPublic = await this.findCuentaInSchema('public', codigoCuenta);
@@ -33,7 +33,7 @@ export class CuentaRepository {
       return { ...inPublic, schemaName: null };
     }
 
-    const empresas = await this.prisma.forSchema(null).empresa.findMany({
+    const empresas = await this.prisma.empresa.findMany({
       where: { schemaName: { not: null } },
       select: { schemaName: true },
     });
@@ -52,33 +52,39 @@ export class CuentaRepository {
     return null;
   }
 
-  findOtrasCuentasEmpresa(
+  async findOtrasCuentasEmpresa(
     codigoEmpresa: string,
     codigoCuentaExcluir: string,
     schemaName?: string | null,
   ): Promise<{ codigoCuenta: string; nombreComercial: string }[]> {
-    return this.prisma.forSchema(schemaName ?? null).cuenta.findMany({
-      where: {
-        codigoEmpresa,
-        codigoCuenta: { not: codigoCuentaExcluir },
-        estaActiva: true,
-      },
-      select: {
-        codigoCuenta: true,
-        nombreComercial: true,
-      },
-      orderBy: { nombreComercial: 'asc' },
-    });
+    const schema = this.assertSafeSchemaIdent(schemaName ?? 'public');
+    return this.prisma.$queryRawUnsafe<
+      { codigoCuenta: string; nombreComercial: string }[]
+    >(
+      `SELECT codigo_cuenta AS "codigoCuenta",
+              nombre_comercial AS "nombreComercial"
+         FROM ${schema}.cuenta
+        WHERE codigo_empresa = $1
+          AND codigo_cuenta <> $2
+          AND esta_activa = true
+        ORDER BY nombre_comercial ASC`,
+      codigoEmpresa,
+      codigoCuentaExcluir,
+    );
   }
 
-  findBodegasActivasDeCuenta(
+  async findBodegasActivasDeCuenta(
     codigoCuenta: string,
     schemaName?: string | null,
   ): Promise<{ idBodega: string }[]> {
-    return this.prisma.forSchema(schemaName ?? null).bodega.findMany({
-      where: { codigoCuenta, estaActiva: true },
-      select: { idBodega: true },
-    });
+    const schema = this.assertSafeSchemaIdent(schemaName ?? 'public');
+    return this.prisma.$queryRawUnsafe<{ idBodega: string }[]>(
+      `SELECT id_bodega AS "idBodega"
+         FROM ${schema}.bodega
+        WHERE codigo_cuenta = $1
+          AND esta_activa = true`,
+      codigoCuenta,
+    );
   }
 
   async update(
@@ -135,38 +141,56 @@ export class CuentaRepository {
     return updated;
   }
 
-  findBodegasByIds(
+  async findBodegasByIds(
     idsBodega: string[],
     schemaName?: string | null,
   ): Promise<BodegaAssignCandidate[]> {
-    if (idsBodega.length === 0) return Promise.resolve([]);
+    if (idsBodega.length === 0) return [];
 
-    return this.prisma.forSchema(schemaName ?? null).bodega.findMany({
-      where: {
-        idBodega: { in: idsBodega },
-        estaActiva: true,
-      },
-      select: {
-        idBodega: true,
-        codigoCuenta: true,
-        cuenta: { select: { codigoEmpresa: true } },
-      },
-    });
+    const schema = this.assertSafeSchemaIdent(schemaName ?? 'public');
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        idBodega: string;
+        codigoCuenta: string;
+        codigoEmpresa: string;
+      }>
+    >(
+      `SELECT b.id_bodega AS "idBodega",
+              b.codigo_cuenta AS "codigoCuenta",
+              c.codigo_empresa AS "codigoEmpresa"
+         FROM ${schema}.bodega b
+         JOIN ${schema}.cuenta c ON c.codigo_cuenta = b.codigo_cuenta
+        WHERE b.id_bodega = ANY($1::uuid[])
+          AND b.esta_activa = true`,
+      idsBodega,
+    );
+
+    return rows.map((row) => ({
+      idBodega: row.idBodega,
+      codigoCuenta: row.codigoCuenta,
+      cuenta: { codigoEmpresa: row.codigoEmpresa },
+    }));
   }
 
-  assignBodegasToCuenta(
+  async assignBodegasToCuenta(
     codigoCuenta: string,
     idsBodega: string[],
     schemaName?: string | null,
   ): Promise<{ count: number }> {
     if (idsBodega.length === 0) {
-      return Promise.resolve({ count: 0 });
+      return { count: 0 };
     }
 
-    return this.prisma.forSchema(schemaName ?? null).bodega.updateMany({
-      where: { idBodega: { in: idsBodega } },
-      data: { codigoCuenta },
-    });
+    const schema = this.assertSafeSchemaIdent(schemaName ?? 'public');
+    const result = await this.prisma.$executeRawUnsafe(
+      `UPDATE ${schema}.bodega
+          SET codigo_cuenta = $1
+        WHERE id_bodega = ANY($2::uuid[])`,
+      codigoCuenta,
+      idsBodega,
+    );
+
+    return { count: Number(result) };
   }
 
   private assertSafeSchemaIdent(schema: string): string {

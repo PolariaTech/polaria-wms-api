@@ -111,9 +111,7 @@ describe('AuthService', () => {
         {
           provide: PrismaService,
           useValue: {
-            forSchema: jest.fn().mockReturnValue({
-              cuenta: { findUnique: jest.fn().mockResolvedValue(null) },
-            }),
+            $queryRawUnsafe: jest.fn().mockResolvedValue([]),
           },
         },
       ],
