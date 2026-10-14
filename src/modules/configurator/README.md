@@ -4,7 +4,7 @@ Endpoints de plataforma (scope `platform`) reservados al rol **configurador**.
 
 ## POST /configurador/usuarios
 
-Crea un usuario operativo del WMS: credenciales en Supabase Auth (service role) y fila en `usuario` (+ `asignacion_bodega` si aplica).
+Crea un usuario operativo del WMS: credenciales en Supabase Auth (service role) y fila en `public.usuario`. Si hay `idBodega`, inserta `asignacion_bodega` en el schema de la empresa (`emp_*`) o en `public` cuando `schema_name` es null (Tecno / legacy).
 
 ### Autorización
 

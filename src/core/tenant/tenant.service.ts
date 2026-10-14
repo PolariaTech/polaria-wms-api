@@ -29,7 +29,7 @@ export class TenantService {
       throw new NotFoundException('Usuario no encontrado o inactivo');
     }
 
-    const idBodegas = usuario.asignacionesBodega.map((a) => a.idBodega);
+    const idBodegasPublic = usuario.asignacionesBodega.map((a) => a.idBodega);
 
     if (usuario.idRol === WmsRol.configurador) {
       return {
@@ -39,7 +39,7 @@ export class TenantService {
         codigoEmpresa: null,
         codigoCuenta: null,
         codigosCuentaEmpresa: [],
-        idBodegas,
+        idBodegas: idBodegasPublic,
         schemaName: null,
       };
     }
@@ -56,15 +56,16 @@ export class TenantService {
       throw new ForbiddenException('La empresa está inactiva');
     }
 
+    const schemaName = usuario.empresa.schemaName;
+    const schema = this.resolveSchemaIdent(schemaName);
+
     if (usuario.codigoCuenta) {
       // cuenta puede vivir en emp_*; el include Prisma solo resuelve public.
-      if (usuario.empresa.schemaName) {
-        const cuentaTenant = await this.prisma
-          .forSchema(usuario.empresa.schemaName)
-          .cuenta.findUnique({
-            where: { codigoCuenta: usuario.codigoCuenta },
-            select: { estaActiva: true },
-          });
+      if (schemaName) {
+        const cuentaTenant = await this.findCuentaActivaInSchema(
+          schema,
+          usuario.codigoCuenta,
+        );
         if (cuentaTenant && !cuentaTenant.estaActiva) {
           throw new ForbiddenException('La cuenta está inactiva');
         }
@@ -84,28 +85,14 @@ export class TenantService {
     }
 
     const codigosCuentaEmpresa = usuario.codigoEmpresa
-      ? (
-          await this.prisma
-            .forSchema(usuario.empresa.schemaName)
-            .cuenta.findMany({
-              where: { codigoEmpresa: usuario.codigoEmpresa, estaActiva: true },
-              select: { codigoCuenta: true },
-            })
-        ).map((c) => c.codigoCuenta)
+      ? await this.listCodigosCuentaEmpresa(schema, usuario.codigoEmpresa)
       : [];
 
-    // Bodegas / asignaciones viven en schema tenant si existe.
-    const idBodegasTenant =
-      usuario.empresa.schemaName != null
-        ? (
-            await this.prisma
-              .forSchema(usuario.empresa.schemaName)
-              .asignacionBodega.findMany({
-                where: { idUsuario: usuario.idUsuario },
-                select: { idBodega: true },
-              })
-          ).map((a) => a.idBodega)
-        : idBodegas;
+    // Bodegas / asignaciones: emp_* si hay schema; public solo Tecno/legacy.
+    const idBodegas =
+      schemaName != null
+        ? await this.listIdBodegasAsignacion(schema, usuario.idUsuario)
+        : idBodegasPublic;
 
     return {
       idUsuario: usuario.idUsuario,
@@ -114,8 +101,64 @@ export class TenantService {
       codigoEmpresa: usuario.codigoEmpresa,
       codigoCuenta: usuario.codigoCuenta,
       codigosCuentaEmpresa,
-      idBodegas: idBodegasTenant,
-      schemaName: usuario.empresa.schemaName,
+      idBodegas,
+      schemaName,
     };
+  }
+
+  private resolveSchemaIdent(schemaName: string | null): string {
+    const schema = schemaName ?? 'public';
+    if (!/^[a-z][a-z0-9_]*$/.test(schema)) {
+      throw new Error(`Nombre de schema inválido: ${schema}`);
+    }
+    return schema;
+  }
+
+  private async findCuentaActivaInSchema(
+    schema: string,
+    codigoCuenta: string,
+  ): Promise<{ estaActiva: boolean } | null> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ estaActiva: boolean }>
+    >(
+      `SELECT esta_activa AS "estaActiva"
+         FROM ${schema}.cuenta
+        WHERE codigo_cuenta = $1
+        LIMIT 1`,
+      codigoCuenta,
+    );
+    return rows[0] ?? null;
+  }
+
+  private async listCodigosCuentaEmpresa(
+    schema: string,
+    codigoEmpresa: string,
+  ): Promise<string[]> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ codigoCuenta: string }>
+    >(
+      `SELECT codigo_cuenta AS "codigoCuenta"
+         FROM ${schema}.cuenta
+        WHERE codigo_empresa = $1
+          AND esta_activa = true`,
+      codigoEmpresa,
+    );
+    return rows.map((row) => row.codigoCuenta);
+  }
+
+  private async listIdBodegasAsignacion(
+    schema: string,
+    idUsuario: string,
+  ): Promise<string[]> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ idBodega: string }>
+    >(
+      `SELECT id_bodega AS "idBodega"
+         FROM ${schema}.asignacion_bodega
+        WHERE id_usuario = $1::uuid
+          AND esta_activa = true`,
+      idUsuario,
+    );
+    return rows.map((row) => row.idBodega);
   }
 }

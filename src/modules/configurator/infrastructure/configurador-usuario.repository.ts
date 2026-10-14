@@ -1,5 +1,9 @@
-import { Injectable } from '@nestjs/common';
-import { WmsRol } from '../../../generated/prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma, WmsRol } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 import { phoneLookupVariants } from '../../../shared/utils/phone.util';
 
@@ -253,17 +257,69 @@ export class ConfiguradorUsuarioRepository {
       },
     });
 
-    if (input.idBodega) {
-      // asignacion_bodega vive en el schema tenant (emp_*) o public legacy.
-      await this.prisma.forSchema(schemaName).asignacionBodega.create({
-        data: {
-          idUsuario: usuario.idUsuario,
-          idBodega: input.idBodega,
-          idRol: input.idRol,
-        },
+    if (!input.idBodega) {
+      return usuario;
+    }
+
+    try {
+      // Prisma @@schema("public") ignora forSchema(); SQL calificado apunta
+      // a emp_* de la empresa o a public (Tecno / legacy sin schema_name).
+      await this.insertAsignacionBodega({
+        schemaName,
+        idUsuario: usuario.idUsuario,
+        idBodega: input.idBodega,
+        idRol: input.idRol,
       });
+    } catch (error) {
+      await this.prisma.usuario
+        .delete({ where: { idUsuario: usuario.idUsuario } })
+        .catch(() => undefined);
+      throw this.mapAsignacionBodegaError(error);
     }
 
     return usuario;
+  }
+
+  private async insertAsignacionBodega(params: {
+    schemaName: string | null;
+    idUsuario: string;
+    idBodega: string;
+    idRol: WmsRol;
+  }): Promise<void> {
+    const schema = this.assertSafeSchemaIdent(params.schemaName ?? 'public');
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO ${schema}.asignacion_bodega (id_usuario, id_bodega, id_rol)
+       VALUES ($1::uuid, $2::uuid, $3::public.wms_rol)`,
+      params.idUsuario,
+      params.idBodega,
+      params.idRol,
+    );
+  }
+
+  private mapAsignacionBodegaError(error: unknown): Error {
+    const message =
+      error instanceof Error ? error.message.toLowerCase() : String(error);
+
+    const isFk =
+      (error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2003') ||
+      message.includes('foreign key') ||
+      message.includes('23503');
+
+    if (isFk) {
+      if (message.includes('bodega') || message.includes('id_bodega')) {
+        return new NotFoundException(
+          'La bodega no existe en el schema de la empresa',
+        );
+      }
+      return new BadRequestException(
+        'No se pudo asignar la bodega al usuario (referencia inválida)',
+      );
+    }
+
+    if (error instanceof Error) {
+      return error;
+    }
+    return new Error(String(error));
   }
 }

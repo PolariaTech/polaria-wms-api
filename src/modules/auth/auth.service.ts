@@ -189,10 +189,10 @@ export class AuthService {
     const access = await this.resolveProductoAccess(usuario);
 
     if (!isConfigurador && usuario.codigoCuenta && schemaName) {
-      const cuenta = await this.prisma.forSchema(schemaName).cuenta.findUnique({
-        where: { codigoCuenta: usuario.codigoCuenta },
-        select: { nombreComercial: true },
-      });
+      const cuenta = await this.findCuentaInSchema(
+        schemaName,
+        usuario.codigoCuenta,
+      );
       if (cuenta) {
         nombreComercialCuenta = cuenta.nombreComercial;
       }
@@ -365,12 +365,10 @@ export class AuthService {
 
     if (usuario.codigoCuenta) {
       if (usuario.empresa.schemaName) {
-        const cuentaTenant = await this.prisma
-          .forSchema(usuario.empresa.schemaName)
-          .cuenta.findUnique({
-            where: { codigoCuenta: usuario.codigoCuenta },
-            select: { estaActiva: true },
-          });
+        const cuentaTenant = await this.findCuentaInSchema(
+          usuario.empresa.schemaName,
+          usuario.codigoCuenta,
+        );
         if (cuentaTenant && !cuentaTenant.estaActiva) {
           throw new ForbiddenException('La cuenta está inactiva');
         }
@@ -440,5 +438,26 @@ export class AuthService {
       codigoCuenta: isConfigurador ? null : usuario.codigoCuenta,
       scope: isConfigurador ? AUTH_SCOPE.PLATFORM : AUTH_SCOPE.TENANT,
     };
+  }
+
+  /** Cuenta en emp_* o public; Prisma @@schema("public") no alcanza tenants. */
+  private async findCuentaInSchema(
+    schemaName: string,
+    codigoCuenta: string,
+  ): Promise<{ nombreComercial: string; estaActiva: boolean } | null> {
+    if (!/^[a-z][a-z0-9_]*$/.test(schemaName)) {
+      throw new Error(`Nombre de schema inválido: ${schemaName}`);
+    }
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ nombreComercial: string; estaActiva: boolean }>
+    >(
+      `SELECT nombre_comercial AS "nombreComercial",
+              esta_activa AS "estaActiva"
+         FROM ${schemaName}.cuenta
+        WHERE codigo_cuenta = $1
+        LIMIT 1`,
+      codigoCuenta,
+    );
+    return rows[0] ?? null;
   }
 }

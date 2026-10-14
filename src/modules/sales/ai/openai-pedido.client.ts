@@ -11,6 +11,7 @@ import {
   calcularCantidadDesdeCajas,
   pesoPorCajaKg,
 } from "./utils/empaque-lineas";
+import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 
 export { calcularCantidadDesdeCajas, pesoPorCajaKg };
 
@@ -238,7 +239,7 @@ const RESPONSE_SCHEMA = {
       ordenCompraHotel: {
         type: ["string", "null"],
         description:
-          "Identificador de la orden de compra del hotel/cliente para ESTE pedido. INTERPRETA el documento: no busques solo una etiqueta fija. El rótulo cambia según el emisor (ej. 'PO NUMBER', 'PO #', 'P.O.', 'Purchase Order', 'Orden de compra', 'OC', 'Nº OC', 'No. de orden', 'Order No.', 'Customer PO', 'Requisition', 'Req #'). Extrae el CÓDIGO/NÚMERO asociado a esa idea (ej. 'CUNMC0046026'), no el título del documento ni el Customer Account # ni fechas. Si hay varios candidatos, elige el que claramente identifica la orden de compra del cliente (suele estar cerca del encabezado PURCHASE ORDER / ORDEN DE COMPRA). null solo si de verdad no aparece ningún identificador de OC/PO.",
+          "Identificador de la orden de compra del hotel/cliente para ESTE pedido. INTERPRETA el documento: no busques solo una etiqueta fija. El rótulo cambia según el emisor (ej. 'PO NUMBER', 'PO #', 'P.O.', 'Purchase Order', 'Orden de compra', 'OC', 'Nº OC', 'Oc Generada', 'OC Generada', 'No. de orden', 'Order No.', 'Customer PO', 'Requisition', 'Req #'). Extrae el CÓDIGO/NÚMERO asociado a esa idea (ej. '4501056534' o 'CUNMC0046026'), no el título del documento ni el Customer Account # ni fechas. NUNCA uses la columna 'Usuario' / User ID / ID de empleado / ID de centro de costo (ej. 3672091) — eso NO es la OC. En tablas Xcaret/Grupo Xcaret la OC está en 'Oc Generada' (suele repetirse en todas las filas). Si el nombre del PDF empieza con un número largo (ej. '4501056534_AGUACATES…'), ese número es la OC. null solo si de verdad no aparece ningún identificador de OC/PO.",
       },
       nombreCliente: {
         type: ["string", "null"],
@@ -362,17 +363,17 @@ const RESPONSE_SCHEMA = {
             numeroPedido: {
               type: ["string", "null"],
               description:
-                "Número/código de pedido del hotel para ESTE renglón (PO line order, Numero pedido, Order No. distinto por destino). Si el documento trae varios pedidos (387529 Banquetes, 387531 Cocina, etc.), cada línea lleva el suyo. null si no hay.",
+                "Número/código de pedido u OC del hotel para ESTE renglón. Fuentes válidas: 'Numero pedido', 'Oc Generada', 'OC', 'PO', 'Order No.'. Si TODAS las filas comparten la misma Oc Generada (ej. 4501056534), TODAS las líneas llevan ese mismo numeroPedido. Si el documento trae varios pedidos reales distintos por destino (387529 Banquetes, 387531 Cocina, etc.), cada línea lleva el suyo. NUNCA copies la columna 'Usuario' / User / ID numérico corto de responsable o centro (ej. 3672091, 3672322) — eso no es pedido ni OC. null si no hay.",
             },
             almacen: {
               type: ["string", "null"],
               description:
-                "Almacén / cocina / centro de consumo de ESTE renglón, tomado de la columna Almacén / Centro de consumo de la tabla (ej. 'BAWH Bar Whisky', 'COPM Coc Plaza Mx', 'COCINA PRINCIPAL'). NO uses el almacén genérico del encabezado (Almacén General, Facturar A) si la fila trae el suyo. null solo si la fila no indica destino.",
+                "Almacén / cocina / centro de consumo de ESTE renglón, tomado de la columna Almacén / Centro de costo / Centro de consumo de la tabla (ej. 'BAWH Bar Whisky', 'COPM Coc Plaza Mx', 'Ayb Xc Restaurant Oaxaca', 'COCINA PRINCIPAL'). NO uses el almacén genérico del encabezado (Almacén General, Facturar A) si la fila trae el suyo. NO pongas aquí el Usuario ni la Oc Generada. null solo si la fila no indica destino.",
             },
             numeroAlmacen: {
               type: ["string", "null"],
               description:
-                "Código numérico del almacén si viene (ej. '001'). null si no.",
+                "Código numérico del almacén o del Usuario/centro SOLO si el documento lo trae como código de destino (ej. '001', '3672091' en columna Usuario de Xcaret). Va aquí, NO en numeroPedido. null si no.",
             },
             referenciaPedido: {
               type: ["string", "null"],
@@ -659,8 +660,9 @@ export async function extraerPedido({
     `- Completa TODOS los campos del schema cuando el mensaje/archivos los mencionen de forma explícita o inequívoca (fecha, centro, orden de compra/PO, nombre del cliente/hotel, dirección, andén, contacto, teléfono, ventanas/horarios, políticas, observaciones y cada línea). No dejes null un dato que sí aparece.`,
     `- Solo extrae lo que el mensaje/archivos realmente dicen. No inventes cantidades, presentaciones, fechas, direcciones ni contactos que no estén respaldados.`,
     `- "nombreCliente": nombre del hotel/comprador/cliente/razón social si aparece (Customer, Bill To, Hotel, Property, Cliente, etc.). No uses el PO ni el RFC como nombre. null solo si no hay ningún nombre.`,
-    `- Una línea por cada fila de producto del documento. Si hay VARIOS Numero pedido / PO, o el MISMO PO con DISTINTOS Almacén / centro de consumo (ej. BAWH Bar Whisky vs COPM Coc Plaza Mx), emite una línea por cada producto×destino con numeroPedido y almacen de ESA fila. NO mezcles destinos ni pedidos en una sola línea. NO omitas filas de páginas intermedias.`,
-    `- "numeroPedido" + "almacen" separan órdenes de trabajo: mismo PO + distinto almacén = otra hija; distinto PO = otra hija aunque el almacén coincida. Copia el texto completo del almacén de la columna (código + nombre).`,
+    `- Una línea por cada fila de producto del documento. Si hay VARIOS Numero pedido / PO, o el MISMO PO con DISTINTOS Almacén / centro de consumo (ej. BAWH Bar Whisky vs COPM Coc Plaza Mx, o distintos 'Centro de costo' Xcaret), emite una línea por cada producto×destino con numeroPedido y almacen de ESA fila. NO mezcles destinos ni pedidos en una sola línea. NO omitas filas de páginas intermedias.`,
+    `- "numeroPedido" + "almacen" separan órdenes de trabajo: mismo PO + distinto almacén = otra hija; distinto PO = otra hija aunque el almacén coincida. Copia el texto completo del almacén / centro de costo de la columna (código + nombre).`,
+    `- NO confundas columnas: en tablas tipo Xcaret/Grupo Xcaret, 'Oc Generada' (o 'Pedido'/'OC') es el numeroPedido; 'Centro de costo' es el almacen; 'Usuario' es SOLO numeroAlmacen (o ignóralo) — NUNCA lo pongas como numeroPedido ni ordenCompraHotel. Si todas las filas comparten la misma Oc Generada, todas las líneas llevan ese mismo numeroPedido aunque el Usuario cambie.`,
     `- "precioUnitario": si el documento trae columna Precio / P.U. / Importe unitario por fila, cópialo en cada línea (número). No uses el total/importe de la fila; solo el precio unitario.`,
     `- Matching de "productoCatalogo" (crítico):`,
     `  1) Copia la clave EXACTA de la lista (mismo texto entre comillas, con paréntesis y SKU). Nunca inventes, acortes ni reformatees.`,
@@ -671,7 +673,7 @@ export async function extraerPedido({
     `  6) "textoOriginal" siempre es cómo el cliente nombró el producto, aunque productoCatalogo sea null.`,
     `- "cantidad" es el número TOTAL si viene explícito y directo (ej. '40 kilos'); si el mensaje solo da cajas + presentación sin decir el total, deja "cantidad" en null.`,
     `- "observaciones" es del pedido completo, no repitas ahí lo que ya va en una línea.`,
-    `- "ordenCompraHotel": interpreta cuál es el identificador de la orden de compra del hotel/cliente. El nombre del campo en el documento VARÍA (PO NUMBER, PO #, Purchase Order, Orden de compra, OC, Nº OC, Order No., Customer PO, etc.). Devuelve solo el código/número (ej. CUNMC0046026), no confundas con Customer Account #, fechas ni el título "PURCHASE ORDER". null solo si no hay ningún identificador de OC/PO.`,
+    `- "ordenCompraHotel": interpreta cuál es el identificador de la orden de compra del hotel/cliente. El nombre del campo en el documento VARÍA (PO NUMBER, PO #, Purchase Order, Orden de compra, OC, Nº OC, Oc Generada, Order No., Customer PO, etc.). Devuelve solo el código/número (ej. 4501056534 o CUNMC0046026). NO uses 'Usuario'/User ID. Si el PDF se llama '4501056534_…', ese número es la OC. null solo si no hay ningún identificador de OC/PO.`,
     `- "rfc" solo si el mensaje/documento lo declara explícitamente; nunca lo infieras del nombre del cliente.`,
     `- "direccion", "anden", "contacto", "telefono", "horarioDesde" y "horarioHasta" salen del correo, mensaje o PDF (Ship To, Deliver To, Enviar a, Andén, Dock, Contacto, Tel, hora de entrega). Llénalos siempre que el dato aparezca; null solo si no está. No inventes ni uses un valor habitual que el documento no diga.`,
     `- "regimen", "tolerancia", "sustituciones", "lote" y "temperatura": llénalos solo si el documento los declara. Si no aparecen, null.`,
@@ -748,7 +750,7 @@ export async function extraerPedido({
 
   const parsed = JSON.parse(raw) as PedidoExtraidoRaw;
 
-  const lineas: LineaExtraida[] = parsed.lineas.map((l) => ({
+  const lineasRaw: LineaExtraida[] = parsed.lineas.map((l) => ({
     textoOriginal: l.textoOriginal,
     productoCatalogo: coerceProductoCatalogo(l.productoCatalogo, catalogoClaves),
     // El cálculo determinista manda siempre que sea posible (cajas + presentación con
@@ -773,6 +775,21 @@ export async function extraerPedido({
         ? l.precioUnitario
         : null,
   }));
+
+  // Post-proceso determinista: Oc Generada vs columna Usuario (Xcaret y similares).
+  const sourceForOc = [
+    texto,
+    ...archivosTexto.map((f) => `--- ${f.nombre} ---\n${f.contenido}`),
+  ].join("\n");
+  const fileNames = archivosExtraidos.map((f) => f.nombre);
+  const normalizedPedidos = normalizeNumeroPedidoFields({
+    ordenCompraHotel: parsed.ordenCompraHotel?.trim() || null,
+    lineas: lineasRaw,
+    sourceText: sourceForOc,
+    fileNames,
+  });
+  const lineas = normalizedPedidos.lineas;
+  const ordenCompraHotelNormalizado = normalizedPedidos.ordenCompraHotel;
 
   const fechaLabel = parsed.fechaEntregaTexto?.trim() || null;
   const nombreClienteCabecera =
@@ -800,7 +817,7 @@ export async function extraerPedido({
         ? l.precioUnitario
         : "",
     "Numero correo": "",
-    "Numero pedido": l.numeroPedido || parsed.ordenCompraHotel || "",
+    "Numero pedido": l.numeroPedido || ordenCompraHotelNormalizado || "",
     "Nombre cliente": nombreClienteCabecera,
     "Numero almacen": l.numeroAlmacen || "",
     "Codigo producto": l.codigoProductoCliente || "",
@@ -854,7 +871,7 @@ export async function extraerPedido({
     fechaEntrega: resolverFechaEntrega(parsed.fechaEntregaTexto, hoyISO),
     centroConsumo: parsed.centroConsumo,
     observaciones: parsed.observaciones,
-    ordenCompraHotel: parsed.ordenCompraHotel?.trim() || null,
+    ordenCompraHotel: ordenCompraHotelNormalizado,
     nombreCliente: parsed.nombreCliente?.trim() || null,
     rfc: parsed.rfc,
     regimen: parsed.regimen,
