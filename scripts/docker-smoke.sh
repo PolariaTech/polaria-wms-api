@@ -48,18 +48,20 @@ ARCH="$(docker image inspect -f '{{.Architecture}}' "$IMAGE")"
 SIZE_MB=$(( $(docker image inspect -f '{{.Size}}' "$IMAGE") / 1024 / 1024 ))
 # Aproximación de lo que se guarda en el registro y se descarga al arrancar (capas en gzip).
 GZIP_MB=$(( $(docker save "$IMAGE" | gzip -1 | wc -c) / 1024 / 1024 ))
-echo "Imagen: $IMAGE · arquitectura: $ARCH · tamaño: ${SIZE_MB} MB sin comprimir (objetivo < ${MAX_SIZE_MB} MB) · ~${GZIP_MB} MB comprimida"
+echo "Imagen: $IMAGE · arquitectura: $ARCH · ~${GZIP_MB} MB comprimida (objetivo < ${MAX_SIZE_MB} MB) · ${SIZE_MB} MB sin comprimir"
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "### Imagen Docker"
-    echo "| Arquitectura | Sin comprimir | Comprimida (aprox.) | Objetivo | GET / | Usuario |"
+    echo "| Arquitectura | Comprimida (aprox.) | Objetivo (comprimida) | Sin comprimir | GET / | Usuario |"
     echo "|---|---|---|---|---|---|"
-    echo "| $ARCH | ${SIZE_MB} MB | ~${GZIP_MB} MB | < ${MAX_SIZE_MB} MB | 200 | $USER_IN_CONTAINER |"
+    echo "| $ARCH | ~${GZIP_MB} MB | < ${MAX_SIZE_MB} MB | ${SIZE_MB} MB | 200 | $USER_IN_CONTAINER |"
   } >> "$GITHUB_STEP_SUMMARY"
 fi
 
-if [ "$SIZE_MB" -ge "$MAX_SIZE_MB" ]; then
-  echo "ERROR: la imagen supera ${MAX_SIZE_MB} MB"
+# La meta es sobre el tamaño comprimido: es lo que se guarda en ECR (costo) y lo que
+# Fargate descarga al arrancar (tiempo de arranque). Spec del servicio §1.
+if [ "$GZIP_MB" -ge "$MAX_SIZE_MB" ]; then
+  echo "ERROR: la imagen comprimida supera ${MAX_SIZE_MB} MB"
   exit 1
 fi

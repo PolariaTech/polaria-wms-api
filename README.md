@@ -638,7 +638,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 - Trigger: push/PR a `main`
 - Job `build-and-test` (Node 22): `npm ci` → `npm run build` → `npm test` → `npm run test:e2e`
-- Job `docker-image` (runner `ubuntu-24.04-arm`): construye la imagen `linux/arm64` con el `Dockerfile` y corre `scripts/docker-smoke.sh` (GET / responde 200, usuario no root, tamaño < 400 MB). No publica la imagen en ningún registro.
+- Job `docker-image` (runner `ubuntu-24.04-arm`): construye la imagen `linux/arm64` con el `Dockerfile` y corre `scripts/docker-smoke.sh` (GET / responde 200, usuario no root, imagen comprimida < 400 MB). No publica la imagen en ningún registro.
 
 ### Imagen Docker
 
