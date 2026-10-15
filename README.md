@@ -637,8 +637,20 @@ npm run test:cov      # Cobertura
 GitHub Actions (`.github/workflows/ci.yml`):
 
 - Trigger: push/PR a `main`
-- Node 20
-- `npm ci` → `npm run build` → `npm test` → `npm run test:e2e`
+- Job `build-and-test` (Node 22): `npm ci` → `npm run build` → `npm test` → `npm run test:e2e`
+- Job `docker-image` (runner `ubuntu-24.04-arm`): construye la imagen `linux/arm64` con el `Dockerfile` y corre `scripts/docker-smoke.sh` (GET / responde 200, usuario no root, tamaño < 400 MB). No publica la imagen en ningún registro.
+
+### Imagen Docker
+
+La imagen de producción (destino: AWS ECS Fargate ARM64) se construye con el `Dockerfile` multi-stage de la raíz. La etapa `build` corre `npm ci` y `npm run build`; la etapa `runtime` copia solo `dist/`, las dependencias de producción y `prisma/`, y corre como el usuario `node`. Ningún secreto entra en la imagen: las variables se inyectan al arrancar el contenedor.
+
+```bash
+# Requiere Docker Desktop con buildx. En una máquina x86 el build ARM usa emulación (QEMU) y tarda más.
+docker buildx build --platform linux/arm64 --load -t polaria-wms-api:local .
+bash scripts/docker-smoke.sh polaria-wms-api:local
+```
+
+`scripts/docker-smoke.env` trae solo valores falsos para la prueba de humo; para correr la imagen contra una base real, usa tu propio archivo de variables (fuera de git).
 
 ---
 
