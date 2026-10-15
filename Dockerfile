@@ -18,8 +18,11 @@ COPY . .
 
 # prisma.config.ts exige DATABASE_URL para `prisma generate`. Este valor es falso,
 # solo vive durante este RUN y no llega a la imagen final.
+# --omit=optional: el CLI `prisma` (y typescript, effect, studio...) queda marcado
+# `devOptional` en el lockfile porque @prisma/client lo declara peer opcional, y
+# `--omit=dev` solo no lo quita (~220 MB). En producción solo se pierde pg-cloudflare.
 RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npm run build \
-  && npm prune --omit=dev
+  && npm prune --omit=dev --omit=optional
 
 # ── Etapa 2: runtime ─────────────────────────────────────────────────────────
 FROM ${NODE_IMAGE} AS runtime

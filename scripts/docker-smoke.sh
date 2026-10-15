@@ -46,14 +46,16 @@ echo "OK: corre como '$USER_IN_CONTAINER'"
 
 ARCH="$(docker image inspect -f '{{.Architecture}}' "$IMAGE")"
 SIZE_MB=$(( $(docker image inspect -f '{{.Size}}' "$IMAGE") / 1024 / 1024 ))
-echo "Imagen: $IMAGE · arquitectura: $ARCH · tamaño: ${SIZE_MB} MB (objetivo < ${MAX_SIZE_MB} MB)"
+# Aproximación de lo que se guarda en el registro y se descarga al arrancar (capas en gzip).
+GZIP_MB=$(( $(docker save "$IMAGE" | gzip -1 | wc -c) / 1024 / 1024 ))
+echo "Imagen: $IMAGE · arquitectura: $ARCH · tamaño: ${SIZE_MB} MB sin comprimir (objetivo < ${MAX_SIZE_MB} MB) · ~${GZIP_MB} MB comprimida"
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "### Imagen Docker"
-    echo "| Arquitectura | Tamaño | Objetivo | GET / | Usuario |"
-    echo "|---|---|---|---|---|"
-    echo "| $ARCH | ${SIZE_MB} MB | < ${MAX_SIZE_MB} MB | 200 | $USER_IN_CONTAINER |"
+    echo "| Arquitectura | Sin comprimir | Comprimida (aprox.) | Objetivo | GET / | Usuario |"
+    echo "|---|---|---|---|---|---|"
+    echo "| $ARCH | ${SIZE_MB} MB | ~${GZIP_MB} MB | < ${MAX_SIZE_MB} MB | 200 | $USER_IN_CONTAINER |"
   } >> "$GITHUB_STEP_SUMMARY"
 fi
 
