@@ -1,0 +1,22 @@
+# Secretos: nunca dentro de la imagen
+.env
+.env.*
+
+# Se regeneran dentro del build
+node_modules
+dist
+src/generated
+*.tsbuildinfo
+
+# No hacen falta para construir ni para correr
+.git
+.github
+.claude
+.vscode
+.idea
+test
+coverage
+docs
+*.md
+Dockerfile
+.dockerignore

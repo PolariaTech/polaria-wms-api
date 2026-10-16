@@ -6,4 +6,4 @@ Definiciones de GitHub Actions que se ejecutan automáticamente en cada push o p
 
 | Archivo | Descripción |
 |---|---|
-| `ci.yml` | Pipeline de integración continua: instala dependencias, ejecuta lint, build y tests |
+| `ci.yml` | Pipeline de integración continua. Job `build-and-test`: instala dependencias, compila y corre los tests (unitarios y e2e). Job `docker-image`: construye la imagen `linux/arm64` en un runner ARM y la prueba con `scripts/docker-smoke.sh` |

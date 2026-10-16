@@ -2,6 +2,10 @@
 
 Versión de producto alineada con Polaria WMS. Swagger: `2.9.16`.
 
+## Sin publicar
+
+- Infraestructura (POL-332, migración a AWS): `Dockerfile` multi-stage para `linux/arm64` (Node 22 bookworm-slim, usuario `node`, health check con `fetch`), `.dockerignore` que deja fuera `.env*`, y job `docker-image` en el CI que construye la imagen en un runner ARM y la prueba con `scripts/docker-smoke.sh`. No cambia el comportamiento de la API.
+
 ## 2.9.16 — 2026-10-07
 
 - `POST /ventas/ingestar-pedido`: el bot/n8n crea la OV `por_confirmar` con `origen_correo` + `origen_texto` + entrega (ventana, dirección, teléfono, notas) ya llenos — no armar el JSON a mano. `idBodega` es opcional (bodega default de la cuenta). Asigna `id_cliente` (obligatorio en BD) y `id_comprador` si hay match por nombre.

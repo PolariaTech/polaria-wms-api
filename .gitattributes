@@ -1,0 +1,2 @@
+# Los scripts de shell corren en Linux (CI y contenedores): siempre con saltos de línea LF.
+*.sh text eol=lf
