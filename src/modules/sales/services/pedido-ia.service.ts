@@ -234,14 +234,34 @@ export class PedidoIaService {
         ? fechaRaw.slice(0, 10)
         : fechaRaw;
 
-    const origenArchivos =
-      input.origenArchivos?.trim() ||
-      (input.files.length > 0
-        ? input.files
-            .map((f) => f.originalname?.trim())
-            .filter(Boolean)
-            .join(', ')
-        : null);
+    let origenArchivos: string | null = input.origenArchivos?.trim() || null;
+    if (input.files.length > 0) {
+      const {
+        uploadOvAdjuntosMulter,
+        serializeOrigenArchivosJson,
+      } = await import('../ai/upload-ov-adjunto-cloudinary');
+      const uploaded = await uploadOvAdjuntosMulter(
+        input.files,
+        codigoCuenta,
+      );
+      origenArchivos =
+        serializeOrigenArchivosJson(uploaded) ||
+        input.files
+          .map((f) => f.originalname?.trim())
+          .filter(Boolean)
+          .join(', ') ||
+        origenArchivos;
+      if (uploaded.length < input.files.length) {
+        this.logger.warn(
+          JSON.stringify({
+            evento: 'ingestar-pedido-adjuntos',
+            codigoCuenta,
+            subidos: uploaded.length,
+            recibidos: input.files.length,
+          }),
+        );
+      }
+    }
 
     let rows: Array<{ idOrdenVenta: string; codigo: string }>;
     try {
