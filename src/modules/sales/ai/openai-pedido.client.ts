@@ -11,6 +11,7 @@ import {
   calcularCantidadDesdeCajas,
   pesoPorCajaKg,
 } from "./utils/empaque-lineas";
+import { extractEntregaDesdeTexto } from "./utils/extract-entrega-desde-texto";
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 
 export { calcularCantidadDesdeCajas, pesoPorCajaKg };
@@ -224,7 +225,7 @@ const RESPONSE_SCHEMA = {
       fechaEntregaTexto: {
         type: ["string", "null"],
         description:
-          "La frase EXACTA del mensaje que indica cuándo se debe ENTREGAR el pedido (ej. 'mañana temprano', 'el jueves', '15 de septiembre'). Copia la frase tal cual, no calcules la fecha. Extráela AUNQUE sea la única palabra de fecha en todo el mensaje (ej. si el mensaje es solo 'mañana' o 'para mañana', igual cuenta como frase de fecha de entrega). Si el mensaje menciona otras fechas que no son la de entrega (ej. cuándo se va a usar un producto), esas van en la especificación de esa línea, no aquí. null solo si de verdad no hay ninguna pista de fecha de entrega en ningún lado del mensaje.",
+          "La frase EXACTA del mensaje/PDF/tabla que indica cuándo se debe ENTREGAR el pedido (ej. 'mañana temprano', 'el jueves', '15 de septiembre', '21/10/2026', '27 de agosto de 2026'). Copia la frase tal cual, no calcules la fecha ni asumas 'mañana' si hay otra fecha concreta. Extráela AUNQUE sea la única pista de fecha (cuerpo, columna Fecha, Delivery Date). Si el mensaje menciona otras fechas que no son la de entrega, esas van en la especificación de esa línea, no aquí. null SOLO si de verdad no hay ninguna pista de fecha de entrega.",
       },
       centroConsumo: {
         type: ["string", "null"],
@@ -283,12 +284,12 @@ const RESPONSE_SCHEMA = {
       horarioDesde: {
         type: ["string", "null"],
         description:
-          "Hora de INICIO de la ventana de recepción, 24h HH:MM, tomada del correo, mensaje o PDF (hora de entrega, delivery time, ventana, a partir de). Ej. 'a partir de las 7am' → '07:00'. Si solo hay una hora de entrega, ponla aquí. null solo si no hay hora.",
+          "Hora de INICIO de la ventana de recepción, 24h HH:MM, tomada del correo, mensaje o PDF (Hora de entrega, delivery time, ventana de recepción, a partir de, de X a Y). Ej. 'Hora de entrega 6:00 am' → '06:00'; '8:00 AM – 2:00 PM' → desde '08:00'. Si solo hay una hora, ponla aquí. null SOLO si no hay ninguna hora.",
       },
       horarioHasta: {
         type: ["string", "null"],
         description:
-          "Hora de FIN de la ventana de recepción, 24h HH:MM, si el correo, mensaje o PDF indica un rango (hasta, before, entre X y Y). null si solo hay una hora o no hay fin.",
+          "Hora de FIN de la ventana de recepción, 24h HH:MM, si el correo, mensaje o PDF indica un rango (hasta, before, entre X y Y, 8am-2pm). Ej. '8:00 AM – 2:00 PM' → '14:00'. null si solo hay una hora o no hay fin.",
       },
       tolerancia: {
         type: ["string", "null"],
@@ -675,11 +676,12 @@ export async function extraerPedido({
     `- "observaciones" es del pedido completo, no repitas ahí lo que ya va en una línea.`,
     `- "ordenCompraHotel": interpreta cuál es el identificador de la orden de compra del hotel/cliente. El nombre del campo en el documento VARÍA (PO NUMBER, PO #, Purchase Order, Orden de compra, OC, Nº OC, Oc Generada, Order No., Customer PO, etc.). Devuelve solo el código/número (ej. 4501056534 o CUNMC0046026). NO uses 'Usuario'/User ID. Si el PDF se llama '4501056534_…', ese número es la OC. null solo si no hay ningún identificador de OC/PO.`,
     `- "rfc" solo si el mensaje/documento lo declara explícitamente; nunca lo infieras del nombre del cliente.`,
-    `- "direccion", "anden", "contacto", "telefono", "horarioDesde" y "horarioHasta" salen del correo, mensaje o PDF (Ship To, Deliver To, Enviar a, Andén, Dock, Contacto, Tel, hora de entrega). Llénalos siempre que el dato aparezca; null solo si no está. No inventes ni uses un valor habitual que el documento no diga.`,
+    `- "direccion", "anden", "contacto", "telefono", "horarioDesde" y "horarioHasta" salen del correo, mensaje o PDF (Ship To, Deliver To, Enviar a, Andén, Dock, Contacto, Tel, hora de entrega, ventana de recepción, delivery window). Llénalos siempre que el dato aparezca; null solo si no está. No inventes ni uses un valor habitual que el documento no diga.`,
+    `- "horarioDesde"/"horarioHasta" (crítico): si el cuerpo dice "Hora de entrega 6:00 am", "8:00 AM – 2:00 PM", "de 8 a 14", "ventana de recepción…", DEBES llenarlos en 24h HH:MM. No los dejes null si aparecen. Una sola hora → solo horarioDesde.`,
     `- "regimen", "tolerancia", "sustituciones", "lote" y "temperatura": llénalos solo si el documento los declara. Si no aparecen, null.`,
     `- "unidad" siempre debe ser exactamente KGM, CJ o UN (o null) — nunca un texto libre como "kilos" o "kg".`,
     `- "centroConsumo" debe quedar null si el mensaje expresa incertidumbre sobre cuál es, incluso si menciona un valor tentativo de pasada.`,
-    `- "fechaEntregaTexto" se extrae aunque sea la única palabra de fecha del mensaje (ej. un mensaje que es solo "mañana").`,
+    `- "fechaEntregaTexto" (crítico): copia la frase EXACTA de entrega del cuerpo/PDF/tabla (ej. "21/10/2026", "27 de agosto de 2026", "mañana", "el jueves"). Extráela aunque sea la única pista de fecha. NUNCA asumas "mañana" ni inventes una fecha si el documento trae otra concreta. null SOLO si de verdad no hay ninguna pista de fecha de entrega.`,
     `- Si el texto y los archivos, en conjunto, NO describen un pedido de fruta/verdura (ej. son spam, un documento administrativo sin relación, contenido vacío o ilegible), deja "lineas" vacío y usa "advertencia" para explicarlo — no inventes líneas solo para llenar algo.`,
   ].join("\n");
 
@@ -791,7 +793,27 @@ export async function extraerPedido({
   const lineas = normalizedPedidos.lineas;
   const ordenCompraHotelNormalizado = normalizedPedidos.ordenCompraHotel;
 
-  const fechaLabel = parsed.fechaEntregaTexto?.trim() || null;
+  // Fallback determinista: si Mateo dejó fecha/hora null, leerlas del cuerpo/PDF.
+  const sourceForEntrega = [
+    texto,
+    ...archivosTexto.map((f) => `--- ${f.nombre} ---\n${f.contenido}`),
+  ].join("\n");
+  const entregaBody = extractEntregaDesdeTexto(sourceForEntrega, hoyISO);
+  const fechaDesdeIa = resolverFechaEntrega(parsed.fechaEntregaTexto, hoyISO);
+  const fechaEntrega =
+    fechaDesdeIa ||
+    entregaBody.fechaIso ||
+    resolverFechaEntrega(entregaBody.fechaFrase, hoyISO);
+  const horarioDesde =
+    parsed.horarioDesde?.trim() || entregaBody.horarioDesde || null;
+  const horarioHasta =
+    parsed.horarioHasta?.trim() || entregaBody.horarioHasta || null;
+
+  const fechaLabel =
+    parsed.fechaEntregaTexto?.trim() ||
+    entregaBody.fechaFrase ||
+    fechaEntrega ||
+    null;
   const nombreClienteCabecera =
     (typeof parsed.nombreCliente === "string"
       ? parsed.nombreCliente.trim()
@@ -800,8 +822,8 @@ export async function extraerPedido({
   const andenCabecera = parsed.anden?.trim() || "";
   const contactoCabecera = parsed.contacto?.trim() || "";
   const telefonoCabecera = parsed.telefono?.trim() || "";
-  const ventanaDesdeCabecera = parsed.horarioDesde?.trim() || "";
-  const ventanaHastaCabecera = parsed.horarioHasta?.trim() || "";
+  const ventanaDesdeCabecera = horarioDesde || "";
+  const ventanaHastaCabecera = horarioHasta || "";
   const notasCabecera = parsed.observaciones?.trim() || "";
   const origenCorreo = lineas.map((l, index) => ({
     Fecha: fechaLabel || "",
@@ -868,7 +890,7 @@ export async function extraerPedido({
     : null;
 
   const pedido: PedidoExtraido = {
-    fechaEntrega: resolverFechaEntrega(parsed.fechaEntregaTexto, hoyISO),
+    fechaEntrega,
     centroConsumo: parsed.centroConsumo,
     observaciones: parsed.observaciones,
     ordenCompraHotel: ordenCompraHotelNormalizado,
@@ -879,8 +901,8 @@ export async function extraerPedido({
     anden: parsed.anden,
     contacto: parsed.contacto,
     telefono: parsed.telefono,
-    horarioDesde: parsed.horarioDesde,
-    horarioHasta: parsed.horarioHasta,
+    horarioDesde,
+    horarioHasta,
     tolerancia: parsed.tolerancia,
     sustituciones: parsed.sustituciones,
     lote: parsed.lote,
