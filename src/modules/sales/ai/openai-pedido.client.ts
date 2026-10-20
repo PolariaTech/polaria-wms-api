@@ -673,6 +673,7 @@ export async function extraerPedido({
     `  5) Si no hay coincidencia clara → null. El usuario aceptará una sugerencia, elegirá otro del catálogo o borrará la línea. Mejor null que un producto equivocado.`,
     `  6) "textoOriginal" siempre es cómo el cliente nombró el producto, aunque productoCatalogo sea null.`,
     `- "cantidad" es el número TOTAL si viene explícito y directo (ej. '40 kilos'); si el mensaje solo da cajas + presentación sin decir el total, deja "cantidad" en null.`,
+    `- Envases con contenido (ej. '1 galón de 5 litros', '2 cubetas de 10 L', '3 cajas de 20 kg'): en "cantidad" pon el NÚMERO DE ENVASES (1, 2, 3), en "unidad" UN (o CJ si dice cajas), y deja el contenido en textoOriginal. NO pongas los litros/kg totales en cantidad — eso lo convierte el backend según la unidad del catálogo. "precioUnitario" es el precio POR ENVASE del documento, no por litro/kg.`,
     `- "observaciones" es del pedido completo, no repitas ahí lo que ya va en una línea.`,
     `- "ordenCompraHotel": interpreta cuál es el identificador de la orden de compra del hotel/cliente. El nombre del campo en el documento VARÍA (PO NUMBER, PO #, Purchase Order, Orden de compra, OC, Nº OC, Oc Generada, Order No., Customer PO, etc.). Devuelve solo el código/número (ej. 4501056534 o CUNMC0046026). NO uses 'Usuario'/User ID. Si el PDF se llama '4501056534_…', ese número es la OC. null solo si no hay ningún identificador de OC/PO.`,
     `- "rfc" solo si el mensaje/documento lo declara explícitamente; nunca lo infieras del nombre del cliente.`,

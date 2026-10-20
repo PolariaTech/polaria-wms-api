@@ -109,6 +109,74 @@ export async function uploadOvAdjuntoBuffer(input: {
   };
 }
 
+const DOC_EXT =
+  /\.(pdf|xlsx?|xls|csv|docx?|pptx?|zip|rar|7z|txt|html?)$/i;
+
+function isLikelyRealEmlAttachment(input: {
+  contentDisposition?: string | null;
+  filename?: string | null;
+  contentType?: string | null;
+}): boolean {
+  const disposition = (input.contentDisposition ?? '').toLowerCase();
+  const filename = (input.filename ?? '').trim();
+  const mime = (input.contentType ?? '').toLowerCase();
+
+  if (disposition === 'attachment') {
+    if (!filename && mime.startsWith('image/')) return false;
+    return true;
+  }
+  if (filename && DOC_EXT.test(filename)) return true;
+  return false;
+}
+
+/**
+ * Extrae adjuntos reales de un .eml (PDF/Excel/…) y los sube a storage.
+ * Ignora logos inline de firma.
+ */
+export async function uploadAttachmentsFromEmlBuffer(input: {
+  buffer: Buffer;
+  codigoCuenta: string;
+}): Promise<OvAdjuntoMeta[]> {
+  const { simpleParser } = await import('mailparser');
+  let parsed: Awaited<ReturnType<typeof simpleParser>>;
+  try {
+    parsed = await simpleParser(input.buffer);
+  } catch {
+    return [];
+  }
+
+  const out: OvAdjuntoMeta[] = [];
+  for (const adjunto of parsed.attachments) {
+    if (
+      !isLikelyRealEmlAttachment({
+        contentDisposition: adjunto.contentDisposition,
+        filename: adjunto.filename,
+        contentType: adjunto.contentType,
+      })
+    ) {
+      continue;
+    }
+
+    const content = Buffer.isBuffer(adjunto.content)
+      ? adjunto.content
+      : Buffer.from(adjunto.content);
+    const nombre =
+      adjunto.filename?.trim() ||
+      `adjunto${adjunto.contentType?.includes('pdf') ? '.pdf' : ''}`;
+    const mime = adjunto.contentType || 'application/octet-stream';
+
+    const result = await uploadOvAdjuntoBuffer({
+      buffer: content,
+      originalname: nombre,
+      mimetype: mime,
+      size: content.length,
+      codigoCuenta: input.codigoCuenta,
+    });
+    if (result.ok) out.push(result.adjunto);
+  }
+  return out;
+}
+
 export async function uploadOvAdjuntosMulter(
   files: Express.Multer.File[],
   codigoCuenta: string,
@@ -124,6 +192,20 @@ export async function uploadOvAdjuntosMulter(
     });
     if (result.ok) {
       out.push(result.adjunto);
+    }
+
+    const name = (file.originalname || '').toLowerCase();
+    const mime = (file.mimetype || '').toLowerCase();
+    const isEml =
+      name.endsWith('.eml') ||
+      mime.includes('message/rfc822') ||
+      mime === 'application/eml';
+    if (isEml && file.buffer?.length) {
+      const inner = await uploadAttachmentsFromEmlBuffer({
+        buffer: file.buffer,
+        codigoCuenta,
+      });
+      out.push(...inner);
     }
   }
   return out;
