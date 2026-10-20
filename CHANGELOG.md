@@ -4,6 +4,7 @@ Versión de producto alineada con Polaria WMS. Swagger: `2.9.16`.
 
 ## Sin publicar
 
+- Ingest pedido / comprador: solo match **exacto** por nombre o código (sin fuzzy por token `LIKE`) para evitar falsas identificaciones de cliente.
 - Infraestructura (POL-332, migración a AWS): `Dockerfile` multi-stage para `linux/arm64` (Node 22 bookworm-slim, usuario `node`, health check con `fetch`), `.dockerignore` que deja fuera `.env*`, y job `docker-image` en el CI que construye la imagen en un runner ARM y la prueba con `scripts/docker-smoke.sh`. No cambia el comportamiento de la API.
 
 ## 2.9.16 — 2026-10-07

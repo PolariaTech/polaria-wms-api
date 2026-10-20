@@ -401,7 +401,11 @@ export class PedidoIaService {
     return id;
   }
 
-  /** Comprador por nombre (IA/correo); null si no hay match claro. */
+  /**
+   * Comprador por nombre/código (IA/correo).
+   * Solo coincidencia exacta (case-insensitive); sin tokens LIKE
+   * para evitar falsos positivos críticos de cliente.
+   */
   private async resolveIdCompradorIngest(
     schema: string,
     codigoCuenta: string,
@@ -417,42 +421,15 @@ export class PedidoIaService {
        FROM ${schema}.comprador
        WHERE codigo_cuenta = $1
          AND esta_activo = true
-         AND lower(trim(nombre)) = lower(trim($2))
+         AND (
+           lower(trim(nombre)) = lower(trim($2))
+           OR lower(trim(coalesce(codigo, ''))) = lower(trim($2))
+         )
        LIMIT 1`,
       codigoCuenta,
       nombre,
     );
-    if (exact[0]?.idComprador) return exact[0].idComprador;
-
-    const tokens = nombre
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/\p{M}/gu, '')
-      .split(/[^a-z0-9]+/)
-      .filter((t) => t.length >= 6)
-      .sort((a, b) => b.length - a.length);
-
-    for (const tok of tokens.slice(0, 4)) {
-      const fuzzy = await this.prisma.$queryRawUnsafe<
-        Array<{ idComprador: string }>
-      >(
-        `SELECT id_comprador AS "idComprador"
-         FROM ${schema}.comprador
-         WHERE codigo_cuenta = $1
-           AND esta_activo = true
-           AND (
-             lower(nombre) LIKE '%' || $2 || '%'
-             OR lower(coalesce(codigo, '')) LIKE '%' || $2 || '%'
-           )
-         ORDER BY length(nombre) ASC
-         LIMIT 1`,
-        codigoCuenta,
-        tok,
-      );
-      if (fuzzy[0]?.idComprador) return fuzzy[0].idComprador;
-    }
-
-    return null;
+    return exact[0]?.idComprador ?? null;
   }
 
   /** Bodega explícita, default de cuenta, o primera activa del tenant. */
