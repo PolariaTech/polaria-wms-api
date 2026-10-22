@@ -176,6 +176,21 @@ export class OrdenVentaService {
           `El producto ${linea.producto.descripcion} no está activo`,
         );
       }
+
+      // precio_unitario existe en BD y lo carga el repo SQL; el modelo Prisma
+      // de OrdenVentaLinea aún no lo declara en el client tipado.
+      const precio = Number(
+        (linea as { precioUnitario?: unknown }).precioUnitario,
+      );
+      if (!Number.isFinite(precio) || precio < 0) {
+        const nombre =
+          linea.producto.descripcion?.trim() ||
+          linea.producto.sku?.trim() ||
+          'producto';
+        throw new BadRequestException(
+          `Ingresa un precio válido (0 o mayor) para ${nombre} antes de confirmar`,
+        );
+      }
     }
   }
 

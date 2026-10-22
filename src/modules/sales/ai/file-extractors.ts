@@ -4,6 +4,10 @@ import { simpleParser } from "mailparser";
 import { extractText, getDocumentProxy } from "unpdf";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
+import {
+  formatMailAddress,
+  prependCorreoChromeToBody,
+} from "./utils/correo-chrome";
 
 const TEXT_EXTENSIONS = new Set([".csv", ".txt"]);
 const IMAGE_MIME_PREFIX = "image/";
@@ -193,15 +197,7 @@ async function extractFromEml(
   buffer: Buffer,
   nombreOriginal: string,
 ): Promise<ArchivoExtraido[]> {
-  let parsed: {
-    text?: string | null;
-    html?: string | false | null;
-    attachments: Array<{
-      contentDisposition?: string | null;
-      filename?: string | null;
-      content: Buffer;
-    }>;
-  };
+  let parsed: Awaited<ReturnType<typeof simpleParser>>;
   try {
     parsed = await simpleParser(buffer);
   } catch (err) {
@@ -223,7 +219,14 @@ async function extractFromEml(
 
   const resultado: ArchivoExtraido[] = [];
 
-  const cuerpo = extractCuerpoCorreo(parsed);
+  const cuerpo = prependCorreoChromeToBody(
+    {
+      from: formatMailAddress(parsed.from),
+      to: formatMailAddress(parsed.to),
+      subject: formatMailAddress(parsed.subject),
+    },
+    extractCuerpoCorreo(parsed),
+  );
   if (cuerpo.trim()) {
     resultado.push({
       nombre: `${nombreOriginal} — cuerpo`,

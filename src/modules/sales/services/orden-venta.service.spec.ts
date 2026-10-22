@@ -61,6 +61,7 @@ describe('OrdenVentaService.emitir', () => {
         idLineaOrdenVenta: 'linea-1',
         idProducto: 'prod-1',
         cantidadPedida: new Prisma.Decimal(10),
+        precioUnitario: new Prisma.Decimal(1000),
         producto: {
           idProducto: 'prod-1',
           sku: 'SKU-1',
@@ -166,6 +167,47 @@ describe('OrdenVentaService.emitir', () => {
     );
     await expect(service.emitir(idOrden, ctx)).rejects.toThrow(
       /cliente del catálogo/i,
+    );
+    expect(repository.emitir).not.toHaveBeenCalled();
+  });
+
+  it('permite emitir OV con precio 0', async () => {
+    repository.findById.mockResolvedValue({
+      ...ordenBorrador,
+      lineas: [
+        {
+          ...ordenBorrador.lineas[0],
+          precioUnitario: new Prisma.Decimal(0),
+        },
+      ],
+    } as never);
+    repository.emitir.mockResolvedValue({
+      orden: { ...ordenBorrador, estado: EstadoOrdenVenta.confirmada },
+      ordenesTrabajo: [],
+    } as never);
+
+    const result = await service.emitir(idOrden, ctx);
+
+    expect(result.orden.estado).toBe(EstadoOrdenVenta.confirmada);
+    expect(repository.emitir).toHaveBeenCalled();
+  });
+
+  it('rechaza emitir OV con precio negativo', async () => {
+    repository.findById.mockResolvedValue({
+      ...ordenBorrador,
+      lineas: [
+        {
+          ...ordenBorrador.lineas[0],
+          precioUnitario: new Prisma.Decimal(-1),
+        },
+      ],
+    } as never);
+
+    await expect(service.emitir(idOrden, ctx)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(service.emitir(idOrden, ctx)).rejects.toThrow(
+      /precio válido/i,
     );
     expect(repository.emitir).not.toHaveBeenCalled();
   });
