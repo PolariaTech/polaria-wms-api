@@ -177,7 +177,11 @@ export class OrdenVentaService {
         );
       }
 
-      const precio = Number(linea.precioUnitario);
+      // precio_unitario existe en BD y lo carga el repo SQL; el modelo Prisma
+      // de OrdenVentaLinea aún no lo declara en el client tipado.
+      const precio = Number(
+        (linea as { precioUnitario?: unknown }).precioUnitario,
+      );
       if (!Number.isFinite(precio) || precio < 0) {
         const nombre =
           linea.producto.descripcion?.trim() ||
