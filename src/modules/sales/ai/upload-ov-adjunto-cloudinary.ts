@@ -9,9 +9,33 @@ function sanitizeCuentaFolder(codigoCuenta: string): string {
   return raw.slice(0, 64) || 'sin-cuenta';
 }
 
+/**
+ * Clave segura para Supabase Storage (igual que web).
+ * Acentos/espacios (p. ej. «Café») provocaban "Invalid key".
+ */
 function sanitizeFileName(name: string): string {
-  const base = name.trim().replace(/[/\\?%*:|"<>]/g, '_') || 'adjunto';
-  return base.slice(0, 120);
+  const trimmed = name.trim() || 'adjunto';
+  const lastDot = trimmed.lastIndexOf('.');
+  const stem = lastDot > 0 ? trimmed.slice(0, lastDot) : trimmed;
+  const ext = lastDot > 0 ? trimmed.slice(lastDot + 1) : '';
+
+  const asciiStem = stem
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[._-]+|[._-]+$/g, '')
+    .slice(0, 100);
+
+  const asciiExt = ext
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^a-zA-Z0-9]+/g, '')
+    .slice(0, 16)
+    .toLowerCase();
+
+  const safeStem = asciiStem || 'adjunto';
+  return asciiExt ? `${safeStem}.${asciiExt}` : safeStem;
 }
 
 function getAdmin() {

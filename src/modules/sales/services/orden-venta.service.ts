@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EstadoOrdenVenta } from '../../../generated/prisma/client';
+import { PrismaService } from '../../../core/database/prisma.service';
 import {
   applyTenantFilter,
   assertOperationalTenantScope,
@@ -14,10 +15,18 @@ import type { TenantContext } from '../../../core/tenant/tenant-context.interfac
 import type { ListOrdenesVentaQueryDto } from '../dto/list-ordenes-venta-query.dto';
 import { OrdenVentaRepository } from '../infrastructure/orden-venta.repository';
 import type { OrdenVentaEmitirResponse } from '../interfaces/orden-venta.interfaces';
+import {
+  groupOrigenCorreoToOrdenesTrabajo,
+  parseOrigenCorreoJson,
+} from '../ai/utils/origen-correo-ordenes-trabajo';
+import { recordOrdenVentaAudit } from '../utils/record-orden-venta-audit';
 
 @Injectable()
 export class OrdenVentaService {
-  constructor(private readonly repository: OrdenVentaRepository) {}
+  constructor(
+    private readonly repository: OrdenVentaRepository,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async list(
     query: ListOrdenesVentaQueryDto,
@@ -74,7 +83,44 @@ export class OrdenVentaService {
     // Temporal: se permite emitir aunque no haya stock suficiente (pedidos sin
     // inventario cargado). allocateFifo reserva lo disponible y no bloquea el resto.
     try {
-      return await this.repository.emitir(orden, ctx.idUsuario, ctx.schemaName);
+      const emitted = await this.repository.emitir(
+        orden,
+        ctx.idUsuario,
+        ctx.schemaName,
+      );
+      const schema = ctx.schemaName?.trim() || 'public';
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema)) {
+        return emitted;
+      }
+      let otIds: string[] = [];
+      try {
+        const rows = await this.prisma.$queryRawUnsafe<
+          Array<{ origenCorreo: unknown }>
+        >(
+          `SELECT origen_correo AS "origenCorreo"
+           FROM ${schema}.orden_venta
+           WHERE id_orden_venta = $1::uuid
+           LIMIT 1`,
+          orden.idOrdenVenta,
+        );
+        otIds = groupOrigenCorreoToOrdenesTrabajo(
+          parseOrigenCorreoJson(rows[0]?.origenCorreo),
+        ).map((ot) => ot.id);
+      } catch {
+        otIds = [];
+      }
+      await recordOrdenVentaAudit(this.prisma, {
+        schemaName: schema,
+        codigoCuenta: orden.codigoCuenta,
+        idOrdenVenta: orden.idOrdenVenta,
+        accion: 'cambio_estado',
+        mensaje: 'Pedido enviado a bodega (emitido).',
+        idUsuario: ctx.idUsuario,
+        idBodega: orden.idBodega,
+        idOrdenesTrabajo: otIds,
+        payloadExtra: { estadoNuevo: 'confirmada', via: 'api_emitir' },
+      });
+      return emitted;
     } catch (error) {
       this.mapEmitirError(error);
     }
@@ -106,7 +152,13 @@ export class OrdenVentaService {
       throw new BadRequestException('El cliente no está activo');
     }
 
-    if (orden.comprador && !orden.comprador.estaActivo) {
+    if (!orden.comprador) {
+      throw new BadRequestException(
+        'Selecciona un cliente del catálogo antes de emitir la venta',
+      );
+    }
+
+    if (!orden.comprador.estaActivo) {
       throw new BadRequestException('El comprador no está activo');
     }
 

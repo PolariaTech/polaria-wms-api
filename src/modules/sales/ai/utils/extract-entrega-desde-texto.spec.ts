@@ -1,4 +1,5 @@
 import {
+  extractDireccionShipToDesdeTexto,
   extractEntregaDesdeTexto,
   extraerHorarioDesdeTexto,
   normalizarHoraAHhMm,
@@ -68,5 +69,32 @@ describe('extractEntregaDesdeTexto', () => {
     expect(got.fechaIso).toBeNull();
     expect(got.horarioDesde).toBeNull();
     expect(got.horarioHasta).toBeNull();
+  });
+});
+
+describe('extractDireccionShipToDesdeTexto', () => {
+  it('prefiere Ship To sobre Bill To', () => {
+    const texto = [
+      'Bill To:',
+      'CESAR HILTON',
+      'Av. Reforma 222, Ciudad de México, CDMX',
+      '',
+      'Ship To:',
+      'HOSPITALITY SERVICES MAYA, S.A. de C.V.',
+      'Blvd. Kukulcan km 17, Cancún, Q. Roo',
+      '',
+      'Item Description',
+    ].join('\n');
+    expect(extractDireccionShipToDesdeTexto(texto)).toBe(
+      'HOSPITALITY SERVICES MAYA, S.A. de C.V., Blvd. Kukulcan km 17, Cancún, Q. Roo',
+    );
+  });
+
+  it('lee Deliver To en una sola línea', () => {
+    expect(
+      extractDireccionShipToDesdeTexto(
+        'Deliver To: Parque Xcaret, Playa del Carmen, QR 77710\nQty: 10',
+      ),
+    ).toBe('Parque Xcaret, Playa del Carmen, QR 77710');
   });
 });
