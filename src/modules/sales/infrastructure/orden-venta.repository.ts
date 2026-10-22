@@ -79,6 +79,7 @@ type OvLineaRow = {
   idProducto: string;
   cantidadPedida: Prisma.Decimal | string | number;
   cantidadDespachada: Prisma.Decimal | string | number;
+  precioUnitario: Prisma.Decimal | string | number | null;
   sku: string;
   descripcion: string;
   estaActivo: boolean;
@@ -610,6 +611,7 @@ export class OrdenVentaRepository {
               l.id_producto AS "idProducto",
               l.cantidad_pedida AS "cantidadPedida",
               l.cantidad_despachada AS "cantidadDespachada",
+              l.precio_unitario AS "precioUnitario",
               p.sku,
               p.descripcion,
               p.esta_activo AS "estaActivo",
@@ -683,6 +685,7 @@ export class OrdenVentaRepository {
         idProducto: linea.idProducto,
         cantidadPedida: this.toDecimal(linea.cantidadPedida),
         cantidadDespachada: this.toDecimal(linea.cantidadDespachada),
+        precioUnitario: this.toDecimal(linea.precioUnitario ?? 0),
         cajas: null,
         presentacion: null,
         producto: {

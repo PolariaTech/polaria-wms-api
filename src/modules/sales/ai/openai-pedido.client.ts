@@ -16,6 +16,10 @@ import {
   extractEntregaDesdeTexto,
 } from "./utils/extract-entrega-desde-texto";
 import { resolveCentroConsumoSinConfundirConCliente } from "./utils/centro-consumo-vs-cliente";
+import {
+  enrichAlmacenConCodigoDesdeTexto,
+  enrichLineasAlmacenConCodigoDesdeTexto,
+} from "./utils/enrich-almacen-codigo";
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 
 export { calcularCantidadDesdeCajas, pesoPorCajaKg };
@@ -234,7 +238,7 @@ const RESPONSE_SCHEMA = {
       centroConsumo: {
         type: ["string", "null"],
         description:
-          "Área INTERNA de consumo del hotel (cocina, bar, banquete, almacén de fila, centro de costo operativo). Ej. 'Cocina de banquetes', 'BAWH Bar Whisky', 'COPM Coc Plaza Mx'. NUNCA pongas aquí el hotel, la propiedad, la denominación comercial, la razón social, el Bill To ni el nombre de cuenta — eso va SOLO en nombreCliente (y el RFC en rfc). Si el documento solo nombra el resort/hotel sin cocina/área, deja null. Si hay incertidumbre ('probablemente sea X') → null. null también si no se menciona un área interna.",
+          "Área INTERNA de consumo del hotel (cocina, bar, banquete, almacén de fila, centro de costo). Copia CÓDIGO + NOMBRE completos tal cual (ej. 'ABAN Banquetes Alim', 'BAWH Bar Whisky', 'COPM Coc Plaza Mx', 'ACOE Comedor Empleados'). NUNCA acortes ni quites el prefijo de 3–6 letras. NUNCA pongas hotel/denominación/Bill To (eso es nombreCliente). Si solo hay resort sin cocina/área → null. Incertidumbre → null.",
       },
       observaciones: {
         type: ["string", "null"],
@@ -373,7 +377,7 @@ const RESPONSE_SCHEMA = {
             almacen: {
               type: ["string", "null"],
               description:
-                "Almacén / cocina / centro de consumo de ESTE renglón, tomado de la columna Almacén / Centro de costo / Centro de consumo de la tabla (ej. 'BAWH Bar Whisky', 'COPM Coc Plaza Mx', 'Ayb Xc Restaurant Oaxaca', 'COCINA PRINCIPAL'). NO uses el almacén genérico del encabezado (Almacén General, Facturar A) si la fila trae el suyo. NO pongas aquí el Usuario ni la Oc Generada. null solo si la fila no indica destino.",
+                "Almacén / cocina / centro de consumo de ESTE renglón (columna Almacén / Centro de costo / Centro de consumo). Copia el texto COMPLETO: código + nombre (ej. 'ABAN Banquetes Ali', 'ACOE ComedorEmplea', 'BAWH Bar Whisky', 'COPM Coc Plaza Mx', 'Ayb Xc Restaurant Oaxaca'). NUNCA omitas ni acortes el código de 3–6 letras aunque la celda del PDF se vea cortada. NO uses el almacén genérico del encabezado si la fila trae el suyo. NO pongas Usuario ni Oc Generada. null solo si la fila no indica destino.",
             },
             numeroAlmacen: {
               type: ["string", "null"],
@@ -667,7 +671,8 @@ export async function extraerPedido({
     `- "nombreCliente" vs "centroConsumo" (crítico — no mezclar): nombreCliente = denominación comercial / razón social / hotel / propiedad / Bill To. centroConsumo = SOLO área interna (cocina, bar, banquete, almacén de fila, centro de costo). NUNCA copies el nombre del resort/hotel en centroConsumo. Si solo aparece el hotel sin cocina/área → centroConsumo null. El RFC va en "rfc", nunca en centro ni como nombre.`,
     `- "nombreCliente": denominación / hotel / comprador si aparece (Customer, Bill To, Hotel, Property, Cliente, etc.). No uses el PO ni el RFC como nombre. null solo si no hay ningún nombre.`,
     `- Una línea por cada fila de producto del documento. Si hay VARIOS Numero pedido / PO, o el MISMO PO con DISTINTOS Almacén / centro de consumo (ej. BAWH Bar Whisky vs COPM Coc Plaza Mx, o distintos 'Centro de costo' Xcaret), emite una línea por cada producto×destino con numeroPedido y almacen de ESA fila. NO mezcles destinos ni pedidos en una sola línea. NO omitas filas de páginas intermedias.`,
-    `- "numeroPedido" + "almacen" separan órdenes de trabajo: mismo PO + distinto almacén = otra hija; distinto PO = otra hija aunque el almacén coincida. Copia el texto completo del almacén / centro de costo de la columna (código + nombre).`,
+    `- "numeroPedido" + "almacen" separan órdenes de trabajo: mismo PO + distinto almacén = otra hija; distinto PO = otra hija aunque el almacén coincida.`,
+    `- "almacen" / "centroConsumo" (crítico — no acortar): copia SIEMPRE código + nombre completos de la columna (ej. 'ABAN Banquetes Ali', no solo 'Banquetes Ali'; 'ACOE ComedorEmplea', no solo 'Comedor…'). El código de 3–6 letras identifica la cocina del cliente; perderlo rompe el surtido. Aunque el PDF trunque visualmente la celda, conserva todo el texto legible del código y del nombre.`,
     `- NO confundas columnas: en tablas tipo Xcaret/Grupo Xcaret, 'Oc Generada' (o 'Pedido'/'OC') es el numeroPedido; 'Centro de costo' es el almacen; 'Usuario' es SOLO numeroAlmacen (o ignóralo) — NUNCA lo pongas como numeroPedido ni ordenCompraHotel. Si todas las filas comparten la misma Oc Generada, todas las líneas llevan ese mismo numeroPedido aunque el Usuario cambie.`,
     `- "precioUnitario": si el documento trae columna Precio / P.U. / Importe unitario por fila, cópialo en cada línea (número). No uses el total/importe de la fila; solo el precio unitario.`,
     `- Matching de "productoCatalogo" (crítico):`,
@@ -796,14 +801,14 @@ export async function extraerPedido({
     sourceText: sourceForOc,
     fileNames,
   });
-  const lineas = normalizedPedidos.lineas;
+  const sourceForEntrega = sourceForOc;
+  const lineas = enrichLineasAlmacenConCodigoDesdeTexto(
+    normalizedPedidos.lineas,
+    sourceForEntrega,
+  );
   const ordenCompraHotelNormalizado = normalizedPedidos.ordenCompraHotel;
 
   // Fallback determinista: si Mateo dejó fecha/hora null, leerlas del cuerpo/PDF.
-  const sourceForEntrega = [
-    texto,
-    ...archivosTexto.map((f) => `--- ${f.nombre} ---\n${f.contenido}`),
-  ].join("\n");
   const entregaBody = extractEntregaDesdeTexto(sourceForEntrega, hoyISO);
   const fechaDesdeIa = resolverFechaEntrega(parsed.fechaEntregaTexto, hoyISO);
   const fechaEntrega =
@@ -900,10 +905,15 @@ export async function extraerPedido({
     : null;
 
   const nombreCliente = parsed.nombreCliente?.trim() || null;
+  const centroDesdeLineas =
+    lineas.find((l) => l.almacen?.trim())?.almacen?.trim() || null;
   const pedido: PedidoExtraido = {
     fechaEntrega,
     centroConsumo: resolveCentroConsumoSinConfundirConCliente(
-      parsed.centroConsumo,
+      enrichAlmacenConCodigoDesdeTexto(
+        parsed.centroConsumo || centroDesdeLineas,
+        sourceForEntrega,
+      ),
       nombreCliente,
     ),
     observaciones: parsed.observaciones,

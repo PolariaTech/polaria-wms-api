@@ -176,6 +176,17 @@ export class OrdenVentaService {
           `El producto ${linea.producto.descripcion} no está activo`,
         );
       }
+
+      const precio = Number(linea.precioUnitario);
+      if (!Number.isFinite(precio) || precio < 0) {
+        const nombre =
+          linea.producto.descripcion?.trim() ||
+          linea.producto.sku?.trim() ||
+          'producto';
+        throw new BadRequestException(
+          `Ingresa un precio válido (0 o mayor) para ${nombre} antes de confirmar`,
+        );
+      }
     }
   }
 
