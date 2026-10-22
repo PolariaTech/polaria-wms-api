@@ -20,7 +20,11 @@ import {
 import { extraerPedido, type PedidoExtraido } from '../ai/openai-pedido.client';
 import { buildTextoOrigenPedido } from '../ai/utils/texto-origen-pedido';
 import { stampOrigenCorreoMeta } from '../ai/utils/stamp-origen-correo-meta';
-import type { OrigenCorreoRenglon } from '../ai/utils/origen-correo-ordenes-trabajo';
+import {
+  groupOrigenCorreoToOrdenesTrabajo,
+  type OrigenCorreoRenglon,
+} from '../ai/utils/origen-correo-ordenes-trabajo';
+import { recordOrdenVentaAudit } from '../utils/record-orden-venta-audit';
 
 const PRESENTACIONES = [
   '',
@@ -368,6 +372,28 @@ export class PedidoIaService {
         renglones: origenCorreo.length,
       }),
     );
+
+    const otIds = groupOrigenCorreoToOrdenesTrabajo(origenCorreo).map(
+      (ot) => ot.id,
+    );
+    await recordOrdenVentaAudit(this.prisma, {
+      schemaName: schema,
+      codigoCuenta,
+      idOrdenVenta: created.idOrdenVenta,
+      accion: 'creacion',
+      mensaje:
+        otIds.length > 1
+          ? `Esta orden de trabajo fue creada por ingestión Mateo / bot (${otIds.length} órdenes de trabajo).`
+          : 'Esta orden de trabajo fue creada por ingestión Mateo / bot.',
+      idBodega,
+      idOrdenesTrabajo: otIds,
+      autorNombre: 'Mateo / bot',
+      payloadExtra: {
+        tipo: 'ingestar_pedido',
+        codigo: created.codigo,
+        ordenesTrabajo: otIds.length,
+      },
+    });
 
     return {
       idOrdenVenta: created.idOrdenVenta,

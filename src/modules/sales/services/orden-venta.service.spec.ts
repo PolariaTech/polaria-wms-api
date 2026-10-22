@@ -10,6 +10,7 @@ import {
   RolNivel,
   WmsRol,
 } from '../../../generated/prisma/client';
+import { PrismaService } from '../../../core/database/prisma.service';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import { OrdenVentaRepository } from '../infrastructure/orden-venta.repository';
 import { OrdenVentaService } from './orden-venta.service';
@@ -17,6 +18,7 @@ import { OrdenVentaService } from './orden-venta.service';
 describe('OrdenVentaService.emitir', () => {
   let service: OrdenVentaService;
   let repository: jest.Mocked<OrdenVentaRepository>;
+  let prisma: { $queryRawUnsafe: jest.Mock; $executeRawUnsafe: jest.Mock };
 
   const ctx: TenantContext = {
     idUsuario: 'user-1',
@@ -78,11 +80,16 @@ describe('OrdenVentaService.emitir', () => {
       emitir: jest.fn(),
       toEmitirResponse: jest.fn(),
     } as unknown as jest.Mocked<OrdenVentaRepository>;
+    prisma = {
+      $queryRawUnsafe: jest.fn().mockResolvedValue([{ origenCorreo: [] }]),
+      $executeRawUnsafe: jest.fn().mockResolvedValue(1),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OrdenVentaService,
         { provide: OrdenVentaRepository, useValue: repository },
+        { provide: PrismaService, useValue: prisma },
       ],
     }).compile();
 
@@ -146,6 +153,21 @@ describe('OrdenVentaService.emitir', () => {
     await expect(service.emitir(idOrden, ctx)).rejects.toThrow(
       'La venta no tiene productos',
     );
+  });
+
+  it('rechaza emitir OV sin comprador de catálogo', async () => {
+    repository.findById.mockResolvedValue({
+      ...ordenBorrador,
+      comprador: null,
+    } as never);
+
+    await expect(service.emitir(idOrden, ctx)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(service.emitir(idOrden, ctx)).rejects.toThrow(
+      /cliente del catálogo/i,
+    );
+    expect(repository.emitir).not.toHaveBeenCalled();
   });
 
   it('emite OV aunque no haya stock suficiente', async () => {
@@ -226,6 +248,13 @@ describe('OrdenVentaService.list', () => {
       providers: [
         OrdenVentaService,
         { provide: OrdenVentaRepository, useValue: repository },
+        {
+          provide: PrismaService,
+          useValue: {
+            $queryRawUnsafe: jest.fn(),
+            $executeRawUnsafe: jest.fn(),
+          },
+        },
       ],
     }).compile();
 

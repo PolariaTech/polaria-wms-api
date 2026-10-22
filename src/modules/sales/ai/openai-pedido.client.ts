@@ -11,7 +11,11 @@ import {
   calcularCantidadDesdeCajas,
   pesoPorCajaKg,
 } from "./utils/empaque-lineas";
-import { extractEntregaDesdeTexto } from "./utils/extract-entrega-desde-texto";
+import {
+  extractDireccionShipToDesdeTexto,
+  extractEntregaDesdeTexto,
+} from "./utils/extract-entrega-desde-texto";
+import { resolveCentroConsumoSinConfundirConCliente } from "./utils/centro-consumo-vs-cliente";
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 
 export { calcularCantidadDesdeCajas, pesoPorCajaKg };
@@ -230,7 +234,7 @@ const RESPONSE_SCHEMA = {
       centroConsumo: {
         type: ["string", "null"],
         description:
-          "Centro de consumo o cocina mencionado en el mensaje (ej. 'Cocina de banquetes'). Si el mensaje expresa incertidumbre sobre cuál es (ej. 'probablemente sea X, pero no está definido', 'no sé cuál todavía') debe quedar null SIEMPRE, incluso si menciona un valor tentativo — la incertidumbre explícita anula cualquier valor mencionado de pasada. null también si simplemente no se menciona.",
+          "Área INTERNA de consumo del hotel (cocina, bar, banquete, almacén de fila, centro de costo operativo). Ej. 'Cocina de banquetes', 'BAWH Bar Whisky', 'COPM Coc Plaza Mx'. NUNCA pongas aquí el hotel, la propiedad, la denominación comercial, la razón social, el Bill To ni el nombre de cuenta — eso va SOLO en nombreCliente (y el RFC en rfc). Si el documento solo nombra el resort/hotel sin cocina/área, deja null. Si hay incertidumbre ('probablemente sea X') → null. null también si no se menciona un área interna.",
       },
       observaciones: {
         type: ["string", "null"],
@@ -245,7 +249,7 @@ const RESPONSE_SCHEMA = {
       nombreCliente: {
         type: ["string", "null"],
         description:
-          "Nombre del comprador / hotel / cliente / razón social / cuenta que hace el pedido, tal como aparece en el mensaje o documento (ej. 'Hotel Ava Resorts Cancun', 'Aureliano Buendía', 'Marriott Cancun'). Busca etiquetas como Cliente, Customer, Bill To, Sold To, Hotel, Property, Account Name, Compañía. Devuelve el nombre legible (no el PO ni el RFC). null solo si de verdad no aparece ningún nombre de cliente/hotel.",
+          "Denominación comercial / razón social / hotel / propiedad / cuenta que hace el pedido (ej. 'Dreams Jade Resort & Spa', 'Promociones Marina Morelos', 'Marriott Cancun'). Etiquetas: Cliente, Customer, Bill To, Sold To, Hotel, Property, Account Name, Compañía, Denominación. NO es el centro de consumo (cocina/bar). No uses el PO ni el RFC como nombre. null solo si no aparece ningún nombre de cliente/hotel.",
       },
       rfc: {
         type: ["string", "null"],
@@ -660,7 +664,8 @@ export async function extraerPedido({
     `- Tu trabajo es solo interpretar lenguaje: identificar qué dice el texto y a qué se refiere. NUNCA hagas cuentas (sumar, multiplicar, calcular una fecha) — eso lo hace el backend con código después de que tú extraigas los datos en crudo.`,
     `- Completa TODOS los campos del schema cuando el mensaje/archivos los mencionen de forma explícita o inequívoca (fecha, centro, orden de compra/PO, nombre del cliente/hotel, dirección, andén, contacto, teléfono, ventanas/horarios, políticas, observaciones y cada línea). No dejes null un dato que sí aparece.`,
     `- Solo extrae lo que el mensaje/archivos realmente dicen. No inventes cantidades, presentaciones, fechas, direcciones ni contactos que no estén respaldados.`,
-    `- "nombreCliente": nombre del hotel/comprador/cliente/razón social si aparece (Customer, Bill To, Hotel, Property, Cliente, etc.). No uses el PO ni el RFC como nombre. null solo si no hay ningún nombre.`,
+    `- "nombreCliente" vs "centroConsumo" (crítico — no mezclar): nombreCliente = denominación comercial / razón social / hotel / propiedad / Bill To. centroConsumo = SOLO área interna (cocina, bar, banquete, almacén de fila, centro de costo). NUNCA copies el nombre del resort/hotel en centroConsumo. Si solo aparece el hotel sin cocina/área → centroConsumo null. El RFC va en "rfc", nunca en centro ni como nombre.`,
+    `- "nombreCliente": denominación / hotel / comprador si aparece (Customer, Bill To, Hotel, Property, Cliente, etc.). No uses el PO ni el RFC como nombre. null solo si no hay ningún nombre.`,
     `- Una línea por cada fila de producto del documento. Si hay VARIOS Numero pedido / PO, o el MISMO PO con DISTINTOS Almacén / centro de consumo (ej. BAWH Bar Whisky vs COPM Coc Plaza Mx, o distintos 'Centro de costo' Xcaret), emite una línea por cada producto×destino con numeroPedido y almacen de ESA fila. NO mezcles destinos ni pedidos en una sola línea. NO omitas filas de páginas intermedias.`,
     `- "numeroPedido" + "almacen" separan órdenes de trabajo: mismo PO + distinto almacén = otra hija; distinto PO = otra hija aunque el almacén coincida. Copia el texto completo del almacén / centro de costo de la columna (código + nombre).`,
     `- NO confundas columnas: en tablas tipo Xcaret/Grupo Xcaret, 'Oc Generada' (o 'Pedido'/'OC') es el numeroPedido; 'Centro de costo' es el almacen; 'Usuario' es SOLO numeroAlmacen (o ignóralo) — NUNCA lo pongas como numeroPedido ni ordenCompraHotel. Si todas las filas comparten la misma Oc Generada, todas las líneas llevan ese mismo numeroPedido aunque el Usuario cambie.`,
@@ -681,7 +686,7 @@ export async function extraerPedido({
     `- "horarioDesde"/"horarioHasta" (crítico): si el cuerpo dice "Hora de entrega 6:00 am", "8:00 AM – 2:00 PM", "de 8 a 14", "ventana de recepción…", DEBES llenarlos en 24h HH:MM. No los dejes null si aparecen. Una sola hora → solo horarioDesde.`,
     `- "regimen", "tolerancia", "sustituciones", "lote" y "temperatura": llénalos solo si el documento los declara. Si no aparecen, null.`,
     `- "unidad" siempre debe ser exactamente KGM, CJ o UN (o null) — nunca un texto libre como "kilos" o "kg".`,
-    `- "centroConsumo" debe quedar null si el mensaje expresa incertidumbre sobre cuál es, incluso si menciona un valor tentativo de pasada.`,
+    `- "centroConsumo" debe quedar null si el mensaje expresa incertidumbre sobre cuál es, incluso si menciona un valor tentativo de pasada. También null si lo único que hay es el nombre del hotel/denominación (eso es nombreCliente).`,
     `- "fechaEntregaTexto" (crítico): copia la frase EXACTA de entrega del cuerpo/PDF/tabla (ej. "21/10/2026", "27 de agosto de 2026", "mañana", "el jueves"). Extráela aunque sea la única pista de fecha. NUNCA asumas "mañana" ni inventes una fecha si el documento trae otra concreta. null SOLO si de verdad no hay ninguna pista de fecha de entrega.`,
     `- Si el texto y los archivos, en conjunto, NO describen un pedido de fruta/verdura (ej. son spam, un documento administrativo sin relación, contenido vacío o ilegible), deja "lineas" vacío y usa "advertencia" para explicarlo — no inventes líneas solo para llenar algo.`,
   ].join("\n");
@@ -819,7 +824,11 @@ export async function extraerPedido({
     (typeof parsed.nombreCliente === "string"
       ? parsed.nombreCliente.trim()
       : "") || "";
-  const direccionCabecera = parsed.direccion?.trim() || "";
+  // Ship To del documento manda sobre Bill To / lo que Mateo haya puesto.
+  const direccionCabecera =
+    extractDireccionShipToDesdeTexto(sourceForEntrega) ||
+    parsed.direccion?.trim() ||
+    "";
   const andenCabecera = parsed.anden?.trim() || "";
   const contactoCabecera = parsed.contacto?.trim() || "";
   const telefonoCabecera = parsed.telefono?.trim() || "";
@@ -890,15 +899,19 @@ export async function extraerPedido({
       })()
     : null;
 
+  const nombreCliente = parsed.nombreCliente?.trim() || null;
   const pedido: PedidoExtraido = {
     fechaEntrega,
-    centroConsumo: parsed.centroConsumo,
+    centroConsumo: resolveCentroConsumoSinConfundirConCliente(
+      parsed.centroConsumo,
+      nombreCliente,
+    ),
     observaciones: parsed.observaciones,
     ordenCompraHotel: ordenCompraHotelNormalizado,
-    nombreCliente: parsed.nombreCliente?.trim() || null,
+    nombreCliente,
     rfc: parsed.rfc,
     regimen: parsed.regimen,
-    direccion: parsed.direccion,
+    direccion: direccionCabecera || null,
     anden: parsed.anden,
     contacto: parsed.contacto,
     telefono: parsed.telefono,
