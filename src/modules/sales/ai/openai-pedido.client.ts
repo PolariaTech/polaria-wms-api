@@ -21,6 +21,7 @@ import {
   enrichLineasAlmacenConCodigoDesdeTexto,
 } from "./utils/enrich-almacen-codigo";
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
+import { sanitizeTelefonoContacto } from "./utils/sanitize-telefono-contacto";
 
 export { calcularCantidadDesdeCajas, pesoPorCajaKg };
 
@@ -836,7 +837,7 @@ export async function extraerPedido({
     "";
   const andenCabecera = parsed.anden?.trim() || "";
   const contactoCabecera = parsed.contacto?.trim() || "";
-  const telefonoCabecera = parsed.telefono?.trim() || "";
+  const telefonoCabecera = sanitizeTelefonoContacto(parsed.telefono);
   const ventanaDesdeCabecera = horarioDesde || "";
   const ventanaHastaCabecera = horarioHasta || "";
   const notasCabecera = parsed.observaciones?.trim() || "";
@@ -924,7 +925,7 @@ export async function extraerPedido({
     direccion: direccionCabecera || null,
     anden: parsed.anden,
     contacto: parsed.contacto,
-    telefono: parsed.telefono,
+    telefono: telefonoCabecera || null,
     horarioDesde,
     horarioHasta,
     tolerancia: parsed.tolerancia,
