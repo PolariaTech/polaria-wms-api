@@ -25,6 +25,7 @@ import {
   type OrigenCorreoRenglon,
 } from '../ai/utils/origen-correo-ordenes-trabajo';
 import { recordOrdenVentaAudit } from '../utils/record-orden-venta-audit';
+import { sanitizeTelefonoContactoOrNull } from '../ai/utils/sanitize-telefono-contacto';
 
 const PRESENTACIONES = [
   '',
@@ -331,7 +332,9 @@ export class PedidoIaService {
         pick(pedido.horarioHasta, first['Ventana hasta']),
         pick(pedido.direccion, first['Direccion entrega'], first.Destino),
         pick(pedido.anden, first.Anden),
-        pick(pedido.telefono, first['Telefono contacto']),
+        sanitizeTelefonoContactoOrNull(
+          pick(pedido.telefono, first['Telefono contacto']),
+        ),
         pick(pedido.observaciones, first['Notas generales']),
         pick(first.Prioridad),
       );
