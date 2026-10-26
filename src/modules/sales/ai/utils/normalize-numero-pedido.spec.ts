@@ -1,6 +1,7 @@
 import {
   detectOrdenCompraFromSource,
   normalizeNumeroPedidoFields,
+  resolveOrdenCompraLimpia,
   shouldUnifyNumeroPedidoToOc,
 } from './normalize-numero-pedido';
 import { groupOrigenCorreoToOrdenesTrabajo } from './origen-correo-ordenes-trabajo';
@@ -19,6 +20,55 @@ describe('detectOrdenCompraFromSource', () => {
       .map(() => 'CROSSDOCK KG 1 4501056534')
       .join('\n');
     expect(detectOrdenCompraFromSource(text)).toBe('4501056534');
+  });
+
+  it('detecta REQUISICION # (XPU HA / hotel)', () => {
+    expect(
+      detectOrdenCompraFromSource(
+        'Requisición de Compra\nREQUISICION # 50184\nAutoriza: JGA 170819',
+      ),
+    ).toBe('50184');
+  });
+
+  it('NO toma el Artículo tras el título Requisición de Compra', () => {
+    const pdfLike = [
+      'XPU HA MANAGEMENT S DE RL DE CV',
+      'Requisición de Compra',
+      'Fecha Requisición 2026/10/25',
+      'REQUISICION # 50179',
+      'Departamento CBEEFE/BEEF BAR',
+      'Articulo Descripcion Solicita Autoriza',
+      '00001678 AGUACATE HASS PARA DECORACION PREMIU 0.50 0.50',
+    ].join('\n');
+    expect(detectOrdenCompraFromSource(pdfLike)).toBe('50179');
+  });
+
+  it('detecta número ANTES del rótulo (orden unpdf XPU HA)', () => {
+    const unpdfLike =
+      '50179REQUISICION #\nR.C AGUACATE PREMIUM BEEF BAR\nN Requisición de Compra\n00001678 AGUACATE HASS';
+    expect(detectOrdenCompraFromSource(unpdfLike)).toBe('50179');
+  });
+});
+
+describe('normalizeNumeroPedidoFields — requisición vs basura OCR', () => {
+  it('reemplaza rAutorizado por REQUISICION # del PDF', () => {
+    const { ordenCompraHotel } = normalizeNumeroPedidoFields({
+      ordenCompraHotel: 'rAutorizado',
+      lineas: [{ numeroPedido: 'rAutorizado', almacen: 'CBEEFB BEEF BAR' }],
+      sourceText:
+        'XPU HA MANAGEMENT\nREQUISICION # 50179\nDepartamento: CBEEFE BEEF BAR\nAutoriza: JGA 170808',
+      fileNames: ['R.C Aguacate BB.pdf'],
+    });
+    expect(ordenCompraHotel).toBe('50179');
+  });
+
+  it('reemplaza Artículo 00001678 por REQUISICION # 50179', () => {
+    const source = [
+      'Requisición de Compra',
+      'REQUISICION # 50179',
+      'Articulo 00001678 AGUACATE HASS',
+    ].join('\n');
+    expect(resolveOrdenCompraLimpia('00001678', source)).toBe('50179');
   });
 });
 
