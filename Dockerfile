@@ -34,6 +34,8 @@ COPY --from=build --chown=node:node /app/package.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/prisma ./prisma
+# CA raíz de Supabase para verificar el TLS del pooler (POL-367); ver certs/README.md.
+COPY --chown=node:node certs/supabase-root-2021.crt ./certs/supabase-root-2021.crt
 
 USER node
 EXPOSE 3000

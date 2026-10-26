@@ -12,6 +12,8 @@ async function bootstrap() {
   validateSecurityEnv();
 
   const app = await NestFactory.create(AppModule);
+  // ECS manda SIGTERM al parar o reemplazar la tarea: cierra pools de pg y conexiones.
+  app.enableShutdownHooks();
   const configService = app.get(ConfigService);
 
   app.use(securityHeadersMiddleware);
