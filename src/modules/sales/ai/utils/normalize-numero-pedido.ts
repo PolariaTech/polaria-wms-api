@@ -17,19 +17,67 @@ export type LineaConPedido = {
 const OC_LABEL_RE =
   /(?:oc\s*generada|o\.?\s*c\.?\s*generada|orden\s+de\s+compra(?:\s+del\s+cliente)?|n[úu]mero\s+de\s+(?:pedido|orden|oc)|(?:^|[\s|:;])(?:oc|po)(?:\s*(?:number|#|no\.?|n[º°]?))?)\s*[:#.\-\s|]*([A-Z0-9][A-Z0-9\-\/]{4,20})/gi;
 
+/**
+ * XPU HA / hoteles: "REQUISICION # 50179" O, en PDFs unpdf, "50179REQUISICION #"
+ * (el número va ANTES del rótulo). NO usar el título "Requisición de Compra"
+ * — engancha el Artículo (00001678).
+ */
+const REQUISICION_NUM_BEFORE_RE =
+  /(\d{4,12})\s*requisici[oó]n\s*#/gi;
+const REQUISICION_NUM_AFTER_RE =
+  /requisici[oó]n\s*(?:(?:n[uú]mero|no\.?|n[º°])\s*|#|:)\s*[\r\n\s]*(\d{4,12})\b/gi;
+
 const FILENAME_OC_RE = /^(\d{8,15})(?:[_\s.-]|$)/i;
 
-/** IDs de "Usuario" / centro suelen ser 5–8 dígitos; Oc Generada SAP suele ser más larga. */
+/**
+ * IDs de "Usuario" / centro suelen ser 6–8 dígitos (ej. 3672091).
+ * Requisiciones hotel (~5 dígitos, ej. 50184) NO deben unificarse como Usuario.
+ */
 function looksLikeUsuarioId(value: string): boolean {
-  return /^\d{5,8}$/.test(value.trim());
+  return /^\d{6,8}$/.test(value.trim());
+}
+
+/** SKU / Artículo con ceros a la izquierda (ej. 00001678) — no es OCC. */
+function looksLikeArticuloSku(value: string): boolean {
+  const v = value.trim();
+  return /^0{2,}\d+$/.test(v) || /^0+\d{5,}$/.test(v);
+}
+
+/** Basura típica de OCR/PDF (ej. "rAutorizado" cerca de columna Autoriza). */
+export function isGarbageOcValue(value: string | null | undefined): boolean {
+  const v = (value ?? "").trim();
+  if (!v) return true;
+  if (/autoriz/i.test(v)) return true;
+  if (looksLikeArticuloSku(v)) return true;
+  if (/^(solicita|comentario|departamento|almacen|almacén)$/i.test(v)) {
+    return true;
+  }
+  // Código de OC/PO casi siempre trae dígitos (salvo raros alfanuméricos cortos).
+  if (!/\d/.test(v) && v.length < 10) return true;
+  return false;
 }
 
 function looksLikeOcCode(value: string): boolean {
   const v = value.trim();
-  if (!v) return false;
+  if (!v || isGarbageOcValue(v)) return false;
+  // SAP / Oc Generada suele ser 9–15 dígitos (no confundir con Usuario 5–8).
   if (/^\d{9,15}$/.test(v)) return true;
   if (/^[A-Z]{2,}\d{4,}$/i.test(v)) return true;
   return v.length >= 8 && /[A-Z0-9]/i.test(v);
+}
+
+function collectFromRequisicionLabels(sourceText: string): string[] {
+  const hits: string[] = [];
+  // Preferir número pegado ANTES del rótulo (orden real de unpdf en XPU HA).
+  for (const match of sourceText.matchAll(REQUISICION_NUM_BEFORE_RE)) {
+    const raw = (match[1] ?? "").trim();
+    if (raw && !looksLikeArticuloSku(raw)) hits.push(raw);
+  }
+  for (const match of sourceText.matchAll(REQUISICION_NUM_AFTER_RE)) {
+    const raw = (match[1] ?? "").trim();
+    if (raw && !looksLikeArticuloSku(raw)) hits.push(raw);
+  }
+  return hits;
 }
 
 function collectFromLabels(sourceText: string): string[] {
@@ -78,6 +126,19 @@ export function detectOrdenCompraFromSource(
 ): string | null {
   const fromFiles = collectFromFilenames(fileNames);
   if (fromFiles[0]) return fromFiles[0];
+
+  // Requisición # (XPU HA y similares) — aceptar 4–12 dígitos del rótulo explícito.
+  const fromReq = collectFromRequisicionLabels(sourceText);
+  if (fromReq.length > 0) {
+    const counts = new Map<string, number>();
+    for (const v of fromReq) {
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    const ranked = [...counts.entries()].sort(
+      (a, b) => b[1] - a[1] || b[0].length - a[0].length,
+    );
+    if (ranked[0]?.[0]) return ranked[0][0];
+  }
 
   const fromLabels = collectFromLabels(sourceText);
   if (fromLabels.length > 0) {
@@ -152,6 +213,46 @@ export function shouldUnifyNumeroPedidoToOc(
   return spurious >= Math.max(2, Math.ceil(distinct.size * 0.5));
 }
 
+/**
+ * Valor limpio para OCC / Numero pedido: descarta basura y, si hay texto fuente,
+ * intenta REQUISICION # / Oc Generada.
+ */
+export function resolveOrdenCompraLimpia(
+  raw: string | null | undefined,
+  sourceText = "",
+  fileNames: readonly string[] = [],
+): string {
+  const trimmed = (raw ?? "").trim();
+  // Preferir siempre REQUISICIÓN # / Oc Generada del PDF si el raw parece Artículo.
+  if (isGarbageOcValue(trimmed) || looksLikeArticuloSku(trimmed)) {
+    const detected = detectOrdenCompraFromSource(sourceText, fileNames);
+    if (detected) return detected;
+    return "";
+  }
+  if (trimmed && looksLikeOcCode(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed && /^\d{4,15}$/.test(trimmed)) {
+    return trimmed;
+  }
+  const detected = detectOrdenCompraFromSource(sourceText, fileNames);
+  if (detected) return detected;
+  if (trimmed) return trimmed;
+  return "";
+}
+
+/** Reescribe Numero pedido basura en renglones de origen_correo. */
+export function sanitizeOrigenCorreoNumeroPedido<
+  T extends { "Numero pedido"?: string },
+>(rows: readonly T[], sourceText = ""): T[] {
+  const detected = detectOrdenCompraFromSource(sourceText);
+  return rows.map((row) => {
+    const raw = row["Numero pedido"]?.trim() || "";
+    if (!isGarbageOcValue(raw)) return row;
+    return { ...row, "Numero pedido": detected || "" };
+  });
+}
+
 export function normalizeNumeroPedidoFields<T extends LineaConPedido>(input: {
   ordenCompraHotel: string | null;
   lineas: T[];
@@ -171,25 +272,42 @@ export function normalizeNumeroPedidoFields<T extends LineaConPedido>(input: {
     ocCanonico = hotel;
   }
 
-  // Si el hotel parece Usuario y detectamos Oc Generada, preferimos la detectada.
-  if (detected && hotel && looksLikeUsuarioId(hotel) && detected !== hotel) {
+  // Si el hotel parece Usuario/basura (ej. rAutorizado) y detectamos OC/requisición, preferimos la detectada.
+  if (
+    detected &&
+    hotel &&
+    (looksLikeUsuarioId(hotel) || isGarbageOcValue(hotel)) &&
+    detected !== hotel
+  ) {
     ocCanonico = detected;
   }
 
   if (!ocCanonico) {
     return {
-      ordenCompraHotel: hotel,
+      ordenCompraHotel: hotel && !isGarbageOcValue(hotel) ? hotel : null,
       lineas: input.lineas.map((l) => ({ ...l })),
     };
   }
 
   if (!shouldUnifyNumeroPedidoToOc(input.lineas, ocCanonico)) {
-    // Aun sin unificar líneas, corrige cabecera si era un Usuario.
+    // Aun sin unificar líneas, corrige cabecera si era Usuario o basura OCR.
     const ordenCompraHotel =
-      hotel && looksLikeUsuarioId(hotel) && detected ? detected : hotel ?? detected;
+      hotel &&
+      (looksLikeUsuarioId(hotel) || isGarbageOcValue(hotel)) &&
+      detected
+        ? detected
+        : hotel && !isGarbageOcValue(hotel)
+          ? hotel
+          : detected;
     return {
       ordenCompraHotel,
-      lineas: input.lineas.map((l) => ({ ...l })),
+      lineas: input.lineas.map((l) => {
+        const prev = (l.numeroPedido ?? "").trim();
+        if (isGarbageOcValue(prev)) {
+          return { ...l, numeroPedido: ordenCompraHotel };
+        }
+        return { ...l };
+      }),
     };
   }
 

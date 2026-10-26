@@ -244,12 +244,12 @@ const RESPONSE_SCHEMA = {
       observaciones: {
         type: ["string", "null"],
         description:
-          "Observación general corta del pedido completo (no de una línea de producto), parafraseada del mensaje. null si no aplica.",
+          "Observación general corta del pedido completo (no de una línea de producto), parafraseada del mensaje. Solo aclaraciones útiles para surtir/entregar. NUNCA conclusiones ni inconsistencias inventadas entre correo y PDF. null si no aplica.",
       },
       ordenCompraHotel: {
         type: ["string", "null"],
         description:
-          "Identificador de la orden de compra del hotel/cliente para ESTE pedido. INTERPRETA el documento: no busques solo una etiqueta fija. El rótulo cambia según el emisor (ej. 'PO NUMBER', 'PO #', 'P.O.', 'Purchase Order', 'Orden de compra', 'OC', 'Nº OC', 'Oc Generada', 'OC Generada', 'No. de orden', 'Order No.', 'Customer PO', 'Requisition', 'Req #'). Extrae el CÓDIGO/NÚMERO asociado a esa idea (ej. '4501056534' o 'CUNMC0046026'), no el título del documento ni el Customer Account # ni fechas. NUNCA uses la columna 'Usuario' / User ID / ID de empleado / ID de centro de costo (ej. 3672091) — eso NO es la OC. En tablas Xcaret/Grupo Xcaret la OC está en 'Oc Generada' (suele repetirse en todas las filas). Si el nombre del PDF empieza con un número largo (ej. '4501056534_AGUACATES…'), ese número es la OC. null solo si de verdad no aparece ningún identificador de OC/PO.",
+          "Identificador de la orden de compra del hotel/cliente para ESTE pedido. INTERPRETA el documento: no busques solo una etiqueta fija. El rótulo cambia según el emisor (ej. 'PO NUMBER', 'PO #', 'P.O.', 'Purchase Order', 'Orden de compra', 'OC', 'Nº OC', 'Oc Generada', 'OC Generada', 'No. de orden', 'Order No.', 'Customer PO', 'Requisition', 'Req #', 'REQUISICION #', 'R.C.'). Extrae el CÓDIGO/NÚMERO asociado a esa idea (ej. '4501056534', 'CUNMC0046026' o '50184' si dice REQUISICION # 50184), no el título del documento ni el Customer Account # ni fechas. NUNCA uses la columna/campo 'Usuario', 'Autoriza', 'Autorizado', 'Solicita', 'Artículo' ni basura OCR tipo 'rAutorizado' — eso NO es la OC. En tablas Xcaret/Grupo Xcaret la OC está en 'Oc Generada' (suele repetirse en todas las filas). En PDFs tipo XPU HA / hotel la OC es SOLO el número junto a 'REQUISICION #' (ej. 50179), NUNCA el SKU de la columna Artículo (ej. 00001678) ni el título 'Requisición de Compra'. Si el nombre del PDF empieza con un número largo (ej. '4501056534_AGUACATES…'), ese número es la OC. null solo si de verdad no aparece ningún identificador de OC/PO/requisición.",
       },
       nombreCliente: {
         type: ["string", "null"],
@@ -373,7 +373,7 @@ const RESPONSE_SCHEMA = {
             numeroPedido: {
               type: ["string", "null"],
               description:
-                "Número/código de pedido u OC del hotel para ESTE renglón. Fuentes válidas: 'Numero pedido', 'Oc Generada', 'OC', 'PO', 'Order No.'. Si TODAS las filas comparten la misma Oc Generada (ej. 4501056534), TODAS las líneas llevan ese mismo numeroPedido. Si el documento trae varios pedidos reales distintos por destino (387529 Banquetes, 387531 Cocina, etc.), cada línea lleva el suyo. NUNCA copies la columna 'Usuario' / User / ID numérico corto de responsable o centro (ej. 3672091, 3672322) — eso no es pedido ni OC. null si no hay.",
+                "Número/código de pedido u OC del hotel para ESTE renglón. Fuentes válidas: 'Numero pedido', 'Oc Generada', 'OC', 'PO', 'Order No.', 'REQUISICION #', 'Requisición'. Si TODAS las filas comparten la misma Oc Generada (ej. 4501056534), TODAS las líneas llevan ese mismo numeroPedido. Si hay varios PDF/requisiciones distintas por destino (50184 Comedor, 50179 Beef Bar, etc.), cada línea lleva el REQUISICION # de SU documento. NUNCA copies 'Usuario', 'Autoriza', 'Autorizado' ni 'rAutorizado'. null si no hay.",
             },
             almacen: {
               type: ["string", "null"],
@@ -685,8 +685,9 @@ export async function extraerPedido({
     `  6) "textoOriginal" siempre es cómo el cliente nombró el producto, aunque productoCatalogo sea null.`,
     `- "cantidad" es el número TOTAL si viene explícito y directo (ej. '40 kilos'); si el mensaje solo da cajas + presentación sin decir el total, deja "cantidad" en null.`,
     `- Envases con contenido (ej. '1 galón de 5 litros', '2 cubetas de 10 L', '3 cajas de 20 kg'): en "cantidad" pon el NÚMERO DE ENVASES (1, 2, 3), en "unidad" UN (o CJ si dice cajas), y deja el contenido en textoOriginal. NO pongas los litros/kg totales en cantidad — eso lo convierte el backend según la unidad del catálogo. "precioUnitario" es el precio POR ENVASE del documento, no por litro/kg.`,
-    `- "observaciones" es del pedido completo, no repitas ahí lo que ya va en una línea.`,
-    `- "ordenCompraHotel": interpreta cuál es el identificador de la orden de compra del hotel/cliente. El nombre del campo en el documento VARÍA (PO NUMBER, PO #, Purchase Order, Orden de compra, OC, Nº OC, Oc Generada, Order No., Customer PO, etc.). Devuelve solo el código/número (ej. 4501056534 o CUNMC0046026). NO uses 'Usuario'/User ID. Si el PDF se llama '4501056534_…', ese número es la OC. null solo si no hay ningún identificador de OC/PO.`,
+    `- "observaciones" es del pedido completo, no repitas ahí lo que ya va en una línea. NUNCA conclusiones/inconsistencias inventadas.`,
+    `- AGUACATE (catálogo): si solo dice AGUACATE / AGUACATE HASS / HASS (sin EXTRA) → AGUACATE PRIMERA (170 a 200g) SKU 115001009. Si menciona EXTRA → AGUACATE EXTRA (200 a 260g) SKU 115001005.`,
+    `- "ordenCompraHotel": interpreta cuál es el identificador de la orden de compra del hotel/cliente. El nombre del campo en el documento VARÍA (PO NUMBER, PO #, Purchase Order, Orden de compra, OC, Nº OC, Oc Generada, Order No., Customer PO, REQUISICION #, R.C., Req #, etc.). Devuelve solo el código/número (ej. 4501056534, CUNMC0046026 o 50184 si dice REQUISICION # 50184). En XPU HA usa 'REQUISICION #' (ej. 50179), NUNCA el Artículo/SKU (00001678) ni el título "Requisición de Compra". NO uses 'Usuario'/User ID ni 'Autoriza'/'Autorizado'/'rAutorizado'/'Solicita'. Si el PDF se llama '4501056534_…', ese número es la OC. null solo si no hay ningún identificador de OC/PO/requisición.`,
     `- "rfc" solo si el mensaje/documento lo declara explícitamente; nunca lo infieras del nombre del cliente.`,
     `- "direccion", "anden", "contacto", "telefono", "horarioDesde" y "horarioHasta" salen del correo, mensaje o PDF (Ship To, Deliver To, Enviar a, Andén, Dock, Contacto, Tel, hora de entrega, ventana de recepción, delivery window). Llénalos siempre que el dato aparezca; null solo si no está. No inventes ni uses un valor habitual que el documento no diga.`,
     `- "horarioDesde"/"horarioHasta" (crítico): si el cuerpo dice "Hora de entrega 6:00 am", "8:00 AM – 2:00 PM", "de 8 a 14", "ventana de recepción…", DEBES llenarlos en 24h HH:MM. No los dejes null si aparecen. Una sola hora → solo horarioDesde.`,
