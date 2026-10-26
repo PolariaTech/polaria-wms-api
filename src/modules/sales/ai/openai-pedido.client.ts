@@ -368,7 +368,7 @@ const RESPONSE_SCHEMA = {
             especificacion: {
               type: ["string", "null"],
               description:
-                "Cualquier nota/calidad/uso mencionado sobre este producto en particular (ej. 'bien firme, se usa el jueves'). null si no hay.",
+                "Nota/calidad/uso o empaque de ESTE producto (ej. 'bien firme', 'sin penacho', '2x galón de 5 litros', '1x cubeta de 10 litros'). Si el cliente pide por galón/cubeta/caja con contenido, copia esa frase corta aquí. null si no hay.",
             },
             numeroPedido: {
               type: ["string", "null"],
@@ -693,7 +693,7 @@ export async function extraerPedido({
     `- "regimen", "tolerancia", "sustituciones", "lote" y "temperatura": llénalos solo si el documento los declara. Si no aparecen, null.`,
     `- "unidad" siempre debe ser exactamente KGM, CJ o UN (o null) — nunca un texto libre como "kilos" o "kg".`,
     `- "centroConsumo" debe quedar null si el mensaje expresa incertidumbre sobre cuál es, incluso si menciona un valor tentativo de pasada. También null si lo único que hay es el nombre del hotel/denominación (eso es nombreCliente).`,
-    `- "fechaEntregaTexto" (crítico): copia la frase EXACTA de entrega del cuerpo/PDF/tabla (ej. "21/10/2026", "27 de agosto de 2026", "mañana", "el jueves"). Extráela aunque sea la única pista de fecha. NUNCA asumas "mañana" ni inventes una fecha si el documento trae otra concreta. null SOLO si de verdad no hay ninguna pista de fecha de entrega.`,
+    `- "fechaEntregaTexto" (crítico): copia la frase EXACTA de ENTREGA del pedido (ej. "Entrega: viernes, 23 de octubre de 2026", "21/10/2026", "Delivery date: 10/24/2026"). NUNCA uses la fecha Enviado/Sent/Received del correo ni la del hilo. NUNCA asumas "mañana"/"hoy" si hay fecha concreta de entrega. null SOLO si de verdad no hay pista de entrega.`,
     `- Si el texto y los archivos, en conjunto, NO describen un pedido de fruta/verdura (ej. son spam, un documento administrativo sin relación, contenido vacío o ilegible), deja "lineas" vacío y usa "advertencia" para explicarlo — no inventes líneas solo para llenar algo.`,
   ].join("\n");
 
@@ -812,10 +812,11 @@ export async function extraerPedido({
   // Fallback determinista: si Mateo dejó fecha/hora null, leerlas del cuerpo/PDF.
   const entregaBody = extractEntregaDesdeTexto(sourceForEntrega, hoyISO);
   const fechaDesdeIa = resolverFechaEntrega(parsed.fechaEntregaTexto, hoyISO);
-  const fechaEntrega =
-    fechaDesdeIa ||
+  // REQ-119: línea Entrega:/Delivery date del cuerpo manda sobre Mateo (evita Enviado/hoy).
+  const fechaBody =
     entregaBody.fechaIso ||
     resolverFechaEntrega(entregaBody.fechaFrase, hoyISO);
+  const fechaEntrega = fechaBody || fechaDesdeIa;
   const horarioDesde =
     parsed.horarioDesde?.trim() || entregaBody.horarioDesde || null;
   const horarioHasta =
@@ -842,7 +843,8 @@ export async function extraerPedido({
   const ventanaHastaCabecera = horarioHasta || "";
   const notasCabecera = parsed.observaciones?.trim() || "";
   const origenCorreo = lineas.map((l, index) => ({
-    Fecha: fechaLabel || "",
+    // ISO primero: al reabrir OV, parseFechaOrigen no debe romper MM/DD BirchStreet.
+    Fecha: fechaEntrega || fechaLabel || "",
     Unidad: l.unidad === "KGM" ? "KGS" : l.unidad || "",
     Almacen: l.almacen || parsed.centroConsumo || "",
     Horario: "",

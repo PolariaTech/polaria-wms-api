@@ -75,27 +75,43 @@ export function normalizarHoraAHhMm(
   return `${pad2(h)}:${pad2(m)}`;
 }
 
+function ymdIfValid(year: number, month: number, day: number): string | null {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const dt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  if (
+    dt.getUTCFullYear() !== year ||
+    dt.getUTCMonth() + 1 !== month ||
+    dt.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return `${year}-${pad2(month)}-${pad2(day)}`;
+}
+
+/** DD/MM LatAm o MM/DD US (BirchStreet); si ambas válidas, preferir DMY. */
 function parseFechaNumerica(raw: string): string | null {
   const text = raw.trim();
-  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})\b/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-
-  const dmy = text.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b/);
-  if (dmy) {
-    const dd = pad2(Number(dmy[1]));
-    const mm = pad2(Number(dmy[2]));
-    const yearRaw = dmy[3]!;
-    const yyyy =
-      yearRaw.length === 2
-        ? Number(yearRaw) >= 70
-          ? `19${yearRaw}`
-          : `20${yearRaw}`
-        : yearRaw;
-    const candidate = `${yyyy}-${mm}-${dd}`;
-    const parsed = new Date(`${candidate}T12:00:00Z`);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return candidate;
+  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})\b/);
+  if (iso) {
+    return ymdIfValid(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   }
+
+  const slash = text.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b/);
+  if (!slash) return null;
+  const first = Number(slash[1]);
+  const second = Number(slash[2]);
+  const yearRaw = slash[3]!;
+  const year =
+    yearRaw.length === 2
+      ? Number(yearRaw) >= 70
+        ? 1900 + Number(yearRaw)
+        : 2000 + Number(yearRaw)
+      : Number(yearRaw);
+  const asDmy = ymdIfValid(year, second, first);
+  const asMdy = ymdIfValid(year, first, second);
+  if (asDmy && !asMdy) return asDmy;
+  if (asMdy && !asDmy) return asMdy;
+  if (asDmy && asMdy) return asDmy;
   return null;
 }
 
@@ -117,15 +133,37 @@ function parseFechaConMesNombre(frase: string, hoyISO: string): string | null {
 }
 
 const ENTREGA_CTX =
-  /(?:fecha\s*(?:de\s*)?(?:entrega|envio|env[ií]o)|entregar?\s+(?:el|para|el\s+d[ií]a)|delivery\s*date|deliver(?:y)?\s+(?:on|by)|para\s+el|el\s+d[ií]a)\b/i;
+  /(?:fecha\s*(?:de\s*)?(?:entrega|envio|env[ií]o)|(?:^|[^\wáéíóúñ])entrega\s*:|entregar?\s+(?:el|para|el\s+d[ií]a)|delivery\s*date|deliver(?:y)?\s+(?:on|by)|para\s+el|el\s+d[ií]a)\b/i;
+
+/** Fechas de metadatos del correo (no son entrega del pedido). REQ-119 */
+const META_FECHA_CTX =
+  /\b(?:enviad[oa]|sent|received|recibid[oa]|fecha\s*(?:del?\s*)?(?:correo|mensaje)|dated)\b/i;
+
+/** Línea etiquetada: Entrega: viernes, 23 de octubre de 2026 */
+const LINEA_ENTREGA_RE =
+  /(?:^|\n)\s*(?:(?:fecha\s+de\s+)?entrega|delivery\s*date)\s*:\s*([^\n]+)/i;
 
 /**
- * Busca la mejor frase de fecha cerca de contexto de entrega, o la primera
- * fecha explícita del cuerpo (dd/mm, ISO, "N de mes").
+ * Busca la mejor frase de fecha cerca de contexto de entrega.
+ * REQ-119: `Entrega:` gana sobre `Enviado:` / primera fecha del hilo.
  */
 export function extraerFechaFraseDesdeTexto(texto: string): string | null {
   const raw = texto.replace(/\r\n/g, "\n");
   if (!raw.trim()) return null;
+
+  const lineaEntrega = LINEA_ENTREGA_RE.exec(raw);
+  if (lineaEntrega?.[1]?.trim()) {
+    const resto = lineaEntrega[1].trim();
+    const conMes = resto.match(
+      /\b\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(?:de\s+)?\d{4})?\b/i,
+    );
+    if (conMes?.[0]) return conMes[0].trim();
+    const numerica = resto.match(/\b\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}\b/);
+    if (numerica?.[0]) return numerica[0].trim();
+    const iso = resto.match(/\b\d{4}-\d{2}-\d{2}\b/);
+    if (iso?.[0]) return iso[0];
+    return resto;
+  }
 
   const patterns: RegExp[] = [
     /\b\d{4}-\d{2}-\d{2}\b/g,
@@ -143,17 +181,18 @@ export function extraerFechaFraseDesdeTexto(texto: string): string | null {
       const frase = match[0]!.trim();
       const index = match.index;
       const before = raw.slice(Math.max(0, index - 48), index);
-      const score = ENTREGA_CTX.test(before) ? 100 : 10;
+      let score = ENTREGA_CTX.test(before) ? 100 : 10;
+      if (META_FECHA_CTX.test(before)) score = Math.min(score, 5);
       hits.push({ frase, index, score });
     }
   }
 
-  // Relativas cortas solo con contexto de entrega / pedido.
   const relativas =
-    /\b(?:pasado\s+ma[nñ]ana|ma[nñ]ana|hoy|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|en\s+\d+\s+d[ií]as?)\b/gi;
+    /\b(?:pasado\s+ma[nñ]ana|ma[nñ]ana|hoy|(?:el\s+)?(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|en\s+\d+\s+d[ií]as?)\b/gi;
   let rel: RegExpExecArray | null;
   while ((rel = relativas.exec(raw)) != null) {
     const before = raw.slice(Math.max(0, rel.index - 48), rel.index);
+    if (META_FECHA_CTX.test(before)) continue;
     if (
       ENTREGA_CTX.test(before) ||
       /pedido|entrega|enviar|favor\s+de/i.test(before)
@@ -163,7 +202,7 @@ export function extraerFechaFraseDesdeTexto(texto: string): string | null {
   }
 
   if (hits.length === 0) return null;
-  hits.sort((a, b) => b.score - a.score || a.index - b.index);
+  hits.sort((a, b) => b.score - a.score || b.index - a.index);
   return hits[0]!.frase;
 }
 
