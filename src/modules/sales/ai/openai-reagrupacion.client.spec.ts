@@ -104,6 +104,14 @@ describe('openai-reagrupacion.client (CA8, R5, R6)', () => {
     expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/No puedes cambiar cantidades/);
   });
 
+  it('el prompt indica en qué OT queda lo agrupado y evita pedir aclaración por detalles menores', () => {
+    // Sin estas reglas, gpt-5.6-luna respondía "aclaracion" a "junta las OT de
+    // comedor, bares y banquetes en una sola" (prueba real, POL-390).
+    expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/NO crees una OT nueva/);
+    expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/la primera de la lista/);
+    expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/NO pidas aclaración/);
+  });
+
   it('incluye historial y corrección solo cuando existen', () => {
     const base = JSON.parse(buildReagrupacionMessages(solicitud())[1].content);
     expect(base.historial).toEqual([]);
