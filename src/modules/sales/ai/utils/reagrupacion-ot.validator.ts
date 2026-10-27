@@ -155,12 +155,12 @@ function aEscala(cantidad: number): bigint {
 }
 
 function refOt(indice: number): string {
-  let n = indice;
+  let restante = indice;
   let letras = '';
   do {
-    letras = String.fromCharCode(65 + (n % 26)) + letras;
-    n = Math.floor(n / 26) - 1;
-  } while (n >= 0);
+    letras = String.fromCharCode(65 + (restante % 26)) + letras;
+    restante = Math.floor(restante / 26) - 1;
+  } while (restante >= 0);
   return `OT-${letras}`;
 }
 
@@ -223,10 +223,10 @@ export function construirContextoModelo(estado: EstadoBase): {
       pedido: sanitizarTextoCorto(ot.numeroPedido),
       renglones: ot.renglones.map((renglon) => {
         contadorRenglon += 1;
-        const r = `r${contadorRenglon}`;
-        mapa.renglonPorRef.set(r, renglon.renglonId);
+        const refRenglon = `r${contadorRenglon}`;
+        mapa.renglonPorRef.set(refRenglon, renglon.renglonId);
         return {
-          r,
+          r: refRenglon,
           producto: sanitizarTextoCorto(renglon.producto),
           cantidad: parseCantidad(renglon.cantidad),
           unidad: sanitizarTextoCorto(renglon.unidad ?? '', 10),
@@ -241,19 +241,21 @@ export function construirContextoModelo(estado: EstadoBase): {
 /** Hash estable (sin importar el orden) del estado que el cliente mandó. */
 export function calcularBaseHash(estado: EstadoBase): string {
   const canonico = [...estado.ots]
-    .sort((a, b) => a.otId.localeCompare(b.otId))
+    .sort((otA, otB) => otA.otId.localeCompare(otB.otId))
     .map((ot) => ({
       otId: ot.otId,
       etiqueta: ot.etiqueta,
       almacen: ot.almacen,
       numeroPedido: ot.numeroPedido,
       renglones: [...ot.renglones]
-        .sort((a, b) => a.renglonId.localeCompare(b.renglonId))
-        .map((r) => ({
-          renglonId: r.renglonId,
-          producto: r.producto,
-          cantidad: aEscala(parseCantidad(r.cantidad)).toString(),
-          unidad: r.unidad ?? '',
+        .sort((renglonA, renglonB) =>
+          renglonA.renglonId.localeCompare(renglonB.renglonId),
+        )
+        .map((renglon) => ({
+          renglonId: renglon.renglonId,
+          producto: renglon.producto,
+          cantidad: aEscala(parseCantidad(renglon.cantidad)).toString(),
+          unidad: renglon.unidad ?? '',
         })),
     }));
   return createHash('sha256').update(JSON.stringify(canonico)).digest('hex');
@@ -391,20 +393,24 @@ export function validarSalidaModelo(
   if (totalBase !== totalFinal) return INVALIDA('TOTALES_NO_COINCIDEN');
 
   // Orden estable: OT existentes en su orden original, luego las nuevas.
-  const posicionOt = new Map(estado.ots.map((ot, i) => [ot.otId, i]));
+  const posicionOt = new Map(estado.ots.map((ot, indice) => [ot.otId, indice]));
   const conRenglones = finales
     .filter((final) => final.renglonIds.length > 0)
     .map((final) => ({
       ...final,
       renglonIds: [...final.renglonIds].sort(
-        (a, b) => renglonBase.get(a)!.orden - renglonBase.get(b)!.orden,
+        (idA, idB) => renglonBase.get(idA)!.orden - renglonBase.get(idB)!.orden,
       ),
     }))
-    .sort((a, b) => {
-      const pa = a.otId ? posicionOt.get(a.otId)! : Number.MAX_SAFE_INTEGER;
-      const pb = b.otId ? posicionOt.get(b.otId)! : Number.MAX_SAFE_INTEGER;
-      if (pa !== pb) return pa - pb;
-      return (a.nuevaClave ?? '').localeCompare(b.nuevaClave ?? '', 'es', {
+    .sort((otA, otB) => {
+      const posicionA = otA.otId
+        ? posicionOt.get(otA.otId)!
+        : Number.MAX_SAFE_INTEGER;
+      const posicionB = otB.otId
+        ? posicionOt.get(otB.otId)!
+        : Number.MAX_SAFE_INTEGER;
+      if (posicionA !== posicionB) return posicionA - posicionB;
+      return (otA.nuevaClave ?? '').localeCompare(otB.nuevaClave ?? '', 'es', {
         numeric: true,
       });
     });
@@ -420,8 +426,9 @@ export function validarSalidaModelo(
     }
   }
   movimientos.sort(
-    (a, b) =>
-      renglonBase.get(a.renglonId)!.orden - renglonBase.get(b.renglonId)!.orden,
+    (movimientoA, movimientoB) =>
+      renglonBase.get(movimientoA.renglonId)!.orden -
+      renglonBase.get(movimientoB.renglonId)!.orden,
   );
 
   const nuevas = conRenglones.filter((final) => final.nuevaClave).length;

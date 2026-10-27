@@ -5,6 +5,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   UnprocessableEntityException,
@@ -60,7 +61,24 @@ export class OrdenTrabajoReagrupacionService {
     const inicio = Date.now();
 
     // 1. La OV se carga por id dentro del schema del tenant del JWT (R2, R3).
-    const orden = await this.repository.findById(idOrdenVenta, ctx.schemaName);
+    let orden: Awaited<ReturnType<OrdenVentaRepository['findById']>>;
+    try {
+      orden = await this.repository.findById(idOrdenVenta, ctx.schemaName);
+    } catch {
+      // Solo metadatos: el error crudo de la base de datos no se registra ni se devuelve.
+      this.logger.error(
+        JSON.stringify({
+          evento: 'reagrupacion_ot',
+          resultado: 'error_bd',
+          idOrdenVenta,
+          requestId: body.requestId,
+        }),
+      );
+      throw new InternalServerErrorException({
+        message: 'No se pudo consultar la orden de venta. Intenta de nuevo.',
+        error: 'BASE_DATOS',
+      });
+    }
     if (!orden) throw this.noEncontrada();
 
     // Una OV de otra cuenta responde igual que una inexistente (CA2).
@@ -89,11 +107,11 @@ export class OrdenTrabajoReagrupacionService {
         etiqueta: ot.etiqueta,
         almacen: ot.almacen,
         numeroPedido: ot.numeroPedido,
-        renglones: ot.renglones.map((r) => ({
-          renglonId: r.renglonId,
-          producto: r.producto,
-          cantidad: r.cantidad,
-          unidad: r.unidad ?? null,
+        renglones: ot.renglones.map((renglon) => ({
+          renglonId: renglon.renglonId,
+          producto: renglon.producto,
+          cantidad: renglon.cantidad,
+          unidad: renglon.unidad ?? null,
         })),
       })),
     };
@@ -106,7 +124,9 @@ export class OrdenTrabajoReagrupacionService {
     }
 
     const { contexto, mapa } = construirContextoModelo(estadoBase);
-    const historial = (body.historial ?? []).map((h) => h.instruccion);
+    const historial = (body.historial ?? []).map(
+      (turnoPrevio) => turnoPrevio.instruccion,
+    );
 
     // 4. Modelo + validador, con un reintento si la salida no es aceptable.
     let resultado: ResultadoSalidaModelo = {

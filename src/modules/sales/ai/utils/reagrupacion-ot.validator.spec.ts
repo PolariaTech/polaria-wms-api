@@ -77,10 +77,10 @@ function salida(
 ) {
   return {
     resultado: 'propuesta',
-    ots: ots.map((o) => ({
-      ot: o.ot,
-      etiquetaSugerida: o.etiqueta ?? null,
-      renglones: o.renglones,
+    ots: ots.map((otSalida) => ({
+      ot: otSalida.ot,
+      etiquetaSugerida: otSalida.etiqueta ?? null,
+      renglones: otSalida.renglones,
     })),
   };
 }
@@ -155,7 +155,7 @@ describe('reagrupacion-ot.validator', () => {
       const { contexto, mapa } = construirContextoModelo(estado);
       const json = JSON.stringify(contexto);
 
-      expect(contexto.ots.map((o) => o.ot)).toEqual([
+      expect(contexto.ots.map((otContexto) => otContexto.ot)).toEqual([
         'OT-A',
         'OT-B',
         'OT-C',
@@ -209,11 +209,9 @@ describe('reagrupacion-ot.validator', () => {
         nuevas: 0,
         vacias: 2,
       });
-      expect(resultado.propuesta.ots.map((o) => o.otId)).toEqual([
-        'ot-1',
-        'ot-2',
-        'ot-3',
-      ]);
+      expect(
+        resultado.propuesta.ots.map((otPropuesta) => otPropuesta.otId),
+      ).toEqual(['ot-1', 'ot-2', 'ot-3']);
       expect(resultado.propuesta.ots[0].renglonIds).toEqual(['l-1', 'l-4']);
       expect(resultado.propuesta.movimientos).toEqual([
         { renglonId: 'l-4', deOtId: 'ot-3', aOtId: 'ot-1' },
@@ -371,7 +369,7 @@ describe('reagrupacion-ot.validator', () => {
       expect(resultado.tipo).toBe('propuesta');
       if (resultado.tipo !== 'propuesta') return;
       const etiqueta = resultado.propuesta.ots.find(
-        (o) => o.nuevaClave,
+        (otPropuesta) => otPropuesta.nuevaClave,
       )!.etiquetaSugerida!;
       expect(etiqueta).not.toMatch(/[<>]/);
       expect(etiqueta).not.toContain('\n');
@@ -447,15 +445,19 @@ describe('reagrupacion-ot.validator', () => {
 
   describe('calcularBaseHash', () => {
     it('es estable sin importar el orden y cambia si cambia una cantidad', () => {
-      const a = estadoEjemplo();
-      const b = estadoEjemplo();
-      b.ots.reverse();
-      b.ots.forEach((ot) => ot.renglones.reverse());
-      expect(calcularBaseHash(a)).toBe(calcularBaseHash(b));
+      const estadoOriginal = estadoEjemplo();
+      const estadoReordenado = estadoEjemplo();
+      estadoReordenado.ots.reverse();
+      estadoReordenado.ots.forEach((ot) => ot.renglones.reverse());
+      expect(calcularBaseHash(estadoOriginal)).toBe(
+        calcularBaseHash(estadoReordenado),
+      );
 
-      const c = estadoEjemplo();
-      c.ots[0].renglones[0].cantidad = 26;
-      expect(calcularBaseHash(c)).not.toBe(calcularBaseHash(a));
+      const estadoConCambio = estadoEjemplo();
+      estadoConCambio.ots[0].renglones[0].cantidad = 26;
+      expect(calcularBaseHash(estadoConCambio)).not.toBe(
+        calcularBaseHash(estadoOriginal),
+      );
     });
   });
 });

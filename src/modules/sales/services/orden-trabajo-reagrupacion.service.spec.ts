@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   ConflictException,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   UnprocessableEntityException,
@@ -136,12 +137,14 @@ describe('OrdenTrabajoReagrupacionService', () => {
       repository.findById.mockResolvedValue(null);
       const inexistente = await service
         .proponer(ID_OV, body(), ctx)
-        .catch((e) => e);
+        .catch((causa) => causa);
 
       repository.findById.mockResolvedValue(
         orden({ codigoCuenta: 'CTA-AJENA' }),
       );
-      const ajena = await service.proponer(ID_OV, body(), ctx).catch((e) => e);
+      const ajena = await service
+        .proponer(ID_OV, body(), ctx)
+        .catch((causa) => causa);
 
       expect(inexistente).toBeInstanceOf(NotFoundException);
       expect(ajena).toBeInstanceOf(NotFoundException);
@@ -167,7 +170,7 @@ describe('OrdenTrabajoReagrupacionService', () => {
 
         const error = await service
           .proponer(ID_OV, body(), ctx)
-          .catch((e) => e);
+          .catch((causa) => causa);
 
         expect(error).toBeInstanceOf(ConflictException);
         expect(error.getResponse()).toMatchObject({
@@ -177,11 +180,38 @@ describe('OrdenTrabajoReagrupacionService', () => {
       },
     );
 
+    it('un fallo de la base de datos responde 500 BASE_DATOS sin detalles internos ni llamar al modelo', async () => {
+      repository.findById.mockRejectedValue(
+        new Error('connection refused postgres://usuario:secreto@host/db'),
+      );
+      const errorLog = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation();
+
+      const error = await service
+        .proponer(ID_OV, body(), ctx)
+        .catch((causa) => causa);
+
+      expect(error).toBeInstanceOf(InternalServerErrorException);
+      expect(error.getResponse()).toMatchObject({ error: 'BASE_DATOS' });
+      expect(JSON.stringify(error.getResponse())).not.toContain('secreto');
+      expect(llm.proponer).not.toHaveBeenCalled();
+
+      // El log lleva solo metadatos, no el error crudo de la base de datos.
+      const registrado = errorLog.mock.calls
+        .map((llamada) => String(llamada[0]))
+        .join('\n');
+      expect(registrado).toContain('error_bd');
+      expect(registrado).not.toContain('secreto');
+    });
+
     it('rechaza una estructura de OT inválida con 400 sin llamar al modelo', async () => {
       const mala = body();
       mala.estadoBase.ots[1].otId = 'ot-1'; // OT duplicada
 
-      const error = await service.proponer(ID_OV, mala, ctx).catch((e) => e);
+      const error = await service
+        .proponer(ID_OV, mala, ctx)
+        .catch((causa) => causa);
 
       expect(error).toBeInstanceOf(BadRequestException);
       expect(error.getResponse()).toMatchObject({
@@ -204,7 +234,11 @@ describe('OrdenTrabajoReagrupacionService', () => {
         nuevas: 0,
         vacias: 2,
       });
-      expect(res.ots?.map((o) => o.otId)).toEqual(['ot-1', 'ot-2', 'ot-3']);
+      expect(res.ots?.map((otPropuesta) => otPropuesta.otId)).toEqual([
+        'ot-1',
+        'ot-2',
+        'ot-3',
+      ]);
       expect(res.movimientos).toHaveLength(3);
       expect(res.propuestaId).toMatch(/^[0-9a-f-]{36}$/);
       expect(res.baseHash).toMatch(/^[0-9a-f]{64}$/);
@@ -304,12 +338,12 @@ describe('OrdenTrabajoReagrupacionService', () => {
 
     it.each(casos)(
       '%s → 422 PROPUESTA_INVALIDA tras reintentar una vez',
-      async (_n, salida) => {
+      async (_nombre, salida) => {
         llm.proponer.mockResolvedValue(respuestaModelo(salida));
 
         const error = await service
           .proponer(ID_OV, body(), ctx)
-          .catch((e) => e);
+          .catch((causa) => causa);
 
         expect(error).toBeInstanceOf(UnprocessableEntityException);
         expect(error.getResponse()).toMatchObject({
@@ -384,7 +418,9 @@ describe('OrdenTrabajoReagrupacionService', () => {
         new Error('401 incorrect api key sk-secreta'),
       );
 
-      const error = await service.proponer(ID_OV, body(), ctx).catch((e) => e);
+      const error = await service
+        .proponer(ID_OV, body(), ctx)
+        .catch((causa) => causa);
 
       expect(error).toBeInstanceOf(BadGatewayException);
       expect(error.getResponse()).toMatchObject({ error: 'PROVEEDOR_IA' });
@@ -442,7 +478,9 @@ describe('OrdenTrabajoReagrupacionService', () => {
           ots: [],
         }),
       );
-      const error = await service.proponer(ID_OV, body(), ctx).catch((e) => e);
+      const error = await service
+        .proponer(ID_OV, body(), ctx)
+        .catch((causa) => causa);
       expect(error).toBeInstanceOf(UnprocessableEntityException);
       expect(JSON.stringify(error.getResponse())).not.toContain(fuga);
     });
@@ -463,7 +501,7 @@ describe('OrdenTrabajoReagrupacionService', () => {
       await service.proponer(ID_OV, body({ instruccion }), ctx);
 
       const registros = logSpy.mock.calls
-        .map((c) => String(c[0]))
+        .map((llamada) => String(llamada[0]))
         .filter((linea) => linea.includes('reagrupacion_ot'));
       expect(registros).toHaveLength(1);
       expect(registros[0]).not.toContain(instruccion);
