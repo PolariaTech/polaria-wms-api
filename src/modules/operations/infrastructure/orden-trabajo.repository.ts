@@ -613,12 +613,32 @@ export class OrdenTrabajoRepository {
     codigoCuenta: string,
     idBodega: string,
   ): Promise<string> {
+    // El folio OT es único por cuenta. Un contador nuevo de otra bodega no
+    // puede reiniciar en 1: OT-000001 ya existe y el INSERT revienta con 500.
+    await tx.$executeRawUnsafe(
+      `SELECT pg_advisory_xact_lock(hashtext($1))`,
+      `${codigoCuenta}:orden_trabajo`,
+    );
+
     const rows = await tx.$queryRawUnsafe<Array<{ valor: bigint | string }>>(
-      `INSERT INTO ${schema}.contador (codigo_cuenta, id_bodega, clave, valor)
-       VALUES ($1, $2::uuid, $3, 1)
+      `WITH max_existente AS (
+         SELECT COALESCE(MAX(
+           CASE
+             WHEN codigo ~ '^OT-[0-9]+$' THEN substring(codigo from 4)::bigint
+             ELSE 0
+           END
+         ), 0) AS n
+         FROM ${schema}.orden_trabajo
+         WHERE codigo_cuenta = $1
+       )
+       INSERT INTO ${schema}.contador (codigo_cuenta, id_bodega, clave, valor)
+       VALUES ($1, $2::uuid, $3, (SELECT n + 1 FROM max_existente))
        ON CONFLICT (codigo_cuenta, id_bodega, clave)
        DO UPDATE SET
-         valor = ${schema}.contador.valor + 1,
+         valor = GREATEST(
+           ${schema}.contador.valor + 1,
+           (SELECT n + 1 FROM max_existente)
+         ),
          updated_at = now()
        RETURNING valor`,
       codigoCuenta,
