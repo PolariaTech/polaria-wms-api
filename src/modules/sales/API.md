@@ -81,7 +81,7 @@ Autenticación: Bearer JWT + `TenantGuard` + `RolesGuard` (`operador_cuenta`, `a
 |-------|------|-------------|
 | `requestId` | uuid | Identifica la solicitud; se devuelve igual |
 | `instruccion` | string | Instrucción en lenguaje natural (no puede estar vacía) |
-| `historial` | `[{ instruccion }]` | Opcional. Instrucciones previas rechazadas, en orden. El modelo parte siempre del estado original |
+| `historial` | `[{ instruccion }]` | Opcional. Instrucciones previas rechazadas, en orden. El modelo parte siempre del estado original. Máximo 20 entradas (techo técnico provisional) |
 | `estadoBase.ots[]` | `{ otId, etiqueta, almacen, numeroPedido, renglones[] }` | Borrador actual de las OT |
 | `estadoBase.ots[].renglones[]` | `{ renglonId, producto, cantidad, unidad? }` | `renglonId` estable, asignado por el cliente |
 

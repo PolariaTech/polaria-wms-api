@@ -277,7 +277,7 @@ function clavesExactas(
   );
 }
 
-const INVALIDA = (motivo: MotivoRechazo): ResultadoSalidaModelo => ({
+const salidaInvalida = (motivo: MotivoRechazo): ResultadoSalidaModelo => ({
   tipo: 'invalida',
   motivo,
 });
@@ -297,12 +297,13 @@ export function validarSalidaModelo(
     !clavesExactas(salida, ['resultado', 'ots']) ||
     !Array.isArray(salida.ots)
   ) {
-    return INVALIDA('SALIDA_NO_VALIDA');
+    return salidaInvalida('SALIDA_NO_VALIDA');
   }
 
   if (salida.resultado === 'aclaracion') return { tipo: 'aclaracion' };
   if (salida.resultado === 'rechazo') return { tipo: 'rechazo' };
-  if (salida.resultado !== 'propuesta') return INVALIDA('SALIDA_NO_VALIDA');
+  if (salida.resultado !== 'propuesta')
+    return salidaInvalida('SALIDA_NO_VALIDA');
 
   // Índices del estado base.
   const otBasePorId = new Map(estado.ots.map((ot) => [ot.otId, ot]));
@@ -341,22 +342,22 @@ export function validarSalidaModelo(
         typeof item.etiquetaSugerida === 'string'
       )
     ) {
-      return INVALIDA('SALIDA_NO_VALIDA');
+      return salidaInvalida('SALIDA_NO_VALIDA');
     }
 
     const refOtItem = item.ot;
     const otIdExistente = mapa.otPorRef.get(refOtItem) ?? null;
     const esNueva = PATRON_OT_NUEVA.test(refOtItem);
-    if (!otIdExistente && !esNueva) return INVALIDA('OT_INEXISTENTE');
-    if (refsOtVistas.has(refOtItem)) return INVALIDA('OT_DUPLICADA');
+    if (!otIdExistente && !esNueva) return salidaInvalida('OT_INEXISTENTE');
+    if (refsOtVistas.has(refOtItem)) return salidaInvalida('OT_DUPLICADA');
     refsOtVistas.add(refOtItem);
 
     const renglonIds: string[] = [];
     for (const ref of item.renglones) {
-      if (typeof ref !== 'string') return INVALIDA('SALIDA_NO_VALIDA');
+      if (typeof ref !== 'string') return salidaInvalida('SALIDA_NO_VALIDA');
       const renglonId = mapa.renglonPorRef.get(ref);
       if (!renglonId || renglonesVistos.has(renglonId)) {
-        return INVALIDA('RENGLONES_NO_COINCIDEN');
+        return salidaInvalida('RENGLONES_NO_COINCIDEN');
       }
       renglonesVistos.add(renglonId);
       renglonIds.push(renglonId);
@@ -374,7 +375,7 @@ export function validarSalidaModelo(
   }
 
   if (renglonesVistos.size !== renglonBase.size) {
-    return INVALIDA('RENGLONES_NO_COINCIDEN');
+    return salidaInvalida('RENGLONES_NO_COINCIDEN');
   }
 
   // Los totales se recalculan desde el estado base (defensa en profundidad).
@@ -390,7 +391,7 @@ export function validarSalidaModelo(
       );
     }
   }
-  if (totalBase !== totalFinal) return INVALIDA('TOTALES_NO_COINCIDEN');
+  if (totalBase !== totalFinal) return salidaInvalida('TOTALES_NO_COINCIDEN');
 
   // Orden estable: OT existentes en su orden original, luego las nuevas.
   const posicionOt = new Map(estado.ots.map((ot, indice) => [ot.otId, indice]));

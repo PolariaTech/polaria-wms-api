@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsDefined,
   IsOptional,
@@ -119,6 +120,7 @@ export class PropuestaReagrupacionBodyDto {
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(TECHOS_PROVISIONALES_REAGRUPACION.maxHistorial)
   @ValidateNested({ each: true })
   @Type(() => HistorialReagrupacionDto)
   historial?: HistorialReagrupacionDto[];

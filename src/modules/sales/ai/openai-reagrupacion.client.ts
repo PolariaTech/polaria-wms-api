@@ -114,7 +114,7 @@ export function buildReagrupacionRequest(
   };
 }
 
-export class ProveedorIaError extends Error {}
+class ProveedorIaError extends Error {}
 
 @Injectable()
 export class OpenAiReagrupacionClient {
