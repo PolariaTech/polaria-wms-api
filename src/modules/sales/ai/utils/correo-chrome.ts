@@ -86,3 +86,94 @@ export function prependCorreoChromeToBody(
   if (!cuerpo) return block;
   return `${block}\n\n${cuerpo}`;
 }
+
+const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+
+const CORREO_REMITENTE_GENERICO_RE = [
+  /^bss_system@birchstreet\.net$/i,
+  /^admonaguacatesdepuebla@gmail\.com$/i,
+  /^ventas@aguacatesdepuebla\.com$/i,
+  /^(noreply|no-reply|donotreply|do-not-reply|mailer-daemon)@/i,
+];
+
+/** REQ-122: From genérico (BirchStreet, noreply, proveedor). */
+export function isCorreoRemitenteGenerico(
+  email: string | null | undefined,
+): boolean {
+  const value = (email ?? '').trim();
+  if (!value) return false;
+  return CORREO_REMITENTE_GENERICO_RE.some((re) => re.test(value));
+}
+
+export function extractEmailAddressFromHeaderValue(
+  value: string | null | undefined,
+): string | null {
+  const text = value?.trim() ?? '';
+  if (!text) return null;
+  const angle = text.match(/<([^<>\s]+@[^<>\s]+)>/);
+  if (angle?.[1]) return angle[1].trim();
+  const bare = text.match(EMAIL_RE);
+  return bare?.[0]?.trim() || null;
+}
+
+/**
+ * REQ-122: si De/From es genérico, busca mail humano en cuerpo/mailto.
+ */
+export function extractCorreoContactoDesdeTexto(
+  raw: string | null | undefined,
+): string | null {
+  const text = (raw ?? '').replace(/\r\n/g, '\n').trim();
+  if (!text) return null;
+
+  const chrome = parseCorreoChromeFromText(text);
+  const fromEmail = extractEmailAddressFromHeaderValue(chrome.from);
+  const fromEsGenerico = isCorreoRemitenteGenerico(fromEmail);
+
+  const toEmails = new Set(
+    (chrome.to?.match(EMAIL_RE) ?? []).map((e) => e.toLowerCase()),
+  );
+
+  const pickBodyEmail = (): string | null => {
+    const mailto = text.match(/mailto:([^\s"'<>]+)/i);
+    if (mailto?.[1]) {
+      try {
+        const decoded = decodeURIComponent(mailto[1])
+          .replace(/[<>]/g, '')
+          .trim();
+        const fromMailto =
+          extractEmailAddressFromHeaderValue(decoded) || decoded;
+        if (
+          fromMailto.includes('@') &&
+          !isCorreoRemitenteGenerico(fromMailto) &&
+          !toEmails.has(fromMailto.toLowerCase())
+        ) {
+          return fromMailto;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const labeled = text.match(
+      /(?:e-?mail|correo(?:\s+electr[oó]nico)?|contacto)\s*[:=]\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+    );
+    if (labeled?.[1] && !isCorreoRemitenteGenerico(labeled[1])) {
+      return labeled[1];
+    }
+
+    const all = text.match(EMAIL_RE) ?? [];
+    for (const email of all) {
+      const lower = email.toLowerCase();
+      if (toEmails.has(lower)) continue;
+      if (isCorreoRemitenteGenerico(email)) continue;
+      if (fromEmail && lower === fromEmail.toLowerCase()) continue;
+      return email;
+    }
+    return null;
+  };
+
+  if (fromEmail && !fromEsGenerico) return fromEmail;
+  const fromBody = pickBodyEmail();
+  if (fromBody) return fromBody;
+  return fromEmail;
+}

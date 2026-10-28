@@ -30,6 +30,7 @@ export interface OrigenCorreoRenglon {
   "Direccion entrega"?: string;
   Anden?: string;
   "Telefono contacto"?: string;
+  "Correo contacto"?: string;
   Prioridad?: string;
   "Notas generales"?: string;
   /** Índice en el array original / vínculo con línea del formulario. */
