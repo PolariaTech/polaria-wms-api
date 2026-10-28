@@ -22,6 +22,7 @@ import {
 } from "./utils/enrich-almacen-codigo";
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 import { sanitizeTelefonoContacto } from "./utils/sanitize-telefono-contacto";
+import { extractCorreoContactoDesdeTexto } from "./utils/correo-chrome";
 
 export { calcularCantidadDesdeCajas, pesoPorCajaKg };
 
@@ -368,7 +369,7 @@ const RESPONSE_SCHEMA = {
             especificacion: {
               type: ["string", "null"],
               description:
-                "Nota/calidad/uso o empaque de ESTE producto (ej. 'bien firme', 'sin penacho', '2x galón de 5 litros', '1x cubeta de 10 litros'). Si el cliente pide por galón/cubeta/caja con contenido, copia esa frase corta aquí. null si no hay.",
+                "Nota/calidad/madurez/uso o empaque de ESTE producto. PRIORIDAD: madurez/color/firmeza por renglón (amarillo, rojo, firme, enrriado) en formatos admonaguacates — va AQUÍ. También 'sin penacho', '2x galón de 5 litros'. null si no hay.",
             },
             numeroPedido: {
               type: ["string", "null"],
@@ -671,6 +672,9 @@ export async function extraerPedido({
     `- Solo extrae lo que el mensaje/archivos realmente dicen. No inventes cantidades, presentaciones, fechas, direcciones ni contactos que no estén respaldados.`,
     `- "nombreCliente" vs "centroConsumo" (crítico — no mezclar): nombreCliente = denominación comercial / razón social / hotel / propiedad / Bill To. centroConsumo = SOLO área interna (cocina, bar, banquete, almacén de fila, centro de costo). NUNCA copies el nombre del resort/hotel en centroConsumo. Si solo aparece el hotel sin cocina/área → centroConsumo null. El RFC va en "rfc", nunca en centro ni como nombre.`,
     `- "nombreCliente": denominación / hotel / comprador si aparece (Customer, Bill To, Hotel, Property, Cliente, etc.). No uses el PO ni el RFC como nombre. null solo si no hay ningún nombre.`,
+    `- "nombreCliente" (REQ-116): en POs BirchStreet (bss_system@birchstreet.net) copia Property/Hotel/Bill To (ej. FAIRMONT MAYAKOBA), no el remitente ni la cocina.`,
+    `- "especificacion" por línea (REQ-120): si hay columna/texto de madurez (amarillo, rojo, firme, enrriado), ponlo en lineas[].especificacion, no solo en observaciones.`,
+    `- Matching producto (REQ-115): NUNCA asignes productoCatalogo de otra familia (cebolla ≠ aguacate). Si hay duda → null.`,
     `- Una línea por cada fila de producto del documento. Si hay VARIOS Numero pedido / PO, o el MISMO PO con DISTINTOS Almacén / centro de consumo (ej. BAWH Bar Whisky vs COPM Coc Plaza Mx, o distintos 'Centro de costo' Xcaret), emite una línea por cada producto×destino con numeroPedido y almacen de ESA fila. NO mezcles destinos ni pedidos en una sola línea. NO omitas filas de páginas intermedias.`,
     `- "numeroPedido" + "almacen" separan órdenes de trabajo: mismo PO + distinto almacén = otra hija; distinto PO = otra hija aunque el almacén coincida.`,
     `- "almacen" / "centroConsumo" (crítico — no acortar): copia SIEMPRE código + nombre completos de la columna (ej. 'ABAN Banquetes Ali', no solo 'Banquetes Ali'; 'ACOE ComedorEmplea', no solo 'Comedor…'). El código de 3–6 letras identifica la cocina del cliente; perderlo rompe el surtido. Aunque el PDF trunque visualmente la celda, conserva todo el texto legible del código y del nombre.`,
@@ -840,6 +844,9 @@ export async function extraerPedido({
   const andenCabecera = parsed.anden?.trim() || "";
   const contactoCabecera = parsed.contacto?.trim() || "";
   const telefonoCabecera = sanitizeTelefonoContacto(parsed.telefono);
+  // REQ-122: no usar From genérico (bss_system / noreply / proveedor).
+  const correoCabecera =
+    extractCorreoContactoDesdeTexto(sourceForEntrega) || "";
   const ventanaDesdeCabecera = horarioDesde || "";
   const ventanaHastaCabecera = horarioHasta || "";
   const notasCabecera = parsed.observaciones?.trim() || "";
@@ -872,6 +879,7 @@ export async function extraerPedido({
     "Direccion entrega": direccionCabecera,
     Anden: andenCabecera,
     "Telefono contacto": telefonoCabecera,
+    "Correo contacto": correoCabecera,
     Prioridad: "",
     "Notas generales": notasCabecera,
     _lineaIndex: index,
