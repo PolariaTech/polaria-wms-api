@@ -35,6 +35,7 @@
 - `src/modules/sales/dto/pedido-ia-response.dto.ts` — autorizada por el usuario el 2026-10-29
 - `src/modules/sales/controllers/pedido-ia.controller.ts` — autorizada por el usuario el 2026-10-29
 - `.env.example` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/ai/openai-pedido.client.spec.ts` — autorizada por el usuario el 2026-10-29
 
 ### Compartidos (cambio mínimo y aviso)
 - `src/modules/sales/sales.module.ts`
