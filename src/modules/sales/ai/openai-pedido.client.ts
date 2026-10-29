@@ -738,7 +738,7 @@ export async function extraerPedido({
   ];
 
   const usaTemperatura = !MODELOS_SIN_TEMPERATURA.has(model);
-  let completion;
+  let completion: OpenAI.Chat.Completions.ChatCompletion;
   try {
     completion = await client.chat.completions.create(
       {
@@ -1083,7 +1083,7 @@ export async function interpretarInstruccionChat(
   });
 
   const usaTemperatura = !MODELOS_SIN_TEMPERATURA.has(model);
-  let completion;
+  let completion: OpenAI.Chat.Completions.ChatCompletion;
   try {
     completion = await client.chat.completions.create(peticion(usaTemperatura), {
       maxRetries: 2,
@@ -1182,7 +1182,7 @@ export function interpretarInstruccionConReglas(
     ...contexto.instruccion.matchAll(
       /(\d{1,3})\s*(?:ot\b|[oó]rdenes? de trabajo)/gi,
     ),
-  ].map((m) => Number(m[1]));
+  ].map((coincidencia) => Number(coincidencia[1]));
   const totalOtTexto = totalExplicito
     ? Number(totalExplicito[1])
     : menciones.length > 0
@@ -1193,7 +1193,7 @@ export function interpretarInstruccionConReglas(
     /(?:total|factura|importe)[^\d]{0,30}(\d[\d.,]*\d)(?!\s*(?:ot\b|[oó]rdenes))/i.exec(
       contexto.instruccion,
     );
-  const importeNumero = importe ? parseImporteTexto(importe[1]!) : null;
+  const importeNumero = importe ? parseImporteTexto(importe[1]) : null;
 
   return {
     intencion,
@@ -1220,7 +1220,7 @@ function parseImporteTexto(raw: string): number | null {
     normalizado = raw
       .split(",")
       .slice(1)
-      .every((g) => g.length === 3)
+      .every((grupo) => grupo.length === 3)
       ? raw.replace(/,/g, "")
       : raw.replace(",", ".");
   } else {

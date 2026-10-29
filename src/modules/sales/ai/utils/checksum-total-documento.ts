@@ -47,7 +47,7 @@ export function parseMonto(raw: string): number | null {
   } else if (ultimaComa >= 0) {
     // Solo comas: miles si todos los grupos finales son de 3 dígitos.
     const grupos = limpio.split(',');
-    const esMiles = grupos.slice(1).every((g) => g.length === 3);
+    const esMiles = grupos.slice(1).every((grupo) => grupo.length === 3);
     normalizado = esMiles ? limpio.replace(/,/g, '') : limpio.replace(',', '.');
   } else {
     normalizado = limpio;

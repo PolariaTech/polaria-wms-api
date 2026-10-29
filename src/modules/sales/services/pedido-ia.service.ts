@@ -170,8 +170,8 @@ export function separarContextoYDocumentos(
 
   const sueltos = new Set(
     textos
-      .filter((t) => !t.nombre.includes(SEPARADOR_ADJUNTO_EML))
-      .map((t) => nombreBaseAdjunto(t.nombre)),
+      .filter((archivoTexto) => !archivoTexto.nombre.includes(SEPARADOR_ADJUNTO_EML))
+      .map((archivoTexto) => nombreBaseAdjunto(archivoTexto.nombre)),
   );
 
   const duplicados: string[] = [];
@@ -190,7 +190,7 @@ export function separarContextoYDocumentos(
       documentos[0].archivos = [...documentos[0].archivos, ...imagenes];
     } else {
       documentos.push({
-        nombre: imagenes.map((i) => i.nombre).join(', '),
+        nombre: imagenes.map((imagen) => imagen.nombre).join(', '),
         archivos: imagenes,
         esTexto: false,
       });
@@ -271,22 +271,22 @@ export function fusionarPedidos(
   for (const clave of Object.keys(base)) {
     if (Array.isArray(base[clave])) continue;
     const valor = pedidos
-      .map((p) => (p as unknown as Record<string, unknown>)[clave])
-      .find((v) => v !== null && v !== undefined && v !== '');
+      .map((pedidoParcial) => (pedidoParcial as unknown as Record<string, unknown>)[clave])
+      .find((valor) => valor !== null && valor !== undefined && valor !== '');
     base[clave] = valor ?? base[clave];
   }
 
   const unido = base as unknown as PedidoExtraido;
-  unido.lineas = pedidos.flatMap((p) => p.lineas);
+  unido.lineas = pedidos.flatMap((pedidoParcial) => pedidoParcial.lineas);
   unido.origenCorreo = pedidos
-    .flatMap((p) => p.origenCorreo)
+    .flatMap((pedidoParcial) => pedidoParcial.origenCorreo)
     .map((renglon, indice) => ({ ...renglon, _lineaIndex: indice }));
   unido.archivosNoLegibles = [
-    ...new Set(pedidos.flatMap((p) => p.archivosNoLegibles)),
+    ...new Set(pedidos.flatMap((pedidoParcial) => pedidoParcial.archivosNoLegibles)),
   ];
   const advertencias = [
     ...new Set(
-      pedidos.map((p) => p.advertencia).filter((a): a is string => !!a),
+      pedidos.map((pedidoParcial) => pedidoParcial.advertencia).filter((advertencia): advertencia is string => !!advertencia),
     ),
   ];
   unido.advertencia = advertencias.length > 0 ? advertencias.join(' | ') : null;
@@ -598,11 +598,11 @@ export class PedidoIaService {
       }
     }
 
-    const pedido = fusionarPedidos(lecturas.map((l) => l.pedido));
+    const pedido = fusionarPedidos(lecturas.map((lectura) => lectura.pedido));
     pedido.archivosNoLegibles = [
       ...new Set([
         ...pedido.archivosNoLegibles,
-        ...noLegibles.map((f) => f.nombre),
+        ...noLegibles.map((archivo) => archivo.nombre),
       ]),
     ];
     for (const noLegible of noLegibles) {
@@ -641,8 +641,8 @@ export class PedidoIaService {
     const { documento, contexto } = input;
     const advertencias: AdvertenciaLectura[] = [];
     const textoDocumento = documento.archivos
-      .filter((f): f is ArchivoTexto => f.tipo === 'texto')
-      .map((f) => f.contenido)
+      .filter((archivo): archivo is ArchivoTexto => archivo.tipo === 'texto')
+      .map((archivo) => archivo.contenido)
       .join('\n');
 
     const leer = (archivos: ArchivoExtraido[]) =>
@@ -664,19 +664,19 @@ export class PedidoIaService {
       const partes = await mapConLimite(
         bloques,
         MAX_BLOQUES_EN_PARALELO,
-        (bloque, i) =>
+        (bloque, indiceBloque) =>
           leer([
             {
-              nombre: `${documento.nombre} (parte ${i + 1}/${bloques.length})`,
+              nombre: `${documento.nombre} (parte ${indiceBloque + 1}/${bloques.length})`,
               tipo: 'texto',
               contenido: bloque,
             },
-            ...(i === 0 ? imagenes : []),
+            ...(indiceBloque === 0 ? imagenes : []),
           ]),
       );
-      const fusionado = fusionarPedidos(partes.map((p) => p.pedido));
+      const fusionado = fusionarPedidos(partes.map((parteLeida) => parteLeida.pedido));
       unificarAlmacenesPorCodigo(fusionado);
-      return { pedido: fusionado, uso: sumarUso(partes.map((p) => p.uso)) };
+      return { pedido: fusionado, uso: sumarUso(partes.map((parteLeida) => parteLeida.uso)) };
     };
 
     /** Lectura completa en una llamada; null si se cortó por el tope de salida. */

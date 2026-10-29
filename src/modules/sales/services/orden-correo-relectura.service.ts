@@ -198,7 +198,7 @@ export class OrdenCorreoRelecturaService {
     advertencias.push(...lectura.advertencias);
 
     // Dos archivos con la misma OC: no se suman en silencio (podrían duplicar cantidades).
-    if (lectura.advertencias.some((a) => a.codigo === 'OC_REPETIDA')) {
+    if (lectura.advertencias.some((advertencia) => advertencia.codigo === 'OC_REPETIDA')) {
       this.registrar({
         idOrdenVenta,
         requestId: body.requestId,
@@ -210,8 +210,8 @@ export class OrdenCorreoRelecturaService {
           'Dos archivos de la orden traen la misma orden de compra. Revísalos antes de corregir.',
         error: 'OC_REPETIDA',
         documentos: lectura.advertencias
-          .filter((a) => a.codigo === 'OC_REPETIDA')
-          .map((a) => a.documento),
+          .filter((advertencia) => advertencia.codigo === 'OC_REPETIDA')
+          .map((advertencia) => advertencia.documento),
       });
     }
 
