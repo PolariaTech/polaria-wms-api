@@ -187,7 +187,7 @@ export function separarContextoYDocumentos(
 
   if (imagenes.length > 0) {
     if (documentos.length > 0) {
-      documentos[0]!.archivos = [...documentos[0]!.archivos, ...imagenes];
+      documentos[0].archivos = [...documentos[0].archivos, ...imagenes];
     } else {
       documentos.push({
         nombre: imagenes.map((i) => i.nombre).join(', '),
@@ -214,7 +214,7 @@ export async function mapConLimite<T, R>(
       while (siguiente < items.length) {
         const indice = siguiente;
         siguiente += 1;
-        resultados[indice] = await fn(items[indice]!, indice);
+        resultados[indice] = await fn(items[indice], indice);
       }
     },
   );
@@ -265,9 +265,9 @@ export function sumarUso(
 export function fusionarPedidos(
   pedidos: readonly PedidoExtraido[],
 ): PedidoExtraido {
-  if (pedidos.length === 1) return pedidos[0]!;
+  if (pedidos.length === 1) return pedidos[0];
 
-  const base = { ...pedidos[0]! } as unknown as Record<string, unknown>;
+  const base = { ...pedidos[0] } as unknown as Record<string, unknown>;
   for (const clave of Object.keys(base)) {
     if (Array.isArray(base[clave])) continue;
     const valor = pedidos
@@ -325,7 +325,7 @@ export function unificarAlmacenesPorCodigo(pedido: PedidoExtraido): void {
     const ordenados = [...porNombre.entries()].sort(
       (a, b) => b[1] - a[1] || b[0].length - a[0].length,
     );
-    canonico.set(codigo, ordenados[0]![0]);
+    canonico.set(codigo, ordenados[0][0]);
   }
   if (canonico.size === 0) return;
 
@@ -358,7 +358,7 @@ export function imponerOcDelDocumento(
   ocNombre: string | null;
 } {
   const etiquetas = ocsDesdeEtiquetaPedido(textoDocumento);
-  const ocContenido = etiquetas.length === 1 ? etiquetas[0]! : null;
+  const ocContenido = etiquetas.length === 1 ? etiquetas[0] : null;
   const ocNombre = ocDesdeNombreArchivo(nombreDocumento);
 
   if (ocContenido) {
@@ -447,7 +447,7 @@ export class PedidoIaService {
     try {
       const lectura = await this.leerArchivosParaCuenta({
         codigoCuenta,
-        ctx: ctx!,
+        ctx: ctx,
         texto,
         archivos: this.toArchivosSubidos(input.files),
       });
@@ -656,6 +656,11 @@ export class PedidoIaService {
 
     const leerPorBloques = async (): Promise<ResultadoExtraccion> => {
       const bloques = construirBloques(partirTextoEnPaginas(textoDocumento));
+      // Las imágenes que viajan con el documento (fotos del pedido) se mandan una sola
+      // vez, en el primer bloque: en todos multiplicarían el costo sin aportar datos.
+      const imagenes = documento.archivos.filter(
+        (archivo) => archivo.tipo === 'imagen',
+      );
       const partes = await mapConLimite(
         bloques,
         MAX_BLOQUES_EN_PARALELO,
@@ -666,6 +671,7 @@ export class PedidoIaService {
               tipo: 'texto',
               contenido: bloque,
             },
+            ...(i === 0 ? imagenes : []),
           ]),
       );
       const fusionado = fusionarPedidos(partes.map((p) => p.pedido));

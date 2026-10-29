@@ -358,6 +358,41 @@ describe('PedidoIaService.leerArchivosParaCuenta — casos REQ-187', () => {
     expect(r.pedido.origenCorreo).toHaveLength(116);
   });
 
+  it('al leer por bloques, las imágenes del documento viajan solo en el primer bloque', async () => {
+    const completos = renglonesDe(doc081!);
+    const foto = { nombre: 'foto-pedido.jpg', tipo: 'imagen' as const };
+    const llamadas: Array<{ nombre: string; imagenes: number }> = [];
+    extraerPedidoMock.mockImplementation(
+      async ({
+        archivosExtraidos,
+      }: {
+        archivosExtraidos: Array<{ nombre: string; tipo: string }>;
+      }) => {
+        const bloque = archivosExtraidos.find((a) => /\(parte \d+\/\d+\)/.test(a.nombre));
+        llamadas.push({
+          nombre: bloque!.nombre,
+          imagenes: archivosExtraidos.filter((a) => a.tipo === 'imagen').length,
+        });
+        return { pedido: pedidoDe(porteDe(completos, bloque!.nombre)), uso: null };
+      },
+    );
+    extractFilesMock.mockResolvedValue([cuerpo, archivoPdf(doc081!), foto]);
+
+    await crearServicio().leerArchivosParaCuenta({
+      codigoCuenta: '1YW43',
+      ctx,
+      texto: '',
+      archivos: [],
+    });
+
+    expect(llamadas.length).toBeGreaterThan(1);
+    const primera = llamadas.find((l) => l.nombre.includes('(parte 1/'))!;
+    expect(primera.imagenes).toBe(1);
+    expect(
+      llamadas.filter((l) => !l.nombre.includes('(parte 1/')).every((l) => l.imagenes === 0),
+    ).toBe(true);
+  });
+
   it('un documento corto se lee en una sola llamada', async () => {
     modeloPerfecto();
     extractFilesMock.mockResolvedValue([archivoPdfCorto(doc208!)]);

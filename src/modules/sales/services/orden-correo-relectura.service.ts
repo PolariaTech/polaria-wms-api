@@ -79,7 +79,7 @@ interface FilaOrdenVenta {
 }
 
 function claveRenglon(renglon: OrigenCorreoRenglon): string {
-  const norm = (campo: unknown) =>
+  const norm = (campo: string | number | null | undefined) =>
     String(campo ?? '')
       .trim()
       .toLowerCase()
@@ -103,14 +103,14 @@ function contar(
   return conteo;
 }
 
-/** Cuántos renglones de `a` no están en `b` (comparación de multiconjuntos). */
+/** Cuántos renglones de `conteoOrigen` no están en `conteoReferencia` (multiconjuntos). */
 function diferencia(
-  a: ReadonlyMap<string, number>,
-  b: ReadonlyMap<string, number>,
+  conteoOrigen: ReadonlyMap<string, number>,
+  conteoReferencia: ReadonlyMap<string, number>,
 ): number {
   let total = 0;
-  for (const [clave, cantidad] of a) {
-    total += Math.max(0, cantidad - (b.get(clave) ?? 0));
+  for (const [clave, cantidad] of conteoOrigen) {
+    total += Math.max(0, cantidad - (conteoReferencia.get(clave) ?? 0));
   }
   return total;
 }
