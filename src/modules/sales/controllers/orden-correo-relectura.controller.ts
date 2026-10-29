@@ -112,10 +112,14 @@ export class OrdenCorreoRelecturaController {
     return this.service.iniciar(id, body, ctx);
   }
 
-  /** Se consulta cada pocos segundos mientras corre: no cuenta contra el límite del POST. */
+  /**
+   * Se consulta cada pocos segundos mientras corre: no cuenta contra el límite del POST.
+   * Salta los dos límites globales (`default` y `auth`): con solo el primero, el de
+   * `auth` (15 por minuto) cortaba el sondeo de 3 s a mitad de la relectura.
+   */
   @Get(':id/ordenes-trabajo/propuesta-correccion-correo/:jobId')
   @Roles(...ROLES_REAGRUPACION_OT)
-  @SkipThrottle()
+  @SkipThrottle({ default: true, auth: true })
   @ApiOperation({
     summary: 'Consultar el avance de una corrección iniciada',
     description:
