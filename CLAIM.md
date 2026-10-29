@@ -28,6 +28,13 @@
 - `src/modules/sales/controllers/orden-correo-relectura.controller.spec.ts` — autorizada por el usuario el 2026-10-29
 - `src/modules/sales/ai/utils/pdf-paginas.ts` — autorizada por el usuario el 2026-10-29
 - `src/modules/sales/ai/utils/pdf-paginas.spec.ts` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/ai/precios-openai.json` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/ai/file-extractors.ts` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/ai/file-extractors.spec.ts` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/ai/upload-ov-adjunto-cloudinary.ts` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/dto/pedido-ia-response.dto.ts` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/controllers/pedido-ia.controller.ts` — autorizada por el usuario el 2026-10-29
+- `.env.example` — autorizada por el usuario el 2026-10-29
 
 ### Compartidos (cambio mínimo y aviso)
 - `src/modules/sales/sales.module.ts`
