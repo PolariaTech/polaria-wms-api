@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 const MAX_BYTES = 15 * 1024 * 1024;
 const BUCKET = 'ov-adjuntos';
 
-function sanitizeCuentaFolder(codigoCuenta: string): string {
+export function sanitizeCuentaFolder(codigoCuenta: string): string {
   const raw = codigoCuenta.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
   return raw.slice(0, 64) || 'sin-cuenta';
 }

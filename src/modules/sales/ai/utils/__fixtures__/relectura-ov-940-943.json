@@ -1,0 +1,224 @@
+{
+ "_nota": "Verdad de referencia de REQ-187 (OV-940 y OV-943) calculada sumando las filas de los PDF originales; cuadra con el Total pedido de cada documento. Solo cuentas por almacen, sin textos de producto ni datos personales.",
+ "documentos": [
+  {
+   "nombre": "AGUACATES DE PUEBLA_4502986931_HRV.pdf",
+   "oc": "4502986931",
+   "totalDocumento": 27905.25,
+   "renglones": 134,
+   "almacenes": {
+    "APAS Pasteleria": {
+     "renglones": 4,
+     "importe": 9040
+    },
+    "ACOE ComedorEmplea": {
+     "renglones": 8,
+     "importe": 2763
+    },
+    "ABJU Bar Heaven": {
+     "renglones": 4,
+     "importe": 2510
+    },
+    "ACOC Cocina Genera": {
+     "renglones": 13,
+     "importe": 3039.75
+    },
+    "ACRD Cocina TheMar": {
+     "renglones": 15,
+     "importe": 1758.5
+    },
+    "ACNT Cocina Toro": {
+     "renglones": 13,
+     "importe": 1706
+    },
+    "ACMY Cocina Zen": {
+     "renglones": 4,
+     "importe": 323
+    },
+    "ACFA Cocina Frida": {
+     "renglones": 7,
+     "importe": 578.1
+    },
+    "ASWC Caffeto Hacie": {
+     "renglones": 2,
+     "importe": 146
+    },
+    "ABAP Parque Acuati": {
+     "renglones": 1,
+     "importe": 48
+    },
+    "ARSE Room Service": {
+     "renglones": 7,
+     "importe": 843
+    },
+    "ACIL Cocina La Isl": {
+     "renglones": 11,
+     "importe": 889.1
+    },
+    "ACOL Cocina Ciao": {
+     "renglones": 3,
+     "importe": 246.5
+    },
+    "ACLT Cocina Lepeti": {
+     "renglones": 4,
+     "importe": 242.2
+    },
+    "ACHE Caffeto Heave": {
+     "renglones": 6,
+     "importe": 422.6
+    },
+    "ACO2 Cocina LosGal": {
+     "renglones": 3,
+     "importe": 409
+    },
+    "ACFO Cocina Faro": {
+     "renglones": 9,
+     "importe": 573
+    },
+    "ACUM Cocina Umo": {
+     "renglones": 8,
+     "importe": 911
+    },
+    "ABAN Banquetes Ali": {
+     "renglones": 10,
+     "importe": 1214.5
+    },
+    "ARIN Rest. Inmersi": {
+     "renglones": 2,
+     "importe": 242
+    }
+   }
+  },
+  {
+   "nombre": "AGUACATES DE PUEBLA_4502987081_UNICO.pdf",
+   "oc": "4502987081",
+   "totalDocumento": 18163.75,
+   "renglones": 116,
+   "almacenes": {
+    "ARSE Room Service": {
+     "renglones": 13,
+     "importe": 1786.25
+    },
+    "ARMC Rest Itali Mi": {
+     "renglones": 10,
+     "importe": 678
+    },
+    "ARCS Rest Mex Cuev": {
+     "renglones": 7,
+     "importe": 974
+    },
+    "ARMH Rest Japo Mur": {
+     "renglones": 4,
+     "importe": 344
+    },
+    "ARAV Rest Fra AVEC": {
+     "renglones": 2,
+     "importe": 66
+    },
+    "AR87 Rest Medit 20": {
+     "renglones": 35,
+     "importe": 4209.5
+    },
+    "ACAF Café Inez": {
+     "renglones": 9,
+     "importe": 1606.5
+    },
+    "ASUN Snack Unica": {
+     "renglones": 8,
+     "importe": 1265.5
+    },
+    "APAS Pasteleria": {
+     "renglones": 4,
+     "importe": 2636
+    },
+    "ABAN Banquetes Ali": {
+     "renglones": 8,
+     "importe": 1493
+    },
+    "ABAR Bares": {
+     "renglones": 4,
+     "importe": 608
+    },
+    "ACOE ComedorEmplea": {
+     "renglones": 12,
+     "importe": 2497
+    }
+   }
+  },
+  {
+   "nombre": "AGUACATES DE PUEBLA_4502987208_UNICO FAC NOV.pdf",
+   "oc": "4502987208",
+   "totalDocumento": 11500.6,
+   "renglones": 82,
+   "almacenes": {
+    "ARSE Room Service": {
+     "renglones": 13,
+     "importe": 834.25
+    },
+    "ARMC Rest Itali Mi": {
+     "renglones": 6,
+     "importe": 412.1
+    },
+    "ARCS Rest Mex Cuev": {
+     "renglones": 7,
+     "importe": 880
+    },
+    "ARMH Rest Japo Mur": {
+     "renglones": 2,
+     "importe": 161
+    },
+    "ARAV Rest Fra AVEC": {
+     "renglones": 1,
+     "importe": 70
+    },
+    "AR87 Rest Medit 20": {
+     "renglones": 17,
+     "importe": 2362.5
+    },
+    "ACAF Café Inez": {
+     "renglones": 8,
+     "importe": 1128
+    },
+    "ASUN Snack Unica": {
+     "renglones": 4,
+     "importe": 626.5
+    },
+    "APAS Pasteleria": {
+     "renglones": 4,
+     "importe": 1287
+    },
+    "ABAN Banquetes Ali": {
+     "renglones": 8,
+     "importe": 2018.25
+    },
+    "ABAR Bares": {
+     "renglones": 2,
+     "importe": 125
+    },
+    "ACOE ComedorEmplea": {
+     "renglones": 10,
+     "importe": 1596
+    }
+   }
+  }
+ ],
+ "casos": {
+  "OV-940": {
+   "documentos": [
+    0
+   ],
+   "ots": 20,
+   "renglones": 134,
+   "importe": 27905.25
+  },
+  "OV-943": {
+   "documentos": [
+    1,
+    2
+   ],
+   "ots": 24,
+   "renglones": 198,
+   "importe": 29664.35
+  }
+ }
+}

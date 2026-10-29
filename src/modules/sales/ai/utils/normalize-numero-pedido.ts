@@ -91,6 +91,39 @@ function collectFromLabels(sourceText: string): string[] {
   return hits;
 }
 
+/**
+ * OC incrustada en el nombre (`AGUACATES DE PUEBLA_4502987208_UNICO.pdf`): 9–12 dígitos
+ * delimitados por no-dígitos. Se usa solo como contraste de la OC leída del contenido
+ * (REQ-187); NO entra a `detectOrdenCompraFromSource`, donde una cifra suelta del
+ * nombre (p. ej. una fecha o folio) ganaría sobre las etiquetas del documento.
+ */
+const FILENAME_OC_EMBEBIDA_RE = /(?:^|[^\d])(\d{9,12})(?=[^\d]|$)/;
+
+export function ocDesdeNombreArchivo(nombre: string): string | null {
+  const base = nombre.split(/[/\\]/).pop() ?? nombre;
+  const inicio = base.match(FILENAME_OC_RE);
+  if (inicio?.[1]) return inicio[1];
+  const embebida = base.match(FILENAME_OC_EMBEBIDA_RE);
+  return embebida?.[1] ?? null;
+}
+
+/** "No. Pedido 4502986931" del encabezado de un pedido de compra (SAP/Solaya y similares). */
+const NO_PEDIDO_LABEL_RE = /\bn[oº°]\.?\s*pedido\s*:?\s*(\d{6,15})\b/gi;
+
+/** Todas las OC distintas que el documento rotula como "No. Pedido", la más repetida primero. */
+export function ocsDesdeEtiquetaPedido(texto: string): string[] {
+  const conteo = new Map<string, number>();
+  for (const match of texto.matchAll(NO_PEDIDO_LABEL_RE)) {
+    const valor = match[1]!;
+    conteo.set(valor, (conteo.get(valor) ?? 0) + 1);
+  }
+  return [...conteo.entries()].sort((a, b) => b[1] - a[1]).map(([oc]) => oc);
+}
+
+export function ocDesdeEtiquetaPedido(texto: string): string | null {
+  return ocsDesdeEtiquetaPedido(texto)[0] ?? null;
+}
+
 function collectFromFilenames(fileNames: readonly string[]): string[] {
   const hits: string[] = [];
   for (const name of fileNames) {
