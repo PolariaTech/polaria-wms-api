@@ -909,14 +909,12 @@ export async function extraerPedido({
   // que invoque este servicio; aquí solo se expone el dato.
   const uso: UsoOpenAI | null = completion.usage
     ? (() => {
-        const tokensCacheados =
-          completion.usage?.prompt_tokens_details?.cached_tokens ?? 0;
-        const tokensCacheEscritura =
-          (
-            completion.usage?.prompt_tokens_details as
-              | { cache_write_tokens?: number }
-              | undefined
-          )?.cache_write_tokens ?? 0;
+        // `cache_write_tokens` aún no está en el tipo del SDK: se lee con un tipo propio.
+        const detalles:
+          | { cached_tokens?: number; cache_write_tokens?: number }
+          | undefined = completion.usage?.prompt_tokens_details;
+        const tokensCacheados = detalles?.cached_tokens ?? 0;
+        const tokensCacheEscritura = detalles?.cache_write_tokens ?? 0;
         return {
           tokensEntrada: completion.usage.prompt_tokens,
           tokensEntradaCacheados: tokensCacheados,

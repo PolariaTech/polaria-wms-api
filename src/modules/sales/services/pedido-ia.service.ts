@@ -856,7 +856,7 @@ export class PedidoIaService {
       origenArchivos =
         serializeOrigenArchivosJson(uploaded) ||
         input.files
-          .map((f) => f.originalname?.trim())
+          .map((archivo) => archivo.originalname?.trim())
           .filter(Boolean)
           .join(', ') ||
         origenArchivos;

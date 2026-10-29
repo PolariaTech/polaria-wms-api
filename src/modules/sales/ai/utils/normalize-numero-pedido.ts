@@ -114,7 +114,7 @@ const NO_PEDIDO_LABEL_RE = /\bn[oº°]\.?\s*pedido\s*:?\s*(\d{6,15})\b/gi;
 export function ocsDesdeEtiquetaPedido(texto: string): string[] {
   const conteo = new Map<string, number>();
   for (const match of texto.matchAll(NO_PEDIDO_LABEL_RE)) {
-    const valor = match[1]!;
+    const valor = match[1];
     conteo.set(valor, (conteo.get(valor) ?? 0) + 1);
   }
   return [...conteo.entries()].sort((a, b) => b[1] - a[1]).map(([oc]) => oc);
