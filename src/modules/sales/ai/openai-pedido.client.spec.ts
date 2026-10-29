@@ -191,7 +191,8 @@ describe('openai-pedido.client (REQ-187)', () => {
       const resultado = await interpretarInstruccionChat(contexto);
 
       expect(resultado.motivo).not.toMatch(/[<>]/);
-      expect(resultado.motivo).not.toMatch(/[\u0000‮]/);
+      expect(resultado.motivo).not.toContain('\u0000');
+      expect(resultado.motivo).not.toContain('‮');
       expect(Array.from(resultado.motivo).length).toBeLessThanOrEqual(120);
       expect(resultado.motivo.startsWith('scriptalerta/script')).toBe(true);
     });
