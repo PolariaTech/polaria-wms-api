@@ -24,6 +24,10 @@
 - `src/modules/sales/services/pedido-ia.service.spec.ts` — archivo nuevo
 - `src/modules/sales/dto/propuesta-correccion-correo.dto.ts` — archivo nuevo
 - `src/modules/sales/ai/utils/__fixtures__/relectura-ov-940-943.json` — archivo nuevo
+- `src/modules/sales/controllers/orden-correo-relectura.controller.ts` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/controllers/orden-correo-relectura.controller.spec.ts` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/ai/utils/pdf-paginas.ts` — autorizada por el usuario el 2026-10-29
+- `src/modules/sales/ai/utils/pdf-paginas.spec.ts` — autorizada por el usuario el 2026-10-29
 
 ### Compartidos (cambio mínimo y aviso)
 - `src/modules/sales/sales.module.ts`
