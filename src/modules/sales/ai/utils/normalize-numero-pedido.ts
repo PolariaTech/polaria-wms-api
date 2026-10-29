@@ -120,10 +120,6 @@ export function ocsDesdeEtiquetaPedido(texto: string): string[] {
   return [...conteo.entries()].sort((a, b) => b[1] - a[1]).map(([oc]) => oc);
 }
 
-export function ocDesdeEtiquetaPedido(texto: string): string | null {
-  return ocsDesdeEtiquetaPedido(texto)[0] ?? null;
-}
-
 function collectFromFilenames(fileNames: readonly string[]): string[] {
   const hits: string[] = [];
   for (const name of fileNames) {

@@ -1,7 +1,6 @@
 import {
   detectOrdenCompraFromSource,
   normalizeNumeroPedidoFields,
-  ocDesdeEtiquetaPedido,
   ocDesdeNombreArchivo,
   resolveOrdenCompraLimpia,
   shouldUnifyNumeroPedidoToOc,
@@ -222,23 +221,6 @@ describe('OC por documento (REQ-187)', () => {
 
     it('null si el nombre no trae número', () => {
       expect(ocDesdeNombreArchivo('correo.eml')).toBeNull();
-    });
-  });
-
-  describe('ocDesdeEtiquetaPedido', () => {
-    it('lee "No. Pedido" del encabezado', () => {
-      const texto = 'Aprobado ORIGINAL\nNo. Pedido 4502986931\nFecha de entrega';
-      expect(ocDesdeEtiquetaPedido(texto)).toBe('4502986931');
-    });
-
-    it('toma el más repetido cuando hay varios', () => {
-      const texto =
-        'No. Pedido 4502987081\n...\nNo. Pedido 4502987081\nNo. Pedido 123456';
-      expect(ocDesdeEtiquetaPedido(texto)).toBe('4502987081');
-    });
-
-    it('null si no hay etiqueta', () => {
-      expect(ocDesdeEtiquetaPedido('sin etiqueta')).toBeNull();
     });
   });
 });

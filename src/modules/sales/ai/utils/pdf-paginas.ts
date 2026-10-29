@@ -1,5 +1,3 @@
-import { extractText, getDocumentProxy } from 'unpdf';
-
 /**
  * Partir un PDF por páginas para releerlo por bloques (REQ-187).
  *
@@ -36,13 +34,6 @@ export function partirTextoEnPaginas(texto: string, tamano = 2300): string[] {
   }
   if (actual.length > 0) paginas.push(actual.join('\n'));
   return paginas;
-}
-
-/** Texto por página (sin mezclar). Los PDF escaneados como imagen devuelven páginas vacías. */
-export async function extraerPaginasPdf(buffer: Buffer): Promise<string[]> {
-  const pdf = await getDocumentProxy(new Uint8Array(buffer));
-  const { text } = await extractText(pdf, { mergePages: false });
-  return (Array.isArray(text) ? text : [text]).map((pagina) => pagina.trim());
 }
 
 /**

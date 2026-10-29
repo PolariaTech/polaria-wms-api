@@ -39,10 +39,7 @@ import type {
   PropuestaCorreccionCorreoBodyDto,
   PropuestaCorreccionCorreoResponseDto,
 } from '../dto/propuesta-correccion-correo.dto';
-import {
-  PedidoIaService,
-  type AdvertenciaLectura,
-} from './pedido-ia.service';
+import { PedidoIaService, type AdvertenciaLectura } from './pedido-ia.service';
 
 const ESTADO_POR_CONFIRMAR = 'por_confirmar';
 
@@ -82,8 +79,8 @@ interface FilaOrdenVenta {
 }
 
 function claveRenglon(renglon: OrigenCorreoRenglon): string {
-  const norm = (v: unknown) =>
-    String(v ?? '')
+  const norm = (campo: unknown) =>
+    String(campo ?? '')
       .trim()
       .toLowerCase()
       .replace(/\s+/g, ' ');
@@ -95,7 +92,9 @@ function claveRenglon(renglon: OrigenCorreoRenglon): string {
   ].join('|');
 }
 
-function contar(renglones: readonly OrigenCorreoRenglon[]): Map<string, number> {
+function contar(
+  renglones: readonly OrigenCorreoRenglon[],
+): Map<string, number> {
   const conteo = new Map<string, number>();
   for (const renglon of renglones) {
     const clave = claveRenglon(renglon);
@@ -163,7 +162,8 @@ export class OrdenCorreoRelecturaService {
     if (descarga.excedeTope) {
       advertencias.push({
         codigo: 'ADJUNTOS_EXCEDEN_TOPE',
-        detalle: 'La orden tiene más archivos que el tope: se leyeron solo los primeros.',
+        detalle:
+          'La orden tiene más archivos que el tope: se leyeron solo los primeros.',
       });
     }
     for (const rechazado of descarga.rechazados) {
@@ -218,7 +218,7 @@ export class OrdenCorreoRelecturaService {
     // El checksum determinístico manda: si un documento declara su total y no cuadra,
     // no se ofrece una propuesta que el usuario pueda aplicar creyendo que está bien.
     const noCuadran = lectura.documentos.filter(
-      (d) => d.verificacion.cuadra === false,
+      (documento) => documento.verificacion.cuadra === false,
     );
     if (noCuadran.length > 0) {
       this.registrar({
@@ -232,10 +232,10 @@ export class OrdenCorreoRelecturaService {
         message:
           'La relectura no coincide con el total de los documentos. No se propone ningún cambio.',
         error: 'RELECTURA_NO_CUADRA',
-        documentos: noCuadran.map((d) => ({
-          nombre: d.nombre,
-          totalDocumento: d.verificacion.totalDocumento,
-          importe: d.verificacion.importe,
+        documentos: noCuadran.map((documento) => ({
+          nombre: documento.nombre,
+          totalDocumento: documento.verificacion.totalDocumento,
+          importe: documento.verificacion.importe,
         })),
       });
     }
@@ -263,7 +263,7 @@ export class OrdenCorreoRelecturaService {
         JSON.stringify({
           origenCorreo: antesRenglones,
           adjuntos: descarga.descargados
-            .map((d) => [d.path, d.bytes])
+            .map((adjunto) => [adjunto.path, adjunto.bytes])
             .sort((adjuntoA, adjuntoB) =>
               String(adjuntoA[0]).localeCompare(String(adjuntoB[0])),
             ),
@@ -299,7 +299,7 @@ export class OrdenCorreoRelecturaService {
       requestId: body.requestId,
       propuestaId: randomUUID(),
       baseHash,
-      documentos: lectura.documentos.map((d) => ({ ...d })),
+      documentos: lectura.documentos.map((documento) => ({ ...documento })),
       ots: otsDespues.map((ot) => ({
         id: ot.id,
         etiqueta: ot.label,
@@ -450,9 +450,12 @@ export class OrdenCorreoRelecturaService {
       renglonesActuales: renglones.length,
       importeActual: sumarImportes(renglones),
       pedidosDistintos: new Set(
-        renglones.map((r) => (r['Numero pedido'] ?? '').toString().trim()),
+        renglones.map((renglon) =>
+          (renglon['Numero pedido'] ?? '').toString().trim(),
+        ),
       ).size,
-      tieneArchivosOriginales: parseOrigenArchivos(orden.origenArchivos).length > 0,
+      tieneArchivosOriginales:
+        parseOrigenArchivos(orden.origenArchivos).length > 0,
     };
 
     let decision: InterpretacionInstruccionChat;

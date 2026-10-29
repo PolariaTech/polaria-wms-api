@@ -70,8 +70,8 @@ export function extraerTotalDocumento(texto: string): number | null {
 function aNumero(valor: number | string | null | undefined): number {
   if (typeof valor === 'number') return Number.isFinite(valor) ? valor : 0;
   if (typeof valor === 'string' && valor.trim() !== '') {
-    const n = Number(valor.replace(',', '.').trim());
-    return Number.isFinite(n) ? n : 0;
+    const numero = Number(valor.replace(',', '.').trim());
+    return Number.isFinite(numero) ? numero : 0;
   }
   return 0;
 }

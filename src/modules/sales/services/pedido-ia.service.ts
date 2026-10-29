@@ -132,8 +132,12 @@ export interface DocumentoParaLeer {
 
 /** `correo.eml → AGUACATES_4502987081.pdf` → `aguacates_4502987081.pdf`. */
 export function nombreBaseAdjunto(nombre: string): string {
-  const i = nombre.lastIndexOf(SEPARADOR_ADJUNTO_EML);
-  return (i >= 0 ? nombre.slice(i + SEPARADOR_ADJUNTO_EML.length) : nombre)
+  const posicionSeparador = nombre.lastIndexOf(SEPARADOR_ADJUNTO_EML);
+  return (
+    posicionSeparador >= 0
+      ? nombre.slice(posicionSeparador + SEPARADOR_ADJUNTO_EML.length)
+      : nombre
+  )
     .trim()
     .toLowerCase();
 }
@@ -144,7 +148,9 @@ export function nombreBaseAdjunto(nombre: string): string {
  * subió suelto se descarta (se leía dos veces). Las imágenes son un solo documento, o
  * van con el primero si hay documentos de texto (una foto no es un pedido aparte).
  */
-export function separarContextoYDocumentos(extraidos: readonly ArchivoExtraido[]): {
+export function separarContextoYDocumentos(
+  extraidos: readonly ArchivoExtraido[],
+): {
   contexto: ArchivoTexto[];
   documentos: DocumentoParaLeer[];
   noLegibles: ArchivoNoLegible[];
@@ -216,22 +222,39 @@ export async function mapConLimite<T, R>(
   return resultados;
 }
 
-export function sumarUso(usos: ReadonlyArray<UsoOpenAI | null>): UsoOpenAI | null {
-  const validos = usos.filter((u): u is UsoOpenAI => u !== null);
+export function sumarUso(
+  usos: ReadonlyArray<UsoOpenAI | null>,
+): UsoOpenAI | null {
+  const validos = usos.filter((uso): uso is UsoOpenAI => uso !== null);
   if (validos.length === 0) return null;
-  const costos = validos.map((u) => u.costoUSD);
+  const costos = validos.map((uso) => uso.costoUSD);
   return {
-    tokensEntrada: validos.reduce((s, u) => s + u.tokensEntrada, 0),
-    tokensEntradaCacheados: validos.reduce((s, u) => s + u.tokensEntradaCacheados, 0),
-    tokensEntradaCacheEscritura: validos.reduce(
-      (s, u) => s + u.tokensEntradaCacheEscritura,
+    tokensEntrada: validos.reduce(
+      (acumulado, uso) => acumulado + uso.tokensEntrada,
       0,
     ),
-    tokensSalida: validos.reduce((s, u) => s + u.tokensSalida, 0),
-    tokensTotal: validos.reduce((s, u) => s + u.tokensTotal, 0),
-    costoUSD: costos.some((c) => c === null)
+    tokensEntradaCacheados: validos.reduce(
+      (acumulado, uso) => acumulado + uso.tokensEntradaCacheados,
+      0,
+    ),
+    tokensEntradaCacheEscritura: validos.reduce(
+      (acumulado, uso) => acumulado + uso.tokensEntradaCacheEscritura,
+      0,
+    ),
+    tokensSalida: validos.reduce(
+      (acumulado, uso) => acumulado + uso.tokensSalida,
+      0,
+    ),
+    tokensTotal: validos.reduce(
+      (acumulado, uso) => acumulado + uso.tokensTotal,
+      0,
+    ),
+    costoUSD: costos.some((costo) => costo === null)
       ? null
-      : costos.reduce<number>((s, c) => s + (c ?? 0), 0),
+      : costos.reduce<number>(
+          (acumulado, costo) => acumulado + (costo ?? 0),
+          0,
+        ),
   };
 }
 
@@ -239,7 +262,9 @@ export function sumarUso(usos: ReadonlyArray<UsoOpenAI | null>): UsoOpenAI | nul
  * Une lecturas de varios documentos (o de varios bloques de un documento): los campos de
  * cabecera salen del primero que los trae; renglones y líneas se concatenan.
  */
-export function fusionarPedidos(pedidos: readonly PedidoExtraido[]): PedidoExtraido {
+export function fusionarPedidos(
+  pedidos: readonly PedidoExtraido[],
+): PedidoExtraido {
   if (pedidos.length === 1) return pedidos[0]!;
 
   const base = { ...pedidos[0]! } as unknown as Record<string, unknown>;
@@ -260,7 +285,9 @@ export function fusionarPedidos(pedidos: readonly PedidoExtraido[]): PedidoExtra
     ...new Set(pedidos.flatMap((p) => p.archivosNoLegibles)),
   ];
   const advertencias = [
-    ...new Set(pedidos.map((p) => p.advertencia).filter((a): a is string => !!a)),
+    ...new Set(
+      pedidos.map((p) => p.advertencia).filter((a): a is string => !!a),
+    ),
   ];
   unido.advertencia = advertencias.length > 0 ? advertencias.join(' | ') : null;
   return unido;
@@ -371,7 +398,9 @@ export class PedidoIaService {
     private readonly tenantLocator: TenantSchemaLocator,
   ) {}
 
-  async extraerArchivos(files: Express.Multer.File[]): Promise<ArchivoExtraido[]> {
+  async extraerArchivos(
+    files: Express.Multer.File[],
+  ): Promise<ArchivoExtraido[]> {
     this.assertFiles(files);
     const uploaded = this.toArchivosSubidos(files);
     return extractFiles(uploaded);
@@ -442,7 +471,7 @@ export class PedidoIaService {
           documentos: lectura.documentos.length,
           renglones: origenCorreo.length,
           totalesQueNoCuadran: lectura.documentos.filter(
-            (d) => d.verificacion.cuadra === false,
+            (documento) => documento.verificacion.cuadra === false,
           ).length,
           textoOrigenChars: lectura.textoOrigen.length,
           duracionMs: Date.now() - inicio,
@@ -717,7 +746,8 @@ export class PedidoIaService {
       advertencias.push({
         codigo: 'SIN_TOTAL_DOCUMENTO',
         documento: documento.nombre,
-        detalle: 'El documento no declara «Total pedido»: la lectura no se pudo verificar.',
+        detalle:
+          'El documento no declara «Total pedido»: la lectura no se pudo verificar.',
       });
     }
 
@@ -803,11 +833,7 @@ export class PedidoIaService {
     const idComprador = await this.resolveIdCompradorIngest(
       schema,
       codigoCuenta,
-      pick(
-        pedido.nombreCliente,
-        first['Nombre cliente'],
-        input.cliente,
-      ),
+      pick(pedido.nombreCliente, first['Nombre cliente'], input.cliente),
     );
 
     const fechaRaw = pick(pedido.fechaEntrega, first.Fecha);
@@ -818,14 +844,9 @@ export class PedidoIaService {
 
     let origenArchivos: string | null = input.origenArchivos?.trim() || null;
     if (input.files.length > 0) {
-      const {
-        uploadOvAdjuntosMulter,
-        serializeOrigenArchivosJson,
-      } = await import('../ai/upload-ov-adjunto-cloudinary');
-      const uploaded = await uploadOvAdjuntosMulter(
-        input.files,
-        codigoCuenta,
-      );
+      const { uploadOvAdjuntosMulter, serializeOrigenArchivosJson } =
+        await import('../ai/upload-ov-adjunto-cloudinary');
+      const uploaded = await uploadOvAdjuntosMulter(input.files, codigoCuenta);
       origenArchivos =
         serializeOrigenArchivosJson(uploaded) ||
         input.files
