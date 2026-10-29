@@ -264,7 +264,9 @@ export class OrdenCorreoRelecturaService {
           origenCorreo: antesRenglones,
           adjuntos: descarga.descargados
             .map((d) => [d.path, d.bytes])
-            .sort((x, y) => String(x[0]).localeCompare(String(y[0]))),
+            .sort((adjuntoA, adjuntoB) =>
+              String(adjuntoA[0]).localeCompare(String(adjuntoB[0])),
+            ),
         }),
       )
       .digest('hex');
