@@ -5,6 +5,8 @@
  * facturación y la «Lista de precios» como dirección.
  */
 
+import { extractDireccionShipToDesdeTexto } from './extract-entrega-desde-texto';
+
 const MARCA_CORREO_APLICATIVO = /^\s*PEDIDO\s+ADP-\d{6}-\d{4}-\w+/im;
 const LINEA_DIRECCION = /^[ \t]*Direcci[oó]n[ \t]*:[ \t]*(.*)$/im;
 const ES_CORREO_ELECTRONICO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -19,4 +21,14 @@ export function extractDireccionCorreoAplicativo(
   if (!valor || valor.length < 3) return null;
   if (ES_CORREO_ELECTRONICO.test(valor)) return null;
   return valor;
+}
+
+/** Direcci�n de entrega: la l�nea del correo del aplicativo y, si no hay, la regla Ship To. */
+export function resolveDireccionEntregaDesdeTexto(
+  texto: string | null | undefined,
+): string | null {
+  return (
+    extractDireccionCorreoAplicativo(texto) ??
+    extractDireccionShipToDesdeTexto(texto)
+  );
 }

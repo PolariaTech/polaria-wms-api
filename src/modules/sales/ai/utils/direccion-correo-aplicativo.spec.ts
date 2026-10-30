@@ -1,4 +1,7 @@
-import { extractDireccionCorreoAplicativo } from './direccion-correo-aplicativo';
+import {
+  extractDireccionCorreoAplicativo,
+  resolveDireccionEntregaDesdeTexto,
+} from './direccion-correo-aplicativo';
 
 const CORREO_FACTURA_SI = [
   'PEDIDO ADP-261030-0528-06E Â· ORDINARIO',
@@ -67,5 +70,19 @@ describe('extractDireccionCorreoAplicativo (REQ-231)', () => {
         'PEDIDO ADP-261030-0001-AAA Â· ORDINARIO\nDirecciÃ³n: facturacion@tallerderestaurantes.com\n',
       ),
     ).toBeNull();
+  });
+});
+
+describe('resolveDireccionEntregaDesdeTexto (REQ-231)', () => {
+  it('usa la línea del aplicativo y, si no es de ese correo, la regla Ship To', () => {
+    expect(resolveDireccionEntregaDesdeTexto(CORREO_FACTURA_SI)).toBe(
+      'Av.Nichupte region 96 mz 109 lt 05',
+    );
+    expect(
+      resolveDireccionEntregaDesdeTexto(
+        'Ship To: Calle Reforma 100, Cancún, Q.R.\nBill To: Otra calle',
+      ),
+    ).toBe('Calle Reforma 100, Cancún, Q.R.');
+    expect(resolveDireccionEntregaDesdeTexto('sin dirección')).toBeNull();
   });
 });
