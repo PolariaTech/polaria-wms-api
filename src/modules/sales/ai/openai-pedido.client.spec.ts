@@ -148,6 +148,62 @@ describe('openai-pedido.client (REQ-187)', () => {
 
       expect(pedido.direccion).toBe('Av.Nichupte region 96 mz 109 lt 05');
     });
+
+    it('el ID ADP-… del correo llena la OC y el número de pedido que el modelo dejó vacíos', async () => {
+      const linea = (textoOriginal: string) => ({
+        textoOriginal,
+        productoCatalogo: null,
+        cantidad: 2,
+        unidad: 'KGM',
+        cajas: null,
+        presentacion: null,
+        especificacion: null,
+        numeroPedido: null,
+        almacen: null,
+        numeroAlmacen: null,
+        referenciaPedido: null,
+        codigoProductoCliente: null,
+        responsableExterno: null,
+        precioUnitario: 10,
+      });
+      mockCreate.mockResolvedValue(
+        respuestaJson({
+          fechaEntregaTexto: null,
+          centroConsumo: null,
+          observaciones: null,
+          ordenCompraHotel: null,
+          nombreCliente: 'Carnitas Michoacán',
+          rfc: null,
+          regimen: null,
+          direccion: null,
+          anden: null,
+          contacto: null,
+          telefono: null,
+          horarioDesde: null,
+          horarioHasta: null,
+          tolerancia: null,
+          sustituciones: null,
+          lote: null,
+          temperatura: null,
+          advertencia: null,
+          lineas: [linea('PIÑA'), linea('CHILE MORRON VERDE')],
+        }),
+      );
+
+      const { pedido } = await extraerPedido({
+        texto: correo,
+        archivosExtraidos: [],
+        hoyISO: '2026-10-30',
+        catalogoClaves: [],
+        presentaciones: [],
+      });
+
+      expect(pedido.ordenCompraHotel).toBe('ADP-261030-0528-06E');
+      expect(pedido.lineas.map((l) => l.numeroPedido)).toEqual([
+        'ADP-261030-0528-06E',
+        'ADP-261030-0528-06E',
+      ]);
+    });
   });
 
   describe('interpretarInstruccionChat', () => {

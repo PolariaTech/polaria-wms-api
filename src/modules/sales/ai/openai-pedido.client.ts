@@ -12,7 +12,7 @@ import {
   pesoPorCajaKg,
 } from "./utils/empaque-lineas";
 import { extractEntregaDesdeTexto } from "./utils/extract-entrega-desde-texto";
-import { resolveDireccionEntregaDesdeTexto } from "./utils/direccion-correo-aplicativo";
+import { aplicarIdPedidoAplicativo, resolveDireccionEntregaDesdeTexto } from "./utils/direccion-correo-aplicativo";
 import { resolveCentroConsumoSinConfundirConCliente } from "./utils/centro-consumo-vs-cliente";
 import {
   enrichAlmacenConCodigoDesdeTexto,
@@ -817,12 +817,12 @@ export async function extraerPedido({
     ...archivosTexto.map((f) => `--- ${f.nombre} ---\n${f.contenido}`),
   ].join("\n");
   const fileNames = archivosExtraidos.map((f) => f.nombre);
-  const normalizedPedidos = normalizeNumeroPedidoFields({
+  const normalizedPedidos = aplicarIdPedidoAplicativo(normalizeNumeroPedidoFields({
     ordenCompraHotel: parsed.ordenCompraHotel?.trim() || null,
     lineas: lineasRaw,
     sourceText: sourceForOc,
     fileNames,
-  });
+  }), sourceForOc);
   const sourceForEntrega = sourceForOc;
   const lineas = enrichLineasAlmacenConCodigoDesdeTexto(
     normalizedPedidos.lineas,

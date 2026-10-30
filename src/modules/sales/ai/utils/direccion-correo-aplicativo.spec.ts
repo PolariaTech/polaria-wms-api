@@ -1,5 +1,7 @@
 import {
+  aplicarIdPedidoAplicativo,
   extractDireccionCorreoAplicativo,
+  extractIdPedidoAplicativo,
   resolveDireccionEntregaDesdeTexto,
 } from './direccion-correo-aplicativo';
 
@@ -70,6 +72,54 @@ describe('extractDireccionCorreoAplicativo (REQ-231)', () => {
         'PEDIDO ADP-261030-0001-AAA · ORDINARIO\nDirección: facturacion@tallerderestaurantes.com\n',
       ),
     ).toBeNull();
+  });
+});
+
+describe('ID del pedido del aplicativo (REQ-231, punto 6)', () => {
+  it('lee el ID ADP-… del encabezado del correo', () => {
+    expect(extractIdPedidoAplicativo(CORREO_FACTURA_SI)).toBe(
+      'ADP-261030-0528-06E',
+    );
+    expect(
+      extractIdPedidoAplicativo('PEDIDO ADP-261030-1245-2WF · EXTRAORDINARIO'),
+    ).toBe('ADP-261030-1245-2WF');
+  });
+
+  it('no inventa ID en correos de otros formatos', () => {
+    expect(extractIdPedidoAplicativo('PO NUMBER 4501056534')).toBeNull();
+    expect(extractIdPedidoAplicativo(null)).toBeNull();
+  });
+
+  it('completa la OC y los renglones que el modelo dejó vacíos', () => {
+    const resultado = aplicarIdPedidoAplicativo(
+      {
+        ordenCompraHotel: null,
+        lineas: [{ numeroPedido: null }, { numeroPedido: '' }],
+      },
+      CORREO_FACTURA_SI,
+    );
+    expect(resultado.ordenCompraHotel).toBe('ADP-261030-0528-06E');
+    expect(resultado.lineas.map((l) => l.numeroPedido)).toEqual([
+      'ADP-261030-0528-06E',
+      'ADP-261030-0528-06E',
+    ]);
+  });
+
+  it('corrige un número equivocado del modelo y deja igual lo que no es del aplicativo', () => {
+    expect(
+      aplicarIdPedidoAplicativo(
+        { ordenCompraHotel: '9999', lineas: [{ numeroPedido: '9999' }] },
+        CORREO_FACTURA_SI,
+      ).lineas[0]?.numeroPedido,
+    ).toBe('ADP-261030-0528-06E');
+
+    const original = {
+      ordenCompraHotel: '4501056534',
+      lineas: [{ numeroPedido: '4501056534' }],
+    };
+    expect(aplicarIdPedidoAplicativo(original, 'Pedido Xcaret')).toEqual(
+      original,
+    );
   });
 });
 
