@@ -15,6 +15,7 @@ import {
   extractDireccionShipToDesdeTexto,
   extractEntregaDesdeTexto,
 } from "./utils/extract-entrega-desde-texto";
+import { extractDireccionCorreoAplicativo } from "./utils/direccion-correo-aplicativo";
 import { resolveCentroConsumoSinConfundirConCliente } from "./utils/centro-consumo-vs-cliente";
 import {
   enrichAlmacenConCodigoDesdeTexto,
@@ -855,7 +856,9 @@ export async function extraerPedido({
       ? parsed.nombreCliente.trim()
       : "") || "";
   // Ship To del documento manda sobre Bill To / lo que Mateo haya puesto.
+  // REQ-231: en el correo del aplicativo la línea «Dirección:» manda sobre cualquier Ship To.
   const direccionCabecera =
+    extractDireccionCorreoAplicativo(sourceForEntrega) ||
     extractDireccionShipToDesdeTexto(sourceForEntrega) ||
     parsed.direccion?.trim() ||
     "";

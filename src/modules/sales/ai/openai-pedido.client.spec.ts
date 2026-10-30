@@ -90,6 +90,59 @@ describe('openai-pedido.client (REQ-187)', () => {
     });
   });
 
+  describe('extraerPedido — dirección del correo del aplicativo (REQ-231)', () => {
+    const correo = [
+      'PEDIDO ADP-261030-0528-06E · ORDINARIO',
+      'Cliente: Carnitas Michoacán',
+      'Dirección: Av.Nichupte region 96 mz 109 lt 05',
+      '',
+      'Factura: Sí',
+      'Enviar factura a: Promustang1@me.com',
+    ].join('\n');
+    const pdf = [
+      'Enviar a: Promustang1@me.com',
+      'Lista de precios: Restaurantes Cancún Centro · Vigencia del 26 al 31 de octubre de 2026',
+    ].join('\n');
+
+    it('la línea «Dirección:» manda sobre el «Enviar a:» del PDF', async () => {
+      mockCreate.mockResolvedValue(
+        respuestaJson({
+          fechaEntregaTexto: null,
+          centroConsumo: null,
+          observaciones: null,
+          ordenCompraHotel: null,
+          nombreCliente: 'Carnitas Michoacán',
+          rfc: null,
+          regimen: null,
+          direccion: 'Promustang1@me.com',
+          anden: null,
+          contacto: null,
+          telefono: null,
+          horarioDesde: null,
+          horarioHasta: null,
+          tolerancia: null,
+          sustituciones: null,
+          lote: null,
+          temperatura: null,
+          advertencia: null,
+          lineas: [],
+        }),
+      );
+
+      const { pedido } = await extraerPedido({
+        texto: correo,
+        archivosExtraidos: [
+          { tipo: 'texto', nombre: 'Pedido_ADP.pdf', contenido: pdf },
+        ],
+        hoyISO: '2026-10-30',
+        catalogoClaves: [],
+        presentaciones: [],
+      });
+
+      expect(pedido.direccion).toBe('Av.Nichupte region 96 mz 109 lt 05');
+    });
+  });
+
   describe('interpretarInstruccionChat', () => {
     it('falla con un mensaje claro si falta OPENAI_API_KEY', async () => {
       delete process.env.OPENAI_API_KEY;
