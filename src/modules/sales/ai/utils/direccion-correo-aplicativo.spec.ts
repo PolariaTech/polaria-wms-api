@@ -74,15 +74,15 @@ describe('extractDireccionCorreoAplicativo (REQ-231)', () => {
 });
 
 describe('resolveDireccionEntregaDesdeTexto (REQ-231)', () => {
-  it('usa la línea del aplicativo y, si no es de ese correo, la regla Ship To', () => {
+  it('usa la lÃ­nea del aplicativo y, si no es de ese correo, la regla Ship To', () => {
     expect(resolveDireccionEntregaDesdeTexto(CORREO_FACTURA_SI)).toBe(
       'Av.Nichupte region 96 mz 109 lt 05',
     );
     expect(
       resolveDireccionEntregaDesdeTexto(
-        'Ship To: Calle Reforma 100, Cancún, Q.R.\nBill To: Otra calle',
+        'Ship To: Calle Reforma 100, CancÃºn, Q.R.\nBill To: Otra calle',
       ),
-    ).toBe('Calle Reforma 100, Cancún, Q.R.');
-    expect(resolveDireccionEntregaDesdeTexto('sin dirección')).toBeNull();
+    ).toBe('Calle Reforma 100, CancÃºn, Q.R.');
+    expect(resolveDireccionEntregaDesdeTexto('sin direcciÃ³n')).toBeNull();
   });
 });

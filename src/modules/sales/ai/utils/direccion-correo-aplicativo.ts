@@ -23,7 +23,7 @@ export function extractDireccionCorreoAplicativo(
   return valor;
 }
 
-/** Dirección de entrega: la línea del correo del aplicativo y, si no hay, la regla Ship To. */
+/** DirecciÃ³n de entrega: la lÃ­nea del correo del aplicativo y, si no hay, la regla Ship To. */
 export function resolveDireccionEntregaDesdeTexto(
   texto: string | null | undefined,
 ): string | null {
