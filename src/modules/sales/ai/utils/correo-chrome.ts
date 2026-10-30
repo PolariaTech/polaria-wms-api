@@ -2,6 +2,8 @@
  * Cabeceras de correo (De / Para / Asunto) para origen_texto.
  */
 
+import { extractCorreoRemitenteBirchstreet } from './correo-remitente-birchstreet';
+
 export type CorreoChrome = {
   from?: string;
   to?: string;
@@ -173,7 +175,8 @@ export function extractCorreoContactoDesdeTexto(
   };
 
   if (fromEmail && !fromEsGenerico) return fromEmail;
-  const fromBody = pickBodyEmail();
+  // REQ-239: en BirchStreet el remitente real va bajo «Sent By» / «Sent From», no en CONTACTO.
+  const fromBody = extractCorreoRemitenteBirchstreet(text) ?? pickBodyEmail();
   if (fromBody) return fromBody;
   return fromEmail;
 }
