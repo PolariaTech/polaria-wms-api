@@ -111,91 +111,48 @@ describe('openai-pedido.client (REQ-187)', () => {
       '# Producto Madurez Cantidad Precio Importe',
     ].join('\n');
 
-    it('la línea «Dirección:» manda sobre el «Enviar a:» del PDF', async () => {
-      mockCreate.mockResolvedValue(
-        respuestaJson({
-          fechaEntregaTexto: null,
-          centroConsumo: null,
-          observaciones: null,
-          ordenCompraHotel: null,
-          nombreCliente: 'Carnitas Michoacán',
-          rfc: null,
-          regimen: null,
-          direccion: 'Promustang1@me.com',
-          anden: null,
-          contacto: null,
-          telefono: null,
-          horarioDesde: null,
-          horarioHasta: null,
-          tolerancia: null,
-          sustituciones: null,
-          lote: null,
-          temperatura: null,
-          advertencia: null,
-          lineas: [],
-        }),
+    const lectura = async (
+      parcial: Record<string, unknown>,
+      archivosExtraidos: Parameters<typeof extraerPedido>[0]['archivosExtraidos'] = [],
+    ) => {
+      const sinDato = Object.fromEntries(
+        [
+          'fechaEntregaTexto', 'centroConsumo', 'observaciones', 'ordenCompraHotel',
+          'rfc', 'regimen', 'direccion', 'anden', 'contacto', 'telefono',
+          'horarioDesde', 'horarioHasta', 'tolerancia', 'sustituciones', 'lote',
+          'temperatura', 'advertencia',
+        ].map((campo) => [campo, null]),
       );
-
+      mockCreate.mockResolvedValue(
+        respuestaJson({ ...sinDato, nombreCliente: 'Carnitas Michoacán', lineas: [], ...parcial }),
+      );
       const { pedido } = await extraerPedido({
         texto: correo,
-        archivosExtraidos: [
-          { tipo: 'texto', nombre: 'Pedido_ADP.pdf', contenido: pdf },
-        ],
+        archivosExtraidos,
         hoyISO: '2026-10-30',
         catalogoClaves: [],
         presentaciones: [],
       });
+      return pedido;
+    };
+
+    it('la línea «Dirección:» manda sobre el «Enviar a:» del PDF', async () => {
+      const pedido = await lectura({ direccion: 'Promustang1@me.com' }, [
+        { tipo: 'texto', nombre: 'Pedido_ADP.pdf', contenido: pdf },
+      ]);
 
       expect(pedido.direccion).toBe('Av.Nichupte region 96 mz 109 lt 05');
     });
 
     it('el ID ADP-… del correo llena la OC y el número de pedido que el modelo dejó vacíos', async () => {
       const linea = (textoOriginal: string) => ({
-        textoOriginal,
-        productoCatalogo: null,
-        cantidad: 2,
-        unidad: 'KGM',
-        cajas: null,
-        presentacion: null,
-        especificacion: null,
-        numeroPedido: null,
-        almacen: null,
-        numeroAlmacen: null,
-        referenciaPedido: null,
-        codigoProductoCliente: null,
-        responsableExterno: null,
-        precioUnitario: 10,
+        textoOriginal, productoCatalogo: null, cantidad: 2, unidad: 'KGM', cajas: null,
+        presentacion: null, especificacion: null, numeroPedido: null, almacen: null,
+        numeroAlmacen: null, referenciaPedido: null, codigoProductoCliente: null,
+        responsableExterno: null, precioUnitario: 10,
       });
-      mockCreate.mockResolvedValue(
-        respuestaJson({
-          fechaEntregaTexto: null,
-          centroConsumo: null,
-          observaciones: null,
-          ordenCompraHotel: null,
-          nombreCliente: 'Carnitas Michoacán',
-          rfc: null,
-          regimen: null,
-          direccion: null,
-          anden: null,
-          contacto: null,
-          telefono: null,
-          horarioDesde: null,
-          horarioHasta: null,
-          tolerancia: null,
-          sustituciones: null,
-          lote: null,
-          temperatura: null,
-          advertencia: null,
-          lineas: [linea('PIÑA'), linea('CHILE MORRON VERDE')],
-        }),
-      );
-
-      const { pedido } = await extraerPedido({
-        texto: correo,
-        archivosExtraidos: [],
-        hoyISO: '2026-10-30',
-        catalogoClaves: [],
-        presentaciones: [],
+      const pedido = await lectura({
+        lineas: [linea('PIÑA'), linea('CHILE MORRON VERDE')],
       });
 
       expect(pedido.ordenCompraHotel).toBe('ADP-261030-0528-06E');
@@ -205,7 +162,6 @@ describe('openai-pedido.client (REQ-187)', () => {
       ]);
     });
   });
-
   describe('interpretarInstruccionChat', () => {
     it('falla con un mensaje claro si falta OPENAI_API_KEY', async () => {
       delete process.env.OPENAI_API_KEY;
