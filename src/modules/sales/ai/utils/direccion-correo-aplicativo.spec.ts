@@ -27,7 +27,7 @@ describe('extractDireccionCorreoAplicativo (REQ-231)', () => {
   });
 
   it('manda sobre un «Enviar a:» del PDF con el correo de facturación', () => {
-    const conPdf = `${CORREO_FACTURA_SI}\n\n--- Pedido.pdf ---\nEnviar a: Promustang1@me.com\nLista de precios: Restaurantes Cancún Centro · Vigencia del 26 al 31 de octubre de 2026`;
+    const conPdf = `${CORREO_FACTURA_SI}\n\n--- Pedido.pdf ---\nEnviar a Promustang1@me.com\nLista de precios: Restaurantes Cancún Centro · Vigencia del 26 al 31 de octubre de 2026`;
     expect(extractDireccionCorreoAplicativo(conPdf)).toBe(
       'Av.Nichupte region 96 mz 109 lt 05',
     );

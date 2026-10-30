@@ -99,9 +99,16 @@ describe('openai-pedido.client (REQ-187)', () => {
       'Factura: Sí',
       'Enviar factura a: Promustang1@me.com',
     ].join('\n');
+    // Texto real del PDF de OV-00001102: sin dos puntos y con el correo de facturación
+    // justo debajo de «Enviar a».
     const pdf = [
-      'Enviar a: Promustang1@me.com',
+      'COTIZACIÓN / PEDIDO',
+      'Dirección Av.Nichupte region 96 mz 109 lt 05',
+      'Factura SÍ REQUIERE',
+      'Uso CFDI G03 · Gastos en general',
+      'Enviar a Promustang1@me.com',
       'Lista de precios: Restaurantes Cancún Centro · Vigencia del 26 al 31 de octubre de 2026',
+      '# Producto Madurez Cantidad Precio Importe',
     ].join('\n');
 
     it('la línea «Dirección:» manda sobre el «Enviar a:» del PDF', async () => {
