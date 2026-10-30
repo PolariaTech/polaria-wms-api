@@ -2,6 +2,7 @@ import {
   aplicarIdPedidoAplicativo,
   extractDireccionCorreoAplicativo,
   extractIdPedidoAplicativo,
+  resolveDireccionEntrega,
   resolveDireccionEntregaDesdeTexto,
 } from './direccion-correo-aplicativo';
 
@@ -134,5 +135,35 @@ describe('resolveDireccionEntregaDesdeTexto (REQ-231)', () => {
       ),
     ).toBe('Calle Reforma 100, Cancún, Q.R.');
     expect(resolveDireccionEntregaDesdeTexto('sin dirección')).toBeNull();
+  });
+});
+
+describe('resolveDireccionEntrega (REQ-239)', () => {
+  it('quita ATTN y FROM del Ship To de BirchStreet', () => {
+    const texto = [
+      'Bill To: OPERADORA RR CARIBBEAN SA DE CV',
+      'Ship To: Hilton CANCUN MAR CARIBE ALL-INCLUSIVE RESORT, MEXICO',
+      'Kukulcan Km 17, Zona Hotelera',
+      'CANCUN, ROO, 77500, MX',
+      'Attn: Ixayana Cid',
+      'Sent From: Hilton CANCUN MAR CARIBE ALL-INCLUSIVE RESORT, MEXICO',
+      'Name: Ixayana Cid',
+    ].join('\n');
+    expect(resolveDireccionEntrega(texto, null)).toBe(
+      'Hilton CANCUN MAR CARIBE ALL-INCLUSIVE RESORT, MEXICO, Kukulcan Km 17, Zona Hotelera, CANCUN, ROO, 77500, MX',
+    );
+  });
+
+  it('limpia también la dirección que leyó el modelo cuando el texto no trae Ship To', () => {
+    expect(
+      resolveDireccionEntrega(
+        'sin etiqueta',
+        'Kukulcan Km 17, CANCUN, MX. Attn: Ixayana Cid, Sent From: Hilton,',
+      ),
+    ).toBe('Kukulcan Km 17, CANCUN, MX');
+  });
+
+  it('no deja pasar un correo como dirección', () => {
+    expect(resolveDireccionEntrega('sin etiqueta', 'chef@hotel.com')).toBeNull();
   });
 });

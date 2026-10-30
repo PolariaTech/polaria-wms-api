@@ -12,7 +12,7 @@ import {
   pesoPorCajaKg,
 } from "./utils/empaque-lineas";
 import { extractEntregaDesdeTexto } from "./utils/extract-entrega-desde-texto";
-import { aplicarIdPedidoAplicativo, resolveDireccionEntregaDesdeTexto } from "./utils/direccion-correo-aplicativo";
+import { aplicarIdPedidoAplicativo, resolveDireccionEntrega } from "./utils/direccion-correo-aplicativo";
 import { resolveCentroConsumoSinConfundirConCliente } from "./utils/centro-consumo-vs-cliente";
 import {
   enrichAlmacenConCodigoDesdeTexto,
@@ -21,6 +21,7 @@ import {
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 import { sanitizeTelefonoContacto } from "./utils/sanitize-telefono-contacto";
 import { extractCorreoContactoDesdeTexto } from "./utils/correo-chrome";
+import { limpiarNotasBirchstreet } from "./utils/notas-birchstreet";
 
 export { calcularCantidadDesdeCajas, pesoPorCajaKg };
 
@@ -855,9 +856,7 @@ export async function extraerPedido({
   // Ship To del documento manda sobre Bill To / lo que Mateo haya puesto.
   // REQ-231: en el correo del aplicativo la línea «Dirección:» manda sobre cualquier Ship To.
   const direccionCabecera =
-    resolveDireccionEntregaDesdeTexto(sourceForEntrega) ||
-    parsed.direccion?.trim() ||
-    "";
+    resolveDireccionEntrega(sourceForEntrega, parsed.direccion) || "";
   const andenCabecera = parsed.anden?.trim() || "";
   const contactoCabecera = parsed.contacto?.trim() || "";
   const telefonoCabecera = sanitizeTelefonoContacto(parsed.telefono);
@@ -866,7 +865,7 @@ export async function extraerPedido({
     extractCorreoContactoDesdeTexto(sourceForEntrega) || "";
   const ventanaDesdeCabecera = horarioDesde || "";
   const ventanaHastaCabecera = horarioHasta || "";
-  const notasCabecera = parsed.observaciones?.trim() || "";
+  const notasCabecera = limpiarNotasBirchstreet(parsed.observaciones, sourceForEntrega);
   const origenCorreo = lineas.map((l, index) => ({
     // ISO primero: al reabrir OV, parseFechaOrigen no debe romper MM/DD BirchStreet.
     Fecha: fechaEntrega || fechaLabel || "",
