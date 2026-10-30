@@ -33,11 +33,11 @@ export function limpiarDireccionEntrega(
   const texto = valor ?? '';
   const marca = MARCA_ATENCION_O_REMITENTE.exec(texto);
   const hastaMarca = marca ? texto.slice(0, marca.index) : texto;
-  const limpio = hastaMarca
+  const unido = hastaMarca
     .split(/[,;\n]/)
     .map((s) => s.trim().replace(/\s+/g, ' '))
     .filter((s) => s && !esSegmentoDeContacto(s))
-    .join(', ')
-    .replace(/[\s.,;]+$/, '');
+    .join(', ');
+  const limpio = marca ? unido.replace(/[\s.,;]+$/, '') : unido;
   return limpio.length >= 5 ? limpio : null;
 }

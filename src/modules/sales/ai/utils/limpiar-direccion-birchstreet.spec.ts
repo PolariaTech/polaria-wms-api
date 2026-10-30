@@ -31,6 +31,12 @@ describe('limpiarDireccionEntrega (REQ-239)', () => {
     ).toBe('Blvd. Kukulcan km 17, Cancún, Q. Roo');
   });
 
+  it('no se come el punto de una abreviatura como C.V.', () => {
+    expect(
+      limpiarDireccionEntrega('HOSPITALITY SERVICES MAYA, S.A. de C.V.'),
+    ).toBe('HOSPITALITY SERVICES MAYA, S.A. de C.V.');
+  });
+
   it('no confunde la palabra "from" sin dos puntos con la etiqueta', () => {
     expect(limpiarDireccionEntrega('Calle Del Mar 5, Playa del Carmen')).toBe(
       'Calle Del Mar 5, Playa del Carmen',
