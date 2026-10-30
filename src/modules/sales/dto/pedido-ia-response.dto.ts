@@ -118,6 +118,22 @@ export class PedidoExtraidoResponseDto {
     description: 'Cuerpo del mensaje/correo para notas generales del PDF',
   })
   textoOrigen!: string | null;
+
+  @ApiPropertyOptional({
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+    description:
+      'Un elemento por documento leído (nombre, OC, renglones y verificación contra su «Total pedido»). REQ-187.',
+  })
+  documentos?: object[];
+
+  @ApiPropertyOptional({
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+    description:
+      'Avisos de la lectura: TOTAL_NO_CUADRA, SIN_TOTAL_DOCUMENTO, OC_REPETIDA, OC_DISCREPA, ADJUNTO_DUPLICADO, DOCUMENTO_NO_LEGIBLE. REQ-187.',
+  })
+  advertencias?: object[];
 }
 
 export class ArchivoExtraidoResponseDto {

@@ -49,7 +49,8 @@ export class PedidoIaController {
       'Extrae PDF/Excel/Word/HTML/.eml/fotos, usa OpenAI del servidor y devuelve el pedido estructurado. ' +
       'Requiere codigoCuenta para resolver el catálogo del tenant. ' +
       'origenCorreo incluye entrega (ventana, dirección, teléfono, notas). ' +
-      'Opcional: numeroCorreo / horario para sellar metadatos del mensaje.',
+      'Opcional: numeroCorreo / horario para sellar metadatos del mensaje. ' +
+      'Cada PDF/Excel/Word se lee por separado y se verifica contra su «Total pedido»: la respuesta trae `documentos` y `advertencias` (p. ej. TOTAL_NO_CUADRA).',
   })
   @ApiHeader({
     name: 'X-Api-Key',

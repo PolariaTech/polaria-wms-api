@@ -1,6 +1,7 @@
 import {
   detectOrdenCompraFromSource,
   normalizeNumeroPedidoFields,
+  ocDesdeNombreArchivo,
   resolveOrdenCompraLimpia,
   shouldUnifyNumeroPedidoToOc,
 } from './normalize-numero-pedido';
@@ -189,5 +190,37 @@ describe('normalizeNumeroPedidoFields — AVA mismo PO', () => {
     });
     expect(ordenCompraHotel).toBe('4502949779');
     expect(out.every((l) => l.numeroPedido === '4502949779')).toBe(true);
+  });
+});
+
+describe('OC por documento (REQ-187)', () => {
+  describe('ocDesdeNombreArchivo', () => {
+    it('lee la OC incrustada en el nombre (no solo al inicio)', () => {
+      expect(
+        ocDesdeNombreArchivo(
+          'AGUACATES DE PUEBLA_4502987208_UNICO FAC NOV.pdf',
+        ),
+      ).toBe('4502987208');
+    });
+
+    it('también dentro de un adjunto de .eml (correo.eml → archivo.pdf)', () => {
+      expect(
+        ocDesdeNombreArchivo(
+          'correo.eml → AGUACATES DE PUEBLA_4502986931_HRV.pdf',
+        ),
+      ).toBe('4502986931');
+    });
+
+    it('conserva el caso del número al inicio del nombre', () => {
+      expect(ocDesdeNombreArchivo('4501056534_PEDIDO.pdf')).toBe('4501056534');
+    });
+
+    it('no confunde fechas de 8 dígitos con una OC', () => {
+      expect(ocDesdeNombreArchivo('factura_20261029.pdf')).toBeNull();
+    });
+
+    it('null si el nombre no trae número', () => {
+      expect(ocDesdeNombreArchivo('correo.eml')).toBeNull();
+    });
   });
 });
