@@ -6,6 +6,7 @@ import { PedidoIaApiKeyGuard } from './guards/pedido-ia-api-key.guard';
 import { OrdenVentaRepository } from './infrastructure/orden-venta.repository';
 import { OrdenVentaService } from './services/orden-venta.service';
 import { PedidoIaService } from './services/pedido-ia.service';
+import { RegistrarSeguimientoService } from './services/registrar-seguimiento.service';
 
 @Module({
   imports: [OperationsModule],
@@ -14,6 +15,7 @@ import { PedidoIaService } from './services/pedido-ia.service';
     OrdenVentaService,
     OrdenVentaRepository,
     PedidoIaService,
+    RegistrarSeguimientoService,
     PedidoIaApiKeyGuard,
   ],
   exports: [PedidoIaService],

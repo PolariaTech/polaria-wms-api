@@ -26,9 +26,12 @@ import {
   PedidoExtraidoResponseDto,
 } from '../dto/pedido-ia-response.dto';
 import { PedidoIaService } from '../services/pedido-ia.service';
+import { RegistrarSeguimientoService } from '../services/registrar-seguimiento.service';
 import { LeerPedidoBodyDto } from '../dto/leer-pedido-body.dto';
 import { IngestarPedidoBodyDto } from '../dto/ingestar-pedido-body.dto';
 import { IngestarPedidoResponseDto } from '../dto/ingestar-pedido-response.dto';
+import { RegistrarSeguimientoBodyDto } from '../dto/registrar-seguimiento-body.dto';
+import { RegistrarSeguimientoResponseDto } from '../dto/registrar-seguimiento-response.dto';
 import { PedidoIaApiKeyGuard } from '../guards/pedido-ia-api-key.guard';
 
 @ApiTags(SWAGGER_TAGS.VENTAS_OV)
@@ -36,7 +39,10 @@ import { PedidoIaApiKeyGuard } from '../guards/pedido-ia-api-key.guard';
 @UseGuards(PedidoIaApiKeyGuard)
 @ApiSecurity('pedido-ia-api-key')
 export class PedidoIaController {
-  constructor(private readonly pedidoIaService: PedidoIaService) {}
+  constructor(
+    private readonly pedidoIaService: PedidoIaService,
+    private readonly registrarSeguimientoService: RegistrarSeguimientoService,
+  ) {}
 
   @Post('leer-pedido')
   @HttpCode(HttpStatus.OK)
@@ -164,6 +170,59 @@ export class PedidoIaController {
       numeroCorreo: body.numeroCorreo,
       horario: body.horario,
       origenArchivos: body.origenArchivos,
+      files: files ?? [],
+    });
+  }
+
+  @Post('registrar-seguimiento')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FilesInterceptor('archivos', 8))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Registrar un correo de seguimiento en una OV ya creada',
+    description:
+      'Para el bot/n8n. No crea una orden ni llama a la IA. ' +
+      'Sube el .eml como seguimiento-<id>.eml y lo agrega a origen_archivos. ' +
+      'origen_texto y origen_correo quedan como el correo original. ' +
+      'Hace falta ordenCompra o codigo de la OV.',
+  })
+  @ApiHeader({
+    name: 'X-Api-Key',
+    required: true,
+    description: 'Clave de integración (env PEDIDO_IA_API_KEY).',
+  })
+  @ApiHeader({
+    name: 'X-Internal-Api-Key',
+    required: false,
+    description: 'Alternativa (env INTERNAL_API_KEY).',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['codigoCuenta', 'archivos'],
+      properties: {
+        codigoCuenta: { type: 'string', example: '023WA' },
+        ordenCompra: { type: 'string', example: '4501084810' },
+        codigo: { type: 'string', example: 'OV-00000023' },
+        numeroCorreo: { type: 'string', example: '19c4a2f75792b1' },
+        archivos: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+        },
+      },
+    },
+  })
+  @ApiOkResponse({ type: RegistrarSeguimientoResponseDto })
+  @ApiUnauthorizedResponse()
+  registrarSeguimiento(
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
+    @Body() body: RegistrarSeguimientoBodyDto,
+  ): Promise<RegistrarSeguimientoResponseDto> {
+    return this.registrarSeguimientoService.registrarSeguimiento({
+      codigoCuenta: body.codigoCuenta ?? '',
+      ordenCompra: body.ordenCompra,
+      codigo: body.codigo,
+      numeroCorreo: body.numeroCorreo,
       files: files ?? [],
     });
   }
