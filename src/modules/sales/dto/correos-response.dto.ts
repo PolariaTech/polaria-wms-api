@@ -1,0 +1,57 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IngresoCorreoResponseDto } from './ingreso-correo-response.dto';
+
+/** Una fila del data table de correos de n8n, más el estado de ingreso en el WMS. */
+export class CorreoFilaDto {
+  @ApiPropertyOptional({ nullable: true, example: '2026-11-03T13:27:51.000Z' })
+  recibidoEn!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  de!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  para!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  asunto!: string | null;
+
+  @ApiProperty({ example: '1a1a198510cde156' })
+  messageId!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  hilo!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Nombre del primer adjunto.',
+  })
+  adjunto!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      '`false` = el workflow lo descartó. `null` = pasó el filtro (lo ingresa el workflow).',
+  })
+  nuevoPedido!: boolean | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Por qué el workflow lo descartó.',
+  })
+  motivo!: string | null;
+
+  @ApiPropertyOptional({
+    type: IngresoCorreoResponseDto,
+    nullable: true,
+    description:
+      'Presente si el WMS ya tiene (o está procesando) este correo como OV.',
+  })
+  ingreso!: IngresoCorreoResponseDto | null;
+}
+
+export class CorreosListaResponseDto {
+  @ApiProperty() total!: number;
+  @ApiProperty() pagina!: number;
+  @ApiProperty() tamano!: number;
+  @ApiProperty({ type: [CorreoFilaDto] }) filas!: CorreoFilaDto[];
+}

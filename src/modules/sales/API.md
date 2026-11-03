@@ -126,3 +126,26 @@ La salida del modelo es solo una propuesta. Se acepta únicamente si: cada rengl
 - Usa `OPENAI_API_KEY` y `OPENAI_MODEL` (`gpt-4o-mini` si no se define). Si el modelo rechaza `temperature: 0`, se reintenta sin ella.
 - **Sin timeout ni tope de tokens** por decisión del producto. Límites de caracteres, turnos, tasa y máximo de OT nuevas: pendientes (R13 de POL-390), se definen tras las pruebas. Mientras tanto hay techos técnicos provisionales (`TECHOS_PROVISIONALES_REAGRUPACION`) solo contra entradas desbordadas.
 - Rate limit: aplica el throttler global; no hay uno específico todavía.
+
+## Correos de pedidos de n8n e ingreso manual (REQ-104)
+
+Lista los correos que el workflow de n8n registra en el data table `correos_aguacates_entrada` y deja al operador ingresar como OV los que el workflow descartó (no pasaron sus filtros). Requiere JWT y rol `operador_cuenta` o `administrador_cuenta`. Solo para las cuentas de `N8N_CORREOS_CUENTAS`; otra cuenta recibe 403 `CORREOS_NO_DISPONIBLES`.
+
+| Método y ruta | Qué hace |
+|---|---|
+| `GET /ventas/correos` | Lista paginada. Query: `modo` (`todos` o `descartados`), `pagina`, `tamano` (máx. 50), `desde`, `hasta`, `remitente`, `asunto`. Cada fila trae `ingreso` si el WMS ya la tiene como OV o la está procesando. Límite: 60 por minuto. |
+| `POST /ventas/correos/:messageId/ingresar` | Reserva el correo y responde **202**; la OV `por_confirmar` se crea en segundo plano con el mismo núcleo que `ingestar-pedido`. Límite: 10 por minuto. |
+| `GET /ventas/correos/:messageId/ingreso` | Estado del ingreso: `procesando`, `ingresado` (con `codigoOrdenVenta`) o `error` (con el motivo). Es el sondeo: salta los dos límites globales. |
+
+### Sin duplicados
+
+La tabla `correo_pedido_ingreso` (migración 114) tiene llave única (`codigo_cuenta`, `message_id`). El segundo clic mientras procesa devuelve el estado actual (no crea otra OV); si ya está ingresado responde **409** `CORREO_YA_INGRESADO` con `codigoOrdenVenta`. Un ingreso en `error`, o en `procesando` por más de 10 minutos, se puede reintentar.
+
+### Puente con n8n
+
+El api no habla con Gmail: llama a dos webhooks de un workflow puente de n8n, con el header `X-Api-Key` (`N8N_CORREOS_API_KEY`).
+
+- `POST {N8N_CORREOS_URL}/wms-correos-listar`. Recibe `{ modo, soloDescartados, pagina, tamano, desde?, hasta?, remitente?, asunto? }` y responde `{ total, filas }` con las columnas del data table (`recibido_en`, `de`, `para`, `asunto`, `message_id`, `hilo`, `adjunto`, `nuevo_pedido`, `motivo`).
+- `POST {N8N_CORREOS_URL}/wms-correos-obtener`. Recibe `{ messageId }` y responde `{ asunto, de, para, fecha, texto, html, adjuntos: [{ nombre, mimeType, base64 }] }`.
+
+Errores del puente: 503 `CORREOS_NO_CONFIGURADOS`, 502 `N8N_NO_RESPONDE`, `N8N_ERROR` o `N8N_RESPUESTA_INVALIDA`.
