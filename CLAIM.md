@@ -22,6 +22,7 @@
 - `src/modules/sales/dto/correos-query.dto.ts` — archivo nuevo
 - `src/modules/sales/dto/correos-response.dto.ts` — archivo nuevo
 - `src/modules/sales/dto/ingreso-correo-response.dto.ts` — archivo nuevo
+- `src/modules/sales/services/correo-descartado.contenido.spec.ts` — autorizada por el usuario el 2026-11-03
 
 ### Compartidos (cambio mínimo y aviso)
 - `prisma/schema.prisma`
