@@ -136,6 +136,8 @@ Lista los correos que el workflow de n8n registra en el data table `correos_agua
 | `GET /ventas/correos` | Lista paginada. Query: `modo` (`todos` o `descartados`), `pagina`, `tamano` (máx. 50), `desde`, `hasta`, `remitente`, `asunto`. Cada fila trae `ingreso` si el WMS ya la tiene como OV o la está procesando. Límite: 60 por minuto. |
 | `POST /ventas/correos/:messageId/ingresar` | Reserva el correo y responde **202**; la OV `por_confirmar` se crea en segundo plano con el mismo núcleo que `ingestar-pedido`. Límite: 10 por minuto. |
 | `GET /ventas/correos/:messageId/ingreso` | Estado del ingreso: `procesando`, `ingresado` (con `codigoOrdenVenta`) o `error` (con el motivo). Es el sondeo: salta los dos límites globales. |
+| `GET /ventas/correos/:messageId/contenido` | El correo completo para mostrarlo: cuerpo en texto y en HTML (tal cual llegó, no es seguro) y nombre, tipo y tamaño de cada adjunto, sin sus bytes. Se lee en Gmail vía n8n y se guarda 5 minutos en memoria (máximo 5 correos). Límite: 30 por minuto. |
+| `GET /ventas/correos/:messageId/adjuntos/:indice` | Baja un adjunto (`indice` sale de `contenido().adjuntos`). Siempre como `attachment`, con `nosniff` y sin caché. 404 `ADJUNTO_NO_ENCONTRADO` si no hay uno en esa posición. Límite: 30 por minuto. |
 
 ### Sin duplicados
 
