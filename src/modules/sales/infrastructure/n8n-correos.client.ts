@@ -17,6 +17,10 @@ export interface CorreoN8nFila {
   adjunto: string | null;
   nuevoPedido: boolean | null;
   motivo: string | null;
+  /** Columnas de sistema del data table (`id`, `createdAt`, `updatedAt`). */
+  idRegistro: string | null;
+  registradoEn: string | null;
+  actualizadoEn: string | null;
 }
 
 export interface ListarCorreosN8nInput {
@@ -61,6 +65,10 @@ const esObj = (v: unknown): v is Obj =>
 const texto = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() !== '' ? v : null;
 
+/** El `id` del data table llega como número; se expone como texto. */
+const identificador = (v: unknown): string | null =>
+  typeof v === 'number' && Number.isFinite(v) ? String(v) : texto(v);
+
 /**
  * Puente con n8n (REQ-104). El WMS no habla con Gmail ni con la API general de n8n: llama
  * a dos webhooks de un workflow puente, con una sola llave (`N8N_CORREOS_API_KEY`).
@@ -96,6 +104,9 @@ export class N8nCorreosClient {
         nuevoPedido:
           typeof f.nuevo_pedido === 'boolean' ? f.nuevo_pedido : null,
         motivo: texto(f.motivo),
+        idRegistro: identificador(f.id),
+        registradoEn: texto(f.createdAt),
+        actualizadoEn: texto(f.updatedAt),
       };
       return [fila];
     });

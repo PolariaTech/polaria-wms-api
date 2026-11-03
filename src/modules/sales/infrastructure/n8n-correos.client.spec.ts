@@ -67,6 +67,9 @@ describe('N8nCorreosClient (REQ-104)', () => {
             adjunto: 'PO_1.pdf',
             nuevo_pedido: false,
             motivo: 'cotización',
+            id: 299,
+            createdAt: '2026-11-03T13:28:42.556Z',
+            updatedAt: '2026-11-03T13:29:10.000Z',
           },
           { asunto: 'sin id' },
           'basura',
@@ -94,12 +97,18 @@ describe('N8nCorreosClient (REQ-104)', () => {
       adjunto: 'PO_1.pdf',
       nuevoPedido: false,
       motivo: 'cotización',
+      idRegistro: '299',
+      registradoEn: '2026-11-03T13:28:42.556Z',
+      actualizadoEn: '2026-11-03T13:29:10.000Z',
     });
     expect(r.filas[1]).toMatchObject({
       messageId: 'abc123def',
       nuevoPedido: null,
       motivo: null,
       adjunto: null,
+      idRegistro: null,
+      registradoEn: null,
+      actualizadoEn: null,
     });
   });
 

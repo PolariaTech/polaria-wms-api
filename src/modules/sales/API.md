@@ -145,7 +145,7 @@ La tabla `correo_pedido_ingreso` (migración 114) tiene llave única (`codigo_cu
 
 El api no habla con Gmail: llama a dos webhooks de un workflow puente de n8n, con el header `X-Api-Key` (`N8N_CORREOS_API_KEY`).
 
-- `POST {N8N_CORREOS_URL}/wms-correos-listar`. Recibe `{ modo, soloDescartados, pagina, tamano, desde?, hasta?, remitente?, asunto? }` y responde `{ total, filas }` con las columnas del data table (`recibido_en`, `de`, `para`, `asunto`, `message_id`, `hilo`, `adjunto`, `nuevo_pedido`, `motivo`).
+- `POST {N8N_CORREOS_URL}/wms-correos-listar`. Recibe `{ modo, soloDescartados, pagina, tamano, desde?, hasta?, remitente?, asunto? }` y responde `{ total, filas }` con las columnas del data table (`recibido_en`, `de`, `para`, `asunto`, `message_id`, `hilo`, `adjunto`, `nuevo_pedido`, `motivo`) y, si las manda, las de sistema `id`, `createdAt` y `updatedAt`.
 - `POST {N8N_CORREOS_URL}/wms-correos-obtener`. Recibe `{ messageId }` y responde `{ asunto, de, para, fecha, texto, html, adjuntos: [{ nombre, mimeType, base64 }] }`.
 
 Errores del puente: 503 `CORREOS_NO_CONFIGURADOS`, 502 `N8N_NO_RESPONDE`, `N8N_ERROR` o `N8N_RESPUESTA_INVALIDA`.

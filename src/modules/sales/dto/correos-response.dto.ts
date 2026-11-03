@@ -41,6 +41,24 @@ export class CorreoFilaDto {
   motivo!: string | null;
 
   @ApiPropertyOptional({
+    nullable: true,
+    description: 'Id de la fila en el data table de n8n.',
+  })
+  idRegistro!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Cuándo se registró la fila en n8n (`createdAt`).',
+  })
+  registradoEn!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Última actualización de la fila en n8n (`updatedAt`).',
+  })
+  actualizadoEn!: string | null;
+
+  @ApiPropertyOptional({
     type: IngresoCorreoResponseDto,
     nullable: true,
     description:
