@@ -64,7 +64,8 @@ const correo = (
 });
 
 /** Deja correr el procesamiento en segundo plano (solo hay promesas ya resueltas). */
-const esperarSegundoPlano = () => new Promise<void>((r) => setImmediate(r));
+const esperarSegundoPlano = () =>
+  new Promise<void>((resolver) => setImmediate(resolver));
 
 function montar(cuentas = '023WA') {
   const n8n = { listar: jest.fn(), obtener: jest.fn() };
@@ -111,7 +112,7 @@ describe('CorreoDescartadoService (REQ-104)', () => {
         fila({ estado: 'ingresado', codigoOrdenVenta: 'OV-00001318' }),
       ]);
 
-      const r = await servicio.listar(query, ctx);
+      const resultado = await servicio.listar(query, ctx);
 
       expect(n8n.listar).toHaveBeenCalledWith(query);
       expect(ingresos.listarPorMessageIds).toHaveBeenCalledWith(
@@ -119,12 +120,12 @@ describe('CorreoDescartadoService (REQ-104)', () => {
         '023WA',
         [MSG, 'otro-id-1234'],
       );
-      expect(r.total).toBe(2);
-      expect(r.filas[0].ingreso).toMatchObject({
+      expect(resultado.total).toBe(2);
+      expect(resultado.filas[0].ingreso).toMatchObject({
         estado: 'ingresado',
         codigoOrdenVenta: 'OV-00001318',
       });
-      expect(r.filas[1].ingreso).toBeNull();
+      expect(resultado.filas[1].ingreso).toBeNull();
     });
 
     it('rechaza una cuenta que no está habilitada para estos correos', async () => {
@@ -154,8 +155,8 @@ describe('CorreoDescartadoService (REQ-104)', () => {
         codigo: 'OV-00001319',
       });
 
-      const r = await servicio.ingresar(MSG, ctx);
-      expect(r.estado).toBe('procesando');
+      const resultado = await servicio.ingresar(MSG, ctx);
+      expect(resultado.estado).toBe('procesando');
 
       await esperarSegundoPlano();
       expect(pedidoIa.ingestarPedido).toHaveBeenCalledTimes(1);
@@ -205,9 +206,9 @@ describe('CorreoDescartadoService (REQ-104)', () => {
         fila: fila({ estado: 'procesando' }),
       });
 
-      const r = await servicio.ingresar(MSG, ctx);
+      const resultado = await servicio.ingresar(MSG, ctx);
 
-      expect(r.estado).toBe('procesando');
+      expect(resultado.estado).toBe('procesando');
       await esperarSegundoPlano();
       expect(n8n.obtener).not.toHaveBeenCalled();
       expect(pedidoIa.ingestarPedido).not.toHaveBeenCalled();
@@ -307,8 +308,8 @@ describe('CorreoDescartadoService (REQ-104)', () => {
       ingresos.buscar.mockResolvedValue(
         fila({ estado: 'ingresado', codigoOrdenVenta: 'OV-9' }),
       );
-      const r = await servicio.consultar(MSG, ctx);
-      expect(r).toMatchObject({
+      const resultado = await servicio.consultar(MSG, ctx);
+      expect(resultado).toMatchObject({
         estado: 'ingresado',
         codigoOrdenVenta: 'OV-9',
       });
@@ -321,6 +322,83 @@ describe('CorreoDescartadoService (REQ-104)', () => {
       await expect(servicio.consultar(MSG, ctx)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  describe('contenido y adjuntos (ver correo completo)', () => {
+    const adjunto = (nombre: string, bytes: string) => ({
+      nombre,
+      mimeType: 'application/pdf',
+      base64: Buffer.from(bytes).toString('base64'),
+    });
+
+    it('devuelve el correo y los datos de cada adjunto, sin sus bytes', async () => {
+      const { servicio, n8n } = montar();
+      n8n.obtener.mockResolvedValue(
+        correo({
+          adjuntos: [adjunto('a.pdf', '12345'), adjunto('b.pdf', 'xy')],
+        }),
+      );
+
+      const resultado = await servicio.contenido(MSG, ctx);
+
+      expect(resultado).toMatchObject({
+        asunto: 'Pedido XEL HA',
+        de: 'compras@hotel.com',
+        texto: '10 cajas de aguacate',
+      });
+      expect(resultado.adjuntos).toEqual([
+        { indice: 0, nombre: 'a.pdf', mimeType: 'application/pdf', tamano: 5 },
+        { indice: 1, nombre: 'b.pdf', mimeType: 'application/pdf', tamano: 2 },
+      ]);
+      expect(JSON.stringify(resultado)).not.toContain(
+        Buffer.from('12345').toString('base64'),
+      );
+    });
+
+    it('entrega los bytes del adjunto pedido', async () => {
+      const { servicio, n8n } = montar();
+      n8n.obtener.mockResolvedValue(
+        correo({
+          adjuntos: [adjunto('a.pdf', '12345'), adjunto('b.pdf', 'xy')],
+        }),
+      );
+
+      const resultado = await servicio.adjunto(MSG, 1, ctx);
+
+      expect(resultado.nombre).toBe('b.pdf');
+      expect(resultado.mimeType).toBe('application/pdf');
+      expect(resultado.buffer.toString()).toBe('xy');
+    });
+
+    it('responde 404 si no hay adjunto en esa posición', async () => {
+      const { servicio, n8n } = montar();
+      n8n.obtener.mockResolvedValue(correo());
+      await expect(servicio.adjunto(MSG, 5, ctx)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it.each([-1, 100, 1.5, Number.NaN])(
+      'rechaza la posición %p sin leer el correo',
+      async (indice) => {
+        const { servicio, n8n } = montar();
+        await expect(servicio.adjunto(MSG, indice, ctx)).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(n8n.obtener).not.toHaveBeenCalled();
+      },
+    );
+
+    it('no lee nada si la cuenta no está habilitada', async () => {
+      const { servicio, n8n } = montar('OTRA');
+      await expect(servicio.contenido(MSG, ctx)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(servicio.adjunto(MSG, 0, ctx)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(n8n.obtener).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,11 +1,14 @@
 import {
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   Post,
   Query,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
@@ -29,10 +32,30 @@ import { TenantGuard } from '../../../core/guards/tenant.guard';
 import { SWAGGER_TAGS } from '../../../core/swagger/swagger.constants';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import { CorreosQueryDto } from '../dto/correos-query.dto';
-import { CorreosListaResponseDto } from '../dto/correos-response.dto';
+import {
+  CorreoContenidoResponseDto,
+  CorreosListaResponseDto,
+} from '../dto/correos-response.dto';
 import { IngresoCorreoResponseDto } from '../dto/ingreso-correo-response.dto';
 import { CorreoDescartadoService } from '../services/correo-descartado.service';
 import { ROLES_REAGRUPACION_OT } from './orden-trabajo-reagrupacion.controller';
+
+const MIME_SEGURO = /^[\w.+-]+\/[\w.+-]+$/;
+
+/**
+ * `Content-Disposition` de un adjunto: siempre `attachment` (nunca se muestra dentro del
+ * dominio del api, donde un .html ejecutaría scripts) y con el nombre protegido contra
+ * saltos de línea y comillas.
+ */
+export function disposicionDeAdjunto(nombre: string): string {
+  const limpio = nombre.replace(/[\r\n"\\]/g, '').trim() || 'adjunto';
+  const ascii = limpio.replace(/[^\x20-\x7E]/g, '_');
+  const codificado = encodeURIComponent(limpio).replace(
+    /['()*]/g,
+    (simbolo) => `%${simbolo.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${codificado}`;
+}
 
 @ApiTags(SWAGGER_TAGS.VENTAS_OV)
 @Controller('ventas/correos')
@@ -41,8 +64,14 @@ import { ROLES_REAGRUPACION_OT } from './orden-trabajo-reagrupacion.controller';
 export class CorreoDescartadoController {
   constructor(private readonly service: CorreoDescartadoService) {}
 
+  /**
+   * Lecturas guiadas por la persona (filtrar, abrir un correo, bajar adjuntos): llevan su
+   * propio límite y saltan solo el `auth` global (15 por minuto para toda la empresa), que
+   * las cortaría con un uso normal.
+   */
   @Get()
   @Roles(...ROLES_REAGRUPACION_OT)
+  @SkipThrottle({ auth: true })
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOperation({
     summary: 'Listar los correos de pedidos que registró n8n (REQ-104)',
@@ -90,6 +119,63 @@ export class CorreoDescartadoController {
     @TenantCtx() ctx: TenantContext,
   ): Promise<IngresoCorreoResponseDto> {
     return this.service.ingresar(messageId, ctx);
+  }
+
+  @Get(':messageId/contenido')
+  @Roles(...ROLES_REAGRUPACION_OT)
+  @SkipThrottle({ auth: true })
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Ver el correo completo (cuerpo y datos de los adjuntos)',
+    description:
+      'Lee el correo en Gmail (vía n8n) y devuelve el cuerpo en texto y en HTML, más nombre, tipo y tamaño de cada adjunto. Los archivos se bajan con `GET …/adjuntos/:indice`. El HTML llega tal cual: quien lo muestre debe aislarlo. El correo se guarda unos minutos en memoria.',
+  })
+  @ApiOkResponse({ type: CorreoContenidoResponseDto })
+  @ApiUnauthorizedResponse()
+  @ApiForbiddenResponse()
+  @ApiBadGatewayResponse({
+    description:
+      'n8n o Gmail no respondieron (`N8N_NO_RESPONDE`, `N8N_ERROR`).',
+  })
+  contenido(
+    @Param('messageId') messageId: string,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<CorreoContenidoResponseDto> {
+    return this.service.contenido(messageId, ctx);
+  }
+
+  @Get(':messageId/adjuntos/:indice')
+  @Roles(...ROLES_REAGRUPACION_OT)
+  @SkipThrottle({ auth: true })
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Header('X-Content-Type-Options', 'nosniff')
+  @Header('Cache-Control', 'private, no-store')
+  @ApiOperation({
+    summary: 'Descargar un adjunto del correo',
+    description:
+      'Devuelve el archivo con `Content-Disposition: attachment`. `indice` es la posición que trae `contenido().adjuntos`.',
+  })
+  @ApiOkResponse({ description: 'El archivo.' })
+  @ApiUnauthorizedResponse()
+  @ApiForbiddenResponse()
+  @ApiNotFoundResponse({
+    description: 'No hay adjunto en esa posición (`ADJUNTO_NO_ENCONTRADO`).',
+  })
+  async adjunto(
+    @Param('messageId') messageId: string,
+    @Param('indice', ParseIntPipe) indice: number,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<StreamableFile> {
+    const { nombre, mimeType, buffer } = await this.service.adjunto(
+      messageId,
+      indice,
+      ctx,
+    );
+    return new StreamableFile(buffer, {
+      type: MIME_SEGURO.test(mimeType) ? mimeType : 'application/octet-stream',
+      disposition: disposicionDeAdjunto(nombre),
+      length: buffer.length,
+    });
   }
 
   /**

@@ -19,7 +19,9 @@ function montar() {
     $queryRawUnsafe: jest.fn(),
     $executeRawUnsafe: jest.fn().mockResolvedValue(1),
   };
-  const locator = { assertSafeSchemaIdent: jest.fn((s: string) => s) };
+  const locator = {
+    assertSafeSchemaIdent: jest.fn((esquema: string) => esquema),
+  };
   const repo = new CorreoIngresoRepository(
     prisma as unknown as PrismaService,
     locator as unknown as TenantSchemaLocator,
@@ -41,9 +43,9 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       const { repo, prisma } = montar();
       prisma.$queryRawUnsafe.mockResolvedValue([FILA]);
 
-      const r = await repo.reservar(base);
+      const resultado = await repo.reservar(base);
 
-      expect(r).toEqual({ reservada: true, fila: FILA });
+      expect(resultado).toEqual({ reservada: true, fila: FILA });
       expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
       const [sql, ...params] = prisma.$queryRawUnsafe.mock.calls[0] as [
         string,
@@ -71,9 +73,9 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([existente]);
 
-      const r = await repo.reservar(base);
+      const resultado = await repo.reservar(base);
 
-      expect(r).toEqual({ reservada: false, fila: existente });
+      expect(resultado).toEqual({ reservada: false, fila: existente });
       expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
     });
 
@@ -139,8 +141,11 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
   it('listarPorMessageIds trae varios correos en una sola consulta', async () => {
     const { repo, prisma } = montar();
     prisma.$queryRawUnsafe.mockResolvedValue([FILA]);
-    const r = await repo.listarPorMessageIds('emp_demo', '023WA', ['a', 'b']);
-    expect(r).toEqual([FILA]);
+    const resultado = await repo.listarPorMessageIds('emp_demo', '023WA', [
+      'a',
+      'b',
+    ]);
+    expect(resultado).toEqual([FILA]);
     expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
     expect(
       (prisma.$queryRawUnsafe.mock.calls[0] as unknown[]).slice(1),

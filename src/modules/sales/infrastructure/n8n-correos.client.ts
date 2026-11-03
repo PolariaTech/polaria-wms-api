@@ -56,18 +56,55 @@ export interface CorreoN8nCompleto {
 
 const TIMEOUT_LISTAR_MS = 20_000;
 const TIMEOUT_OBTENER_MS = 60_000;
+/** Un correo leído de Gmail se guarda un rato: abrirlo, bajar adjuntos e ingresarlo no lo piden otra vez. */
+const CORREO_EN_MEMORIA_MS = 5 * 60_000;
+/** Pocos y de corta vida: un correo con adjuntos puede pesar varios MB en memoria. */
+const CORREOS_EN_MEMORIA_MAX = 5;
 
-type Obj = Record<string, unknown>;
+type Objeto = Record<string, unknown>;
 
-const esObj = (v: unknown): v is Obj =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
+const esObjeto = (valor: unknown): valor is Objeto =>
+  typeof valor === 'object' && valor !== null && !Array.isArray(valor);
 
-const texto = (v: unknown): string | null =>
-  typeof v === 'string' && v.trim() !== '' ? v : null;
+const texto = (valor: unknown): string | null =>
+  typeof valor === 'string' && valor.trim() !== '' ? valor : null;
 
 /** El `id` del data table llega como número; se expone como texto. */
-const identificador = (v: unknown): string | null =>
-  typeof v === 'number' && Number.isFinite(v) ? String(v) : texto(v);
+const identificador = (valor: unknown): string | null =>
+  typeof valor === 'number' && Number.isFinite(valor)
+    ? String(valor)
+    : texto(valor);
+
+function aFila(crudo: Objeto): CorreoN8nFila | null {
+  const messageId = texto(crudo.message_id);
+  if (!messageId) return null;
+  return {
+    recibidoEn: texto(crudo.recibido_en),
+    de: texto(crudo.de),
+    para: texto(crudo.para),
+    asunto: texto(crudo.asunto),
+    messageId,
+    hilo: texto(crudo.hilo),
+    adjunto: texto(crudo.adjunto),
+    nuevoPedido:
+      typeof crudo.nuevo_pedido === 'boolean' ? crudo.nuevo_pedido : null,
+    motivo: texto(crudo.motivo),
+    idRegistro: identificador(crudo.id),
+    registradoEn: texto(crudo.createdAt),
+    actualizadoEn: texto(crudo.updatedAt),
+  };
+}
+
+function aAdjunto(crudo: Objeto): CorreoN8nAdjunto | null {
+  const nombre = texto(crudo.nombre);
+  const base64 = texto(crudo.base64);
+  if (!nombre || !base64) return null;
+  return {
+    nombre,
+    mimeType: texto(crudo.mimeType) ?? 'application/octet-stream',
+    base64,
+  };
+}
 
 /**
  * Puente con n8n (REQ-104). El WMS no habla con Gmail ni con la API general de n8n: llama
@@ -79,6 +116,12 @@ const identificador = (v: unknown): string | null =>
  */
 @Injectable()
 export class N8nCorreosClient {
+  private readonly enMemoria = new Map<
+    string,
+    { correo: CorreoN8nCompleto; expira: number }
+  >();
+  private readonly enCamino = new Map<string, Promise<CorreoN8nCompleto>>();
+
   constructor(private readonly config: ConfigService) {}
 
   async listar(
@@ -89,60 +132,81 @@ export class N8nCorreosClient {
       { ...input, soloDescartados: input.modo === 'descartados' },
       TIMEOUT_LISTAR_MS,
     );
-    const filas = Array.isArray(cuerpo.filas) ? cuerpo.filas : [];
-    const mapeadas = filas.filter(esObj).flatMap((f) => {
-      const messageId = texto(f.message_id);
-      if (!messageId) return [];
-      const fila: CorreoN8nFila = {
-        recibidoEn: texto(f.recibido_en),
-        de: texto(f.de),
-        para: texto(f.para),
-        asunto: texto(f.asunto),
-        messageId,
-        hilo: texto(f.hilo),
-        adjunto: texto(f.adjunto),
-        nuevoPedido:
-          typeof f.nuevo_pedido === 'boolean' ? f.nuevo_pedido : null,
-        motivo: texto(f.motivo),
-        idRegistro: identificador(f.id),
-        registradoEn: texto(f.createdAt),
-        actualizadoEn: texto(f.updatedAt),
-      };
-      return [fila];
-    });
+    const filas = (Array.isArray(cuerpo.filas) ? cuerpo.filas : [])
+      .filter(esObjeto)
+      .map(aFila)
+      .filter((fila): fila is CorreoN8nFila => fila !== null);
     const total =
       typeof cuerpo.total === 'number' && Number.isFinite(cuerpo.total)
         ? cuerpo.total
-        : mapeadas.length;
-    return { total, filas: mapeadas };
+        : filas.length;
+    return { total, filas };
   }
 
-  async obtener(messageId: string): Promise<CorreoN8nCompleto> {
-    const c = await this.llamar(
+  /**
+   * El correo completo. Se guarda unos minutos en memoria, y dos peticiones simultáneas por
+   * el mismo correo comparten una sola lectura (un correo con adjuntos pesa varios MB).
+   */
+  obtener(messageId: string): Promise<CorreoN8nCompleto> {
+    const guardado = this.leerDeMemoria(messageId);
+    if (guardado) return Promise.resolve(guardado);
+
+    const enCamino = this.enCamino.get(messageId);
+    if (enCamino) return enCamino;
+
+    const lectura = this.leerDeN8n(messageId)
+      .then((correo) => {
+        this.guardarEnMemoria(messageId, correo);
+        return correo;
+      })
+      .finally(() => {
+        this.enCamino.delete(messageId);
+      });
+    this.enCamino.set(messageId, lectura);
+    return lectura;
+  }
+
+  private leerDeMemoria(messageId: string): CorreoN8nCompleto | null {
+    const ahora = Date.now();
+    for (const [clave, entrada] of this.enMemoria) {
+      if (entrada.expira <= ahora) this.enMemoria.delete(clave);
+    }
+    const entrada = this.enMemoria.get(messageId);
+    if (!entrada) return null;
+    this.enMemoria.delete(messageId);
+    this.enMemoria.set(messageId, entrada); // el más usado queda al final
+    return entrada.correo;
+  }
+
+  private guardarEnMemoria(messageId: string, correo: CorreoN8nCompleto): void {
+    this.enMemoria.set(messageId, {
+      correo,
+      expira: Date.now() + CORREO_EN_MEMORIA_MS,
+    });
+    while (this.enMemoria.size > CORREOS_EN_MEMORIA_MAX) {
+      const masViejo = [...this.enMemoria.keys()][0];
+      if (masViejo === undefined) break;
+      this.enMemoria.delete(masViejo);
+    }
+  }
+
+  private async leerDeN8n(messageId: string): Promise<CorreoN8nCompleto> {
+    const correo = await this.llamar(
       'wms-correos-obtener',
       { messageId },
       TIMEOUT_OBTENER_MS,
     );
-    const adjuntos = (Array.isArray(c.adjuntos) ? c.adjuntos : [])
-      .filter(esObj)
-      .flatMap((a) => {
-        const nombre = texto(a.nombre);
-        const base64 = texto(a.base64);
-        if (!nombre || !base64) return [];
-        const adjunto: CorreoN8nAdjunto = {
-          nombre,
-          mimeType: texto(a.mimeType) ?? 'application/octet-stream',
-          base64,
-        };
-        return [adjunto];
-      });
+    const adjuntos = (Array.isArray(correo.adjuntos) ? correo.adjuntos : [])
+      .filter(esObjeto)
+      .map(aAdjunto)
+      .filter((adjunto): adjunto is CorreoN8nAdjunto => adjunto !== null);
     return {
-      asunto: texto(c.asunto) ?? '',
-      de: texto(c.de) ?? '',
-      para: texto(c.para) ?? '',
-      fecha: texto(c.fecha),
-      texto: texto(c.texto) ?? '',
-      html: texto(c.html) ?? '',
+      asunto: texto(correo.asunto) ?? '',
+      de: texto(correo.de) ?? '',
+      para: texto(correo.para) ?? '',
+      fecha: texto(correo.fecha),
+      texto: texto(correo.texto) ?? '',
+      html: texto(correo.html) ?? '',
       adjuntos,
     };
   }
@@ -151,7 +215,7 @@ export class N8nCorreosClient {
     ruta: string,
     cuerpo: unknown,
     timeoutMs: number,
-  ): Promise<Obj> {
+  ): Promise<Objeto> {
     const base = this.config
       .get<string>('N8N_CORREOS_URL')
       ?.trim()
@@ -187,7 +251,7 @@ export class N8nCorreosClient {
     }
 
     const json: unknown = await respuesta.json().catch(() => null);
-    if (!esObj(json)) {
+    if (!esObjeto(json)) {
       throw new BadGatewayException({
         error: 'N8N_RESPUESTA_INVALIDA',
         message: 'n8n devolvió una respuesta que no se puede leer.',

@@ -67,6 +67,44 @@ export class CorreoFilaDto {
   ingreso!: IngresoCorreoResponseDto | null;
 }
 
+export class AdjuntoCorreoDto {
+  @ApiProperty({
+    description: 'Posición del adjunto: se usa para descargarlo.',
+    example: 0,
+  })
+  indice!: number;
+
+  @ApiProperty({ example: 'PO_2000.pdf' })
+  nombre!: string;
+
+  @ApiProperty({ example: 'application/pdf' })
+  mimeType!: string;
+
+  @ApiProperty({ description: 'Tamaño del archivo en bytes.', example: 48213 })
+  tamano!: number;
+}
+
+/** El correo completo, tal como está en Gmail. Los adjuntos no traen sus bytes. */
+export class CorreoContenidoResponseDto {
+  @ApiProperty() asunto!: string;
+  @ApiProperty() de!: string;
+  @ApiProperty() para!: string;
+  @ApiPropertyOptional({ nullable: true, example: '2026-11-03T13:27:51.000Z' })
+  fecha!: string | null;
+
+  @ApiProperty({ description: 'Cuerpo en texto plano (puede venir vacío).' })
+  texto!: string;
+
+  @ApiProperty({
+    description:
+      'Cuerpo en HTML tal cual llegó. NO es seguro: la web lo muestra en un marco aislado.',
+  })
+  html!: string;
+
+  @ApiProperty({ type: [AdjuntoCorreoDto] })
+  adjuntos!: AdjuntoCorreoDto[];
+}
+
 export class CorreosListaResponseDto {
   @ApiProperty() total!: number;
   @ApiProperty() pagina!: number;
