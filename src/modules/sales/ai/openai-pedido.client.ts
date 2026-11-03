@@ -11,10 +11,8 @@ import {
   calcularCantidadDesdeCajas,
   pesoPorCajaKg,
 } from "./utils/empaque-lineas";
-import {
-  extractDireccionShipToDesdeTexto,
-  extractEntregaDesdeTexto,
-} from "./utils/extract-entrega-desde-texto";
+import { extractEntregaDesdeTexto } from "./utils/extract-entrega-desde-texto";
+import { aplicarIdPedidoAplicativo, resolveDireccionEntregaDesdeTexto } from "./utils/direccion-correo-aplicativo";
 import { resolveCentroConsumoSinConfundirConCliente } from "./utils/centro-consumo-vs-cliente";
 import {
   enrichAlmacenConCodigoDesdeTexto,
@@ -819,12 +817,12 @@ export async function extraerPedido({
     ...archivosTexto.map((f) => `--- ${f.nombre} ---\n${f.contenido}`),
   ].join("\n");
   const fileNames = archivosExtraidos.map((f) => f.nombre);
-  const normalizedPedidos = normalizeNumeroPedidoFields({
+  const normalizedPedidos = aplicarIdPedidoAplicativo(normalizeNumeroPedidoFields({
     ordenCompraHotel: parsed.ordenCompraHotel?.trim() || null,
     lineas: lineasRaw,
     sourceText: sourceForOc,
     fileNames,
-  });
+  }), sourceForOc);
   const sourceForEntrega = sourceForOc;
   const lineas = enrichLineasAlmacenConCodigoDesdeTexto(
     normalizedPedidos.lineas,
@@ -855,8 +853,9 @@ export async function extraerPedido({
       ? parsed.nombreCliente.trim()
       : "") || "";
   // Ship To del documento manda sobre Bill To / lo que Mateo haya puesto.
+  // REQ-231: en el correo del aplicativo la línea «Dirección:» manda sobre cualquier Ship To.
   const direccionCabecera =
-    extractDireccionShipToDesdeTexto(sourceForEntrega) ||
+    resolveDireccionEntregaDesdeTexto(sourceForEntrega) ||
     parsed.direccion?.trim() ||
     "";
   const andenCabecera = parsed.anden?.trim() || "";
