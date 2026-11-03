@@ -82,6 +82,7 @@ const SEPARADOR_ADJUNTO_EML = ' → ';
 export type CodigoAdvertenciaLectura =
   | 'OC_DISCREPA'
   | 'OC_REPETIDA'
+  | 'OC_MENSUAL_IGNORADA'
   | 'SIN_TOTAL_DOCUMENTO'
   | 'TOTAL_NO_CUADRA'
   | 'DOCUMENTO_NO_LEGIBLE'
@@ -552,8 +553,8 @@ export class PedidoIaService {
     const ocSel = seleccionarDocsTrasOcMensual({
       texto: input.texto, contexto, documentos,
     });
-    advertencias.push(...(ocSel.advertencias as AdvertenciaLectura[]));
-    const aLeer = ocSel.aLeer;
+    advertencias.push(...ocSel.advertencias);
+    const aLeer = ocSel.aLeer as DocumentoParaLeer[];
 
     const uso = { tokensTotal: 0, costoUSD: 0, costoConocido: true };
     const lecturas = await mapConLimite(
