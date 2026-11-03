@@ -44,7 +44,9 @@ export class PaqueteDespachoController {
     summary: 'Armar paquete de despacho y enviar a transporte',
     description:
       'Crea un viaje + guía por cada OV, marca el camión como no disponible, ' +
-      'actualiza la OV a despachada y consume stock de zona de salida (flujo frio / custodio).',
+      'actualiza la OV a despachada y consume stock de zona de salida (flujo frio / custodio). ' +
+      'REQ-243: exige captura de hoja con check-in Despachó (escaneo desde la app); ' +
+      'si falta responde 409 Conflict.',
   })
   @ApiOkResponse({ type: PaqueteDespachoResponseDto })
   @ApiUnauthorizedResponse()

@@ -11,7 +11,10 @@ import {
   calcularCantidadDesdeCajas,
   pesoPorCajaKg,
 } from "./utils/empaque-lineas";
-import { extractEntregaDesdeTexto } from "./utils/extract-entrega-desde-texto";
+import {
+  extractEntregaDesdeTexto,
+  parseFechaNumerica,
+} from "./utils/extract-entrega-desde-texto";
 import { aplicarIdPedidoAplicativo, resolveDireccionEntregaDesdeTexto } from "./utils/direccion-correo-aplicativo";
 import { resolveCentroConsumoSinConfundirConCliente } from "./utils/centro-consumo-vs-cliente";
 import {
@@ -602,6 +605,10 @@ export function resolverFechaEntrega(
   const conocida = normalizarFechaConocida(fraseTexto, referencia);
   if (conocida) return conocida;
 
+  // REQ-200: numérico ambiguo (11/02/2026) antes de chrono.es (que asume DD/MM).
+  const numerica = parseFechaNumerica(fraseTexto, hoyISO);
+  if (numerica) return numerica;
+
   const resultado = chrono.es.parseDate(fraseTexto, referencia, {
     forwardDate: true,
   });
@@ -707,6 +714,7 @@ export async function extraerPedido({
     `- "unidad" siempre debe ser exactamente KGM, CJ o UN (o null) — nunca un texto libre como "kilos" o "kg".`,
     `- "centroConsumo" debe quedar null si el mensaje expresa incertidumbre sobre cuál es, incluso si menciona un valor tentativo de pasada. También null si lo único que hay es el nombre del hotel/denominación (eso es nombreCliente).`,
     `- "fechaEntregaTexto" (crítico): copia la frase EXACTA de ENTREGA del pedido (ej. "Entrega: viernes, 23 de octubre de 2026", "21/10/2026", "Delivery date: 10/24/2026"). NUNCA uses la fecha Enviado/Sent/Received del correo ni la del hilo. NUNCA asumas "mañana"/"hoy" si hay fecha concreta de entrega. null SOLO si de verdad no hay pista de entrega.`,
+    `- REQ-244 (SEADUST / KRYSTAL): estos hoteles suelen adjuntar una OC MENSUAL además del Excel o del pedido del día en el cuerpo. Las CANTIDADES y renglones salen SOLO del pedido del día (Excel/cuerpo). NUNCA copies cantidades ni líneas de un adjunto titulado o descrito como OC/pedido mensual. La OC mensual puede aportar el número de OC si el pedido del día no lo trae, pero no el surtido del mes.`,
     `- Si el texto y los archivos, en conjunto, NO describen un pedido de fruta/verdura (ej. son spam, un documento administrativo sin relación, contenido vacío o ilegible), deja "lineas" vacío y usa "advertencia" para explicarlo — no inventes líneas solo para llenar algo.`,
   ].join("\n");
 

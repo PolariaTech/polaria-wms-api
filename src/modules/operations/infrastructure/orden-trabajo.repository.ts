@@ -20,6 +20,10 @@ import {
   formatCodigoOrdenTrabajo,
 } from '../constants/operations.constants';
 import {
+  assertOvTieneCapturaDespacho,
+  CapturaDespachoRequeridaError,
+} from '../../sales/services/validar-captura-despacho.service';
+import {
   cancelarOtsPendientesOv,
   esUbicacionZonaSalida,
   marcarOvEnPreparacion,
@@ -342,6 +346,22 @@ export class OrdenTrabajoRepository {
             tipoFlujo === 'a_salida' &&
             (await esUbicacionZonaSalida(tx, idUbicacionDestino))
           ) {
+            // REQ-243: OT a zona salida no despacha OV sin check-in Despachó escaneado.
+            try {
+              await assertOvTieneCapturaDespacho(
+                this.prisma,
+                this.schemaLocator,
+                {
+                  codigoCuenta: orden.codigoCuenta,
+                  idOrdenVenta: orden.idOrdenVenta,
+                },
+              );
+            } catch (error) {
+              if (error instanceof CapturaDespachoRequeridaError) {
+                throw new Error('CAPTURA_DESPACHO_REQUERIDA');
+              }
+              throw error;
+            }
             const nuevoEstadoOv = await registrarDespachoOv(
               tx,
               orden.idOrdenVenta,

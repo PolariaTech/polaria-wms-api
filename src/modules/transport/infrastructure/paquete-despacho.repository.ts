@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
   EstadoGuiaEnvio,
   EstadoOrdenVenta,
@@ -7,7 +7,12 @@ import {
   TipoMovimiento,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
+import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 import { syncUbicacionEstadoSlot } from '../../inventory/utils/sync-ubicacion-estado-slot.util';
+import {
+  assertOvTieneCapturaDespacho,
+  CapturaDespachoRequeridaError,
+} from '../../sales/services/validar-captura-despacho.service';
 import {
   OrdenVentaEstadoError,
   registrarDespachoOv,
@@ -34,7 +39,10 @@ const ESTADOS_OV_PAQUETE: EstadoOrdenVenta[] = [
 
 @Injectable()
 export class PaqueteDespachoRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly schemaLocator: TenantSchemaLocator,
+  ) {}
 
   crearPaquete(
     input: CrearPaqueteDespachoInput,
@@ -88,6 +96,20 @@ export class PaqueteDespachoRepository {
         }
         if (orden.guiasEnvio.length > 0) {
           throw new Error(`OV_YA_EN_TRANSPORTE:${orden.codigo}`);
+        }
+        // REQ-243: sin escaneo Despachó desde la app, no se arma el paquete.
+        try {
+          await assertOvTieneCapturaDespacho(this.prisma, this.schemaLocator, {
+            codigoCuenta,
+            idOrdenVenta: orden.idOrdenVenta,
+          });
+        } catch (error) {
+          if (error instanceof CapturaDespachoRequeridaError) {
+            throw new ConflictException(
+              `La venta ${orden.codigo} no tiene check-in Despachó escaneado desde la app. Escaneá la hoja en captura-orden antes de armar el paquete.`,
+            );
+          }
+          throw error;
         }
       }
 

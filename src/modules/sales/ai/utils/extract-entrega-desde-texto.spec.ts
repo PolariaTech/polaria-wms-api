@@ -3,6 +3,7 @@ import {
   extractEntregaDesdeTexto,
   extraerHorarioDesdeTexto,
   normalizarHoraAHhMm,
+  parseFechaNumerica,
 } from './extract-entrega-desde-texto';
 
 describe('normalizarHoraAHhMm', () => {
@@ -37,6 +38,19 @@ describe('extraerHorarioDesdeTexto', () => {
   });
 });
 
+describe('parseFechaNumerica (REQ-200)', () => {
+  it('Accor/BirchStreet 11/02/2026 con hoy en oct → MM/DD (2 nov), no feb', () => {
+    expect(parseFechaNumerica('11/02/2026', '2026-10-29')).toBe('2026-11-02');
+    expect(parseFechaNumerica('Fecha de entrega: 11/02/2026', '2026-10-29')).toBe(
+      '2026-11-02',
+    );
+  });
+
+  it('sigue prefiriendo DD/MM cuando esa lectura no está en el pasado', () => {
+    expect(parseFechaNumerica('21/10/2026', '2026-10-16')).toBe('2026-10-21');
+  });
+});
+
 describe('extractEntregaDesdeTexto', () => {
   it('prioriza fecha explícita dd/mm/aaaa cerca de entrega', () => {
     const got = extractEntregaDesdeTexto(
@@ -45,6 +59,19 @@ describe('extractEntregaDesdeTexto', () => {
     );
     expect(got.fechaIso).toBe('2026-10-21');
     expect(got.fechaFrase).toMatch(/21\/10\/2026/);
+  });
+
+  it('REQ-200: OC Accor 11/02/2026 no cae en febrero', () => {
+    const got = extractEntregaDesdeTexto(
+      [
+        'ORDEN DE COMPRA',
+        'Fecha de entrega: 11/02/2026',
+        'Fecha Envío OC: 10/29/2026 16:01:52',
+        'NÚMERO DE ORDEN DE COMPRA: 000000000028736',
+      ].join('\n'),
+      '2026-10-29',
+    );
+    expect(got.fechaIso).toBe('2026-11-02');
   });
 
   it("lee '27 DE AGOSTO DE 2026' y hora 6:00 am", () => {

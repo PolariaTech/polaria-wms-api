@@ -16,6 +16,7 @@ import {
   separarContextoYDocumentos,
   unificarAlmacenesPorCodigo,
 } from './pedido-ia.service';
+import { capturaPayloadTieneDespacho } from './validar-captura-despacho.service';
 
 jest.mock('../ai/file-extractors', () => ({ extractFiles: jest.fn() }));
 jest.mock('../ai/openai-pedido.client', () => ({
@@ -499,5 +500,26 @@ describe('PedidoIaService.leerArchivosParaCuenta — casos REQ-187', () => {
         archivos: [],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('capturaPayloadTieneDespacho (REQ-243)', () => {
+  it('detecta nombre u hora de Despachó', () => {
+    expect(
+      capturaPayloadTieneDespacho({
+        campos: { despachoNombre: 'Juan Pérez' },
+      }),
+    ).toBe(true);
+    expect(
+      capturaPayloadTieneDespacho({
+        campos: { 'Despachó hora': '14:30' },
+      }),
+    ).toBe(true);
+    expect(
+      capturaPayloadTieneDespacho({
+        campos: { alistoNombre: 'Pedro' },
+      }),
+    ).toBe(false);
+    expect(capturaPayloadTieneDespacho(null)).toBe(false);
   });
 });

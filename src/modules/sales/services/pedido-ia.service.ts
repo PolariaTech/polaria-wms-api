@@ -47,6 +47,7 @@ import {
 } from '../ai/utils/origen-correo-ordenes-trabajo';
 import { recordOrdenVentaAudit } from '../utils/record-orden-venta-audit';
 import { sanitizeTelefonoContactoOrNull } from '../ai/utils/sanitize-telefono-contacto';
+import { filtrarDocumentosOcMensual } from '../ai/utils/clasificar-adjunto-oc-mensual';
 
 const PRESENTACIONES = [
   '',
@@ -87,6 +88,7 @@ const SEPARADOR_ADJUNTO_EML = ' → ';
 export type CodigoAdvertenciaLectura =
   | 'OC_DISCREPA'
   | 'OC_REPETIDA'
+  | 'OC_MENSUAL_IGNORADA'
   | 'SIN_TOTAL_DOCUMENTO'
   | 'TOTAL_NO_CUADRA'
   | 'DOCUMENTO_NO_LEGIBLE'
@@ -553,11 +555,48 @@ export class PedidoIaService {
         'Adjunto incrustado en el .eml que también se subió suelto: se leyó una sola vez.',
     }));
 
+    // REQ-244: SEADUST/KRYSTAL — no leer cantidades de OC mensuales si hay pedido del día.
+    const docsConTexto = documentos.map((documento) => ({
+      ...documento,
+      contenido: documento.archivos
+        .filter((archivo): archivo is ArchivoTexto => archivo.tipo === 'texto')
+        .map((archivo) => archivo.contenido)
+        .join('\n'),
+    }));
+    const { aLeer: docsOperativos, ignorados: docsMensuales } =
+      filtrarDocumentosOcMensual({
+        pistasCliente: [
+          input.texto,
+          ...contexto.map((c) => c.contenido),
+          ...documentos.map((d) => d.nombre),
+        ],
+        documentos: docsConTexto,
+        tieneContextoPedido:
+          input.texto.trim().length > 0 ||
+          contexto.some((c) => c.contenido.trim().length > 40),
+      });
+    for (const mensual of docsMensuales) {
+      advertencias.push({
+        codigo: 'OC_MENSUAL_IGNORADA',
+        documento: mensual.nombre,
+        detalle:
+          'OC/pedido mensual de SEADUST/KRYSTAL: no se usan sus cantidades; el pedido del día sale del Excel o del cuerpo del correo.',
+      });
+    }
+
     // Sin documentos (mensaje pegado o solo el cuerpo del correo): una sola lectura.
+    const docsSinMensuales: DocumentoParaLeer[] = docsOperativos.map(
+      ({ nombre, archivos, esTexto }) => ({ nombre, archivos, esTexto }),
+    );
     const aLeer: DocumentoParaLeer[] =
-      documentos.length > 0
-        ? documentos
-        : [{ nombre: 'mensaje', archivos: [], esTexto: false }];
+      docsSinMensuales.length > 0
+        ? docsSinMensuales
+        : docsMensuales.length > 0
+          ? // Mensuales filtradas y queda el cuerpo/Excel implícito: leer mensaje.
+            [{ nombre: 'mensaje', archivos: [], esTexto: false }]
+          : documentos.length > 0
+            ? documentos
+            : [{ nombre: 'mensaje', archivos: [], esTexto: false }];
 
     const uso = { tokensTotal: 0, costoUSD: 0, costoConocido: true };
     const lecturas = await mapConLimite(

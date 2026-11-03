@@ -88,8 +88,16 @@ function ymdIfValid(year: number, month: number, day: number): string | null {
   return `${year}-${pad2(month)}-${pad2(day)}`;
 }
 
-/** DD/MM LatAm o MM/DD US (BirchStreet); si ambas válidas, preferir DMY. */
-function parseFechaNumerica(raw: string): string | null {
+/**
+ * DD/MM LatAm o MM/DD US (BirchStreet/Accor).
+ * REQ-200: si ambas lecturas son válidas y una cae antes de hoyISO, preferir la
+ * que no esté en el pasado (ej. 11/02/2026 con hoy oct-2026 → 2026-11-02, no feb).
+ * Si ambas son futuras o ambas pasadas, LatAm (DMY).
+ */
+export function parseFechaNumerica(
+  raw: string,
+  hoyISO?: string,
+): string | null {
   const text = raw.trim();
   const iso = text.match(/(\d{4})-(\d{2})-(\d{2})\b/);
   if (iso) {
@@ -111,7 +119,16 @@ function parseFechaNumerica(raw: string): string | null {
   const asMdy = ymdIfValid(year, first, second);
   if (asDmy && !asMdy) return asDmy;
   if (asMdy && !asDmy) return asMdy;
-  if (asDmy && asMdy) return asDmy;
+  if (asDmy && asMdy) {
+    const hoy = hoyISO?.trim() ?? "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(hoy)) {
+      const dmyPasada = asDmy < hoy;
+      const mdyPasada = asMdy < hoy;
+      if (dmyPasada && !mdyPasada) return asMdy;
+      if (mdyPasada && !dmyPasada) return asDmy;
+    }
+    return asDmy;
+  }
   return null;
 }
 
@@ -211,7 +228,7 @@ function resolveFechaIso(
   hoyISO: string,
 ): string | null {
   if (!frase?.trim()) return null;
-  const numerica = parseFechaNumerica(frase);
+  const numerica = parseFechaNumerica(frase, hoyISO);
   if (numerica) return numerica;
   const conMes = parseFechaConMesNombre(frase, hoyISO);
   if (conMes) return conMes;
