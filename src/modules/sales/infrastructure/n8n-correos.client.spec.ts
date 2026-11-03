@@ -159,7 +159,7 @@ describe('N8nCorreosClient (REQ-104)', () => {
     const intento = cliente(CONFIGURADO).listar(ENTRADA);
     await expect(intento).rejects.toBeInstanceOf(BadGatewayException);
     await expect(intento).rejects.toMatchObject({
-      response: { code: 'N8N_ERROR' },
+      response: { error: 'N8N_ERROR' },
     });
   });
 
@@ -168,14 +168,14 @@ describe('N8nCorreosClient (REQ-104)', () => {
     await expect(
       cliente(CONFIGURADO).obtener('abc123def'),
     ).rejects.toMatchObject({
-      response: { code: 'N8N_NO_RESPONDE' },
+      response: { error: 'N8N_NO_RESPONDE' },
     });
   });
 
   it('responde 502 si la respuesta no es un objeto JSON', async () => {
     fetchMock.mockResolvedValue(responder(['no', 'objeto']));
     await expect(cliente(CONFIGURADO).listar(ENTRADA)).rejects.toMatchObject({
-      response: { code: 'N8N_RESPUESTA_INVALIDA' },
+      response: { error: 'N8N_RESPUESTA_INVALIDA' },
     });
   });
 });

@@ -139,7 +139,7 @@ Lista los correos que el workflow de n8n registra en el data table `correos_agua
 
 ### Sin duplicados
 
-La tabla `correo_pedido_ingreso` (migración 114) tiene llave única (`codigo_cuenta`, `message_id`). El segundo clic mientras procesa devuelve el estado actual (no crea otra OV); si ya está ingresado responde **409** `CORREO_YA_INGRESADO` con `codigoOrdenVenta`. Un ingreso en `error`, o en `procesando` por más de 10 minutos, se puede reintentar.
+La tabla `correo_pedido_ingreso` (migración 114) tiene llave única (`codigo_cuenta`, `message_id`). El segundo clic mientras procesa devuelve el estado actual (no crea otra OV); si ya está ingresado responde **409** `CORREO_YA_INGRESADO` (el código de la OV va en el mensaje y se consulta con `GET …/ingreso`). Un ingreso en `error`, o en `procesando` por más de 10 minutos, se puede reintentar.
 
 ### Puente con n8n
 

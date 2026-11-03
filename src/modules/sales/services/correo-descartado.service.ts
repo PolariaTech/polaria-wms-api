@@ -142,9 +142,10 @@ export class CorreoDescartadoService {
     if (!reservada) {
       if (fila.estado === 'ingresado') {
         throw new ConflictException({
-          code: 'CORREO_YA_INGRESADO',
+          error: 'CORREO_YA_INGRESADO',
+          // El filtro global solo deja pasar `message` y `error`: la OV viaja en el texto
+          // y la web la obtiene con GET …/ingreso.
           message: `Este pedido ya fue ingresado como ${fila.codigoOrdenVenta ?? 'una OV'}.`,
-          codigoOrdenVenta: fila.codigoOrdenVenta,
         });
       }
       // Ya lo está procesando otra llamada: no se duplica, se devuelve el estado actual.
@@ -164,7 +165,7 @@ export class CorreoDescartadoService {
     const fila = await this.ingresos.buscar(ctx.schemaName, cuenta, messageId);
     if (!fila) {
       throw new NotFoundException({
-        code: 'INGRESO_NO_ENCONTRADO',
+        error: 'INGRESO_NO_ENCONTRADO',
         message: 'Este correo todavía no se ha intentado ingresar.',
       });
     }
@@ -219,7 +220,7 @@ export class CorreoDescartadoService {
   private validarMessageId(messageId: string): void {
     if (!MESSAGE_ID.test(messageId)) {
       throw new BadRequestException({
-        code: 'MESSAGE_ID_INVALIDO',
+        error: 'MESSAGE_ID_INVALIDO',
         message: 'El identificador del correo no es válido.',
       });
     }
@@ -234,7 +235,7 @@ export class CorreoDescartadoService {
       .filter(Boolean);
     if (!cuenta || !permitidas.includes(cuenta)) {
       throw new ForbiddenException({
-        code: 'CORREOS_NO_DISPONIBLES',
+        error: 'CORREOS_NO_DISPONIBLES',
         message:
           'Los correos de pedidos no están habilitados para esta cuenta.',
       });

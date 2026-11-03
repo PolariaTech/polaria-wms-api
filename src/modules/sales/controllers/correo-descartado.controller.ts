@@ -83,7 +83,7 @@ export class CorreoDescartadoController {
   @ApiForbiddenResponse()
   @ApiConflictResponse({
     description:
-      'Ya se ingresó como OV (`CORREO_YA_INGRESADO`, con `codigoOrdenVenta`).',
+      'Ya se ingresó como OV (`CORREO_YA_INGRESADO`; el código de la OV va en el mensaje y en `GET …/ingreso`).',
   })
   ingresar(
     @Param('messageId') messageId: string,

@@ -148,7 +148,7 @@ export class N8nCorreosClient {
     const llave = this.config.get<string>('N8N_CORREOS_API_KEY')?.trim();
     if (!base || !llave) {
       throw new ServiceUnavailableException({
-        code: 'CORREOS_NO_CONFIGURADOS',
+        error: 'CORREOS_NO_CONFIGURADOS',
         message: 'Los correos de n8n no están configurados en este entorno.',
       });
     }
@@ -163,14 +163,14 @@ export class N8nCorreosClient {
       });
     } catch {
       throw new BadGatewayException({
-        code: 'N8N_NO_RESPONDE',
+        error: 'N8N_NO_RESPONDE',
         message: 'n8n no respondió a tiempo. Intenta de nuevo en un momento.',
       });
     }
 
     if (!respuesta.ok) {
       throw new BadGatewayException({
-        code: 'N8N_ERROR',
+        error: 'N8N_ERROR',
         message: `n8n respondió con error (${respuesta.status}).`,
       });
     }
@@ -178,7 +178,7 @@ export class N8nCorreosClient {
     const json: unknown = await respuesta.json().catch(() => null);
     if (!esObj(json)) {
       throw new BadGatewayException({
-        code: 'N8N_RESPUESTA_INVALIDA',
+        error: 'N8N_RESPUESTA_INVALIDA',
         message: 'n8n devolvió una respuesta que no se puede leer.',
       });
     }

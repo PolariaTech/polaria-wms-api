@@ -190,8 +190,8 @@ describe('CorreoDescartadoService (REQ-104)', () => {
       await expect(intento).rejects.toBeInstanceOf(ConflictException);
       await expect(intento).rejects.toMatchObject({
         response: {
-          code: 'CORREO_YA_INGRESADO',
-          codigoOrdenVenta: 'OV-00001318',
+          error: 'CORREO_YA_INGRESADO',
+          message: expect.stringContaining('OV-00001318') as string,
         },
       });
       expect(n8n.obtener).not.toHaveBeenCalled();
