@@ -6,6 +6,7 @@
  */
 
 import { extractDireccionShipToDesdeTexto } from './extract-entrega-desde-texto';
+import { limpiarDireccionEntrega } from './limpiar-direccion-birchstreet';
 
 const MARCA_CORREO_APLICATIVO = /^\s*PEDIDO\s+ADP-\d{6}-\d{4}-\w+/im;
 const LINEA_DIRECCION = /^[ \t]*Direcci[oó]n[ \t]*:[ \t]*(.*)$/im;
@@ -55,5 +56,19 @@ export function resolveDireccionEntregaDesdeTexto(
   return (
     extractDireccionCorreoAplicativo(texto) ??
     extractDireccionShipToDesdeTexto(texto)
+  );
+}
+
+/**
+ * REQ-239: dirección de la cabecera sin correos, fax, teléfonos, ATTN ni FROM. Manda la
+ * del documento (aplicativo o Ship To) y, si no sirve, la que leyó el modelo.
+ */
+export function resolveDireccionEntrega(
+  texto: string | null | undefined,
+  direccionModelo: string | null | undefined,
+): string | null {
+  return (
+    limpiarDireccionEntrega(resolveDireccionEntregaDesdeTexto(texto)) ??
+    limpiarDireccionEntrega(direccionModelo)
   );
 }
