@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { EstadoOrdenVenta } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 
@@ -46,7 +47,6 @@ export function capturaPayloadTieneDespacho(payload: unknown): boolean {
 
 /**
  * REQ-243: exige captura escaneada con check-in Despachó antes del despacho operativo.
- * Función pura (repos) + servicio Nest (cuando se registre en el module).
  */
 export async function assertOvTieneCapturaDespacho(
   prisma: PrismaService,
@@ -74,6 +74,70 @@ export async function assertOvTieneCapturaDespacho(
   );
   if (!conDespacho) {
     throw new CapturaDespachoRequeridaError('CAPTURA_DESPACHO_REQUERIDA');
+  }
+}
+
+/** REQ-243: OT → zona salida; lanza Error genérico del repo de OT. */
+export async function assertCapturaDespachoOtSalida(
+  prisma: PrismaService,
+  locator: TenantSchemaLocator,
+  input: { codigoCuenta: string; idOrdenVenta: string },
+): Promise<void> {
+  try {
+    await assertOvTieneCapturaDespacho(prisma, locator, input);
+  } catch (error) {
+    if (error instanceof CapturaDespachoRequeridaError) {
+      throw new Error('CAPTURA_DESPACHO_REQUERIDA');
+    }
+    throw error;
+  }
+}
+
+const ESTADOS_OV_PAQUETE: EstadoOrdenVenta[] = [
+  EstadoOrdenVenta.confirmada,
+  EstadoOrdenVenta.en_preparacion,
+  EstadoOrdenVenta.parcialmente_despachada,
+  EstadoOrdenVenta.despachada,
+];
+
+type OrdenParaPaquete = {
+  idOrdenVenta: string;
+  codigo: string;
+  estado: EstadoOrdenVenta;
+  lineas: unknown[];
+  guiasEnvio: unknown[];
+};
+
+/** REQ-243: valida estado/líneas/guías + check-in Despachó por cada OV del paquete. */
+export async function assertOrdenesListasParaPaquete(
+  prisma: PrismaService,
+  locator: TenantSchemaLocator,
+  codigoCuenta: string,
+  ordenes: readonly OrdenParaPaquete[],
+): Promise<void> {
+  for (const orden of ordenes) {
+    if (!ESTADOS_OV_PAQUETE.includes(orden.estado)) {
+      throw new Error(`OV_ESTADO_INVALIDO:${orden.codigo}`);
+    }
+    if (orden.lineas.length === 0) {
+      throw new Error(`OV_SIN_LINEAS:${orden.codigo}`);
+    }
+    if (orden.guiasEnvio.length > 0) {
+      throw new Error(`OV_YA_EN_TRANSPORTE:${orden.codigo}`);
+    }
+    try {
+      await assertOvTieneCapturaDespacho(prisma, locator, {
+        codigoCuenta,
+        idOrdenVenta: orden.idOrdenVenta,
+      });
+    } catch (error) {
+      if (error instanceof CapturaDespachoRequeridaError) {
+        throw new ConflictException(
+          `La venta ${orden.codigo} no tiene check-in Despachó escaneado desde la app. Escaneá la hoja en captura-orden antes de armar el paquete.`,
+        );
+      }
+      throw error;
+    }
   }
 }
 

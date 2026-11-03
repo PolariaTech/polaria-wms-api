@@ -1,7 +1,9 @@
+import { capturaPayloadTieneDespacho } from '../../services/validar-captura-despacho.service';
 import {
   esClienteOcMensualAdjunta,
   filtrarDocumentosOcMensual,
   pareceOcMensualAdjunto,
+  parseFechaNumerica,
 } from './clasificar-adjunto-oc-mensual';
 
 describe('clasificar-adjunto-oc-mensual (REQ-244)', () => {
@@ -70,5 +72,27 @@ describe('clasificar-adjunto-oc-mensual (REQ-244)', () => {
     });
     expect(r.aLeer).toHaveLength(2);
     expect(r.ignorados).toHaveLength(0);
+  });
+});
+
+describe('parseFechaNumerica (REQ-200)', () => {
+  it('Accor 11/02/2026 con hoy en oct → noviembre, no febrero', () => {
+    expect(parseFechaNumerica('11/02/2026', '2026-10-29')).toBe('2026-11-02');
+    expect(parseFechaNumerica('21/10/2026', '2026-10-16')).toBe('2026-10-21');
+  });
+});
+
+describe('capturaPayloadTieneDespacho (REQ-243)', () => {
+  it('detecta nombre u hora de Despachó', () => {
+    expect(
+      capturaPayloadTieneDespacho({ campos: { despachoNombre: 'Juan Pérez' } }),
+    ).toBe(true);
+    expect(
+      capturaPayloadTieneDespacho({ campos: { 'Despachó hora': '14:30' } }),
+    ).toBe(true);
+    expect(
+      capturaPayloadTieneDespacho({ campos: { alistoNombre: 'Pedro' } }),
+    ).toBe(false);
+    expect(capturaPayloadTieneDespacho(null)).toBe(false);
   });
 });

@@ -3,7 +3,35 @@ import {
   EstadoOrdenVenta,
   EstadoTarea,
   Prisma,
+  TipoOrdenTrabajo,
+  TipoTarea,
 } from '../../../generated/prisma/client';
+import type { FlujoOrdenTrabajo } from '../../operations/interfaces/operations.interfaces';
+
+/** Mapas de flujo OT (extraídos del repo para no crecer orden-trabajo.repository). */
+export const FLUJO_TIPO_OT: Record<FlujoOrdenTrabajo, TipoOrdenTrabajo> = {
+  a_bodega: TipoOrdenTrabajo.reabasto,
+  a_salida: TipoOrdenTrabajo.picking,
+  revisar: TipoOrdenTrabajo.conteo,
+  bodega_a_bodega: TipoOrdenTrabajo.reabasto,
+  a_procesamiento: TipoOrdenTrabajo.transformacion,
+};
+
+export const FLUJO_TIPO_TAREA: Record<FlujoOrdenTrabajo, TipoTarea> = {
+  a_bodega: TipoTarea.movimiento,
+  a_salida: TipoTarea.despacho,
+  revisar: TipoTarea.revision,
+  bodega_a_bodega: TipoTarea.movimiento,
+  a_procesamiento: TipoTarea.procesamiento,
+};
+
+export const FLUJO_TITULO: Record<FlujoOrdenTrabajo, string> = {
+  a_bodega: 'A bodega',
+  a_salida: 'A salida',
+  revisar: 'Revisar',
+  bodega_a_bodega: 'Bodega a bodega',
+  a_procesamiento: 'Procesamiento',
+};
 
 export class OrdenVentaEstadoError extends Error {
   constructor(message: string) {

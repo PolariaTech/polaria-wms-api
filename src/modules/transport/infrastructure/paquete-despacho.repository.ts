@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   EstadoGuiaEnvio,
   EstadoOrdenVenta,
@@ -9,10 +9,7 @@ import {
 import { PrismaService } from '../../../core/database/prisma.service';
 import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 import { syncUbicacionEstadoSlot } from '../../inventory/utils/sync-ubicacion-estado-slot.util';
-import {
-  assertOvTieneCapturaDespacho,
-  CapturaDespachoRequeridaError,
-} from '../../sales/services/validar-captura-despacho.service';
+import { assertOrdenesListasParaPaquete } from '../../sales/services/validar-captura-despacho.service';
 import {
   OrdenVentaEstadoError,
   registrarDespachoOv,
@@ -29,13 +26,6 @@ import type {
   GuiaPaqueteDespachoResponse,
   PaqueteDespachoResponse,
 } from '../interfaces/transport.interfaces';
-
-const ESTADOS_OV_PAQUETE: EstadoOrdenVenta[] = [
-  EstadoOrdenVenta.confirmada,
-  EstadoOrdenVenta.en_preparacion,
-  EstadoOrdenVenta.parcialmente_despachada,
-  EstadoOrdenVenta.despachada,
-];
 
 @Injectable()
 export class PaqueteDespachoRepository {
@@ -87,31 +77,12 @@ export class PaqueteDespachoRepository {
         throw new Error('OV_NO_ENCONTRADA');
       }
 
-      for (const orden of ordenes) {
-        if (!ESTADOS_OV_PAQUETE.includes(orden.estado)) {
-          throw new Error(`OV_ESTADO_INVALIDO:${orden.codigo}`);
-        }
-        if (orden.lineas.length === 0) {
-          throw new Error(`OV_SIN_LINEAS:${orden.codigo}`);
-        }
-        if (orden.guiasEnvio.length > 0) {
-          throw new Error(`OV_YA_EN_TRANSPORTE:${orden.codigo}`);
-        }
-        // REQ-243: sin escaneo Despachó desde la app, no se arma el paquete.
-        try {
-          await assertOvTieneCapturaDespacho(this.prisma, this.schemaLocator, {
-            codigoCuenta,
-            idOrdenVenta: orden.idOrdenVenta,
-          });
-        } catch (error) {
-          if (error instanceof CapturaDespachoRequeridaError) {
-            throw new ConflictException(
-              `La venta ${orden.codigo} no tiene check-in Despachó escaneado desde la app. Escaneá la hoja en captura-orden antes de armar el paquete.`,
-            );
-          }
-          throw error;
-        }
-      }
+      await assertOrdenesListasParaPaquete(
+        this.prisma,
+        this.schemaLocator,
+        codigoCuenta,
+        ordenes,
+      );
 
       const salidaIds = await this.listSalidaUbicacionIds(tx, input.idBodega);
       if (salidaIds.length === 0) {
