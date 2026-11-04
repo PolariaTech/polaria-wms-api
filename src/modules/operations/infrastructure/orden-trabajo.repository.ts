@@ -19,7 +19,11 @@ import {
   TIPO_REFERENCIA_ORDEN_TRABAJO,
   formatCodigoOrdenTrabajo,
 } from '../constants/operations.constants';
+import { assertCapturaDespachoOtSalida } from '../../sales/services/validar-captura-despacho.service';
 import {
+  FLUJO_TIPO_OT,
+  FLUJO_TIPO_TAREA,
+  FLUJO_TITULO,
   cancelarOtsPendientesOv,
   esUbicacionZonaSalida,
   marcarOvEnPreparacion,
@@ -48,30 +52,6 @@ export type OrdenWithLineas = Prisma.OrdenTrabajoGetPayload<{
 }>;
 
 type WarehouseStateRow = Prisma.WarehouseStateGetPayload<object>;
-
-const FLUJO_TIPO_OT: Record<FlujoOrdenTrabajo, TipoOrdenTrabajo> = {
-  a_bodega: TipoOrdenTrabajo.reabasto,
-  a_salida: TipoOrdenTrabajo.picking,
-  revisar: TipoOrdenTrabajo.conteo,
-  bodega_a_bodega: TipoOrdenTrabajo.reabasto,
-  a_procesamiento: TipoOrdenTrabajo.transformacion,
-};
-
-const FLUJO_TIPO_TAREA: Record<FlujoOrdenTrabajo, TipoTarea> = {
-  a_bodega: TipoTarea.movimiento,
-  a_salida: TipoTarea.despacho,
-  revisar: TipoTarea.revision,
-  bodega_a_bodega: TipoTarea.movimiento,
-  a_procesamiento: TipoTarea.procesamiento,
-};
-
-const FLUJO_TITULO: Record<FlujoOrdenTrabajo, string> = {
-  a_bodega: 'A bodega',
-  a_salida: 'A salida',
-  revisar: 'Revisar',
-  bodega_a_bodega: 'Bodega a bodega',
-  a_procesamiento: 'Procesamiento',
-};
 
 @Injectable()
 export class OrdenTrabajoRepository {
@@ -342,6 +322,11 @@ export class OrdenTrabajoRepository {
             tipoFlujo === 'a_salida' &&
             (await esUbicacionZonaSalida(tx, idUbicacionDestino))
           ) {
+            // REQ-243: OT a zona salida exige check-in Despachó.
+            await assertCapturaDespachoOtSalida(this.prisma, this.schemaLocator, {
+              codigoCuenta: orden.codigoCuenta,
+              idOrdenVenta: orden.idOrdenVenta,
+            });
             const nuevoEstadoOv = await registrarDespachoOv(
               tx,
               orden.idOrdenVenta,

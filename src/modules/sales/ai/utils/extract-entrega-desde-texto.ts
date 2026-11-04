@@ -1,4 +1,7 @@
 import * as chrono from "chrono-node";
+import { parseFechaNumerica } from "./clasificar-adjunto-oc-mensual";
+
+export { parseFechaNumerica };
 
 export type EntregaExtraidaTexto = {
   /** YYYY-MM-DD si se pudo resolver. */
@@ -73,46 +76,6 @@ export function normalizarHoraAHhMm(
   if (h === 24) h = 0;
   if (h > 23) return null;
   return `${pad2(h)}:${pad2(m)}`;
-}
-
-function ymdIfValid(year: number, month: number, day: number): string | null {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const dt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  if (
-    dt.getUTCFullYear() !== year ||
-    dt.getUTCMonth() + 1 !== month ||
-    dt.getUTCDate() !== day
-  ) {
-    return null;
-  }
-  return `${year}-${pad2(month)}-${pad2(day)}`;
-}
-
-/** DD/MM LatAm o MM/DD US (BirchStreet); si ambas válidas, preferir DMY. */
-function parseFechaNumerica(raw: string): string | null {
-  const text = raw.trim();
-  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})\b/);
-  if (iso) {
-    return ymdIfValid(Number(iso[1]), Number(iso[2]), Number(iso[3]));
-  }
-
-  const slash = text.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b/);
-  if (!slash) return null;
-  const first = Number(slash[1]);
-  const second = Number(slash[2]);
-  const yearRaw = slash[3]!;
-  const year =
-    yearRaw.length === 2
-      ? Number(yearRaw) >= 70
-        ? 1900 + Number(yearRaw)
-        : 2000 + Number(yearRaw)
-      : Number(yearRaw);
-  const asDmy = ymdIfValid(year, second, first);
-  const asMdy = ymdIfValid(year, first, second);
-  if (asDmy && !asMdy) return asDmy;
-  if (asMdy && !asDmy) return asMdy;
-  if (asDmy && asMdy) return asDmy;
-  return null;
 }
 
 function parseFechaConMesNombre(frase: string, hoyISO: string): string | null {
@@ -211,7 +174,7 @@ function resolveFechaIso(
   hoyISO: string,
 ): string | null {
   if (!frase?.trim()) return null;
-  const numerica = parseFechaNumerica(frase);
+  const numerica = parseFechaNumerica(frase, hoyISO);
   if (numerica) return numerica;
   const conMes = parseFechaConMesNombre(frase, hoyISO);
   if (conMes) return conMes;

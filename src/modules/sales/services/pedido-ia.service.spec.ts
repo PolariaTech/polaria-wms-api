@@ -16,7 +16,6 @@ import {
   separarContextoYDocumentos,
   unificarAlmacenesPorCodigo,
 } from './pedido-ia.service';
-
 jest.mock('../ai/file-extractors', () => ({ extractFiles: jest.fn() }));
 jest.mock('../ai/openai-pedido.client', () => ({
   ...jest.requireActual('../ai/openai-pedido.client'),

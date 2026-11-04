@@ -47,6 +47,11 @@ import {
 } from '../ai/utils/origen-correo-ordenes-trabajo';
 import { recordOrdenVentaAudit } from '../utils/record-orden-venta-audit';
 import { sanitizeTelefonoContactoOrNull } from '../ai/utils/sanitize-telefono-contacto';
+import {
+  catalogKeyPedido,
+  seleccionarDocsTrasOcMensual,
+  tituloFromMetadatosPedido,
+} from '../ai/utils/clasificar-adjunto-oc-mensual';
 
 const PRESENTACIONES = [
   '',
@@ -58,16 +63,6 @@ const PRESENTACIONES = [
 
 const MAX_FILES = 8;
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
-
-function catalogKey(nombre: string, codigo: string): string {
-  return `${nombre} (${codigo})`;
-}
-
-function tituloFromMetadatos(metadatos: unknown): string | null {
-  if (!metadatos || typeof metadatos !== 'object') return null;
-  const titulo = (metadatos as { titulo?: unknown }).titulo;
-  return typeof titulo === 'string' && titulo.trim() ? titulo.trim() : null;
-}
 
 /** Llamadas a OpenAI simultáneas por solicitud (un documento o un bloque cada una). */
 const MAX_DOCUMENTOS_EN_PARALELO = 3;
@@ -87,6 +82,7 @@ const SEPARADOR_ADJUNTO_EML = ' → ';
 export type CodigoAdvertenciaLectura =
   | 'OC_DISCREPA'
   | 'OC_REPETIDA'
+  | 'OC_MENSUAL_IGNORADA'
   | 'SIN_TOTAL_DOCUMENTO'
   | 'TOTAL_NO_CUADRA'
   | 'DOCUMENTO_NO_LEGIBLE'
@@ -553,11 +549,12 @@ export class PedidoIaService {
         'Adjunto incrustado en el .eml que también se subió suelto: se leyó una sola vez.',
     }));
 
-    // Sin documentos (mensaje pegado o solo el cuerpo del correo): una sola lectura.
-    const aLeer: DocumentoParaLeer[] =
-      documentos.length > 0
-        ? documentos
-        : [{ nombre: 'mensaje', archivos: [], esTexto: false }];
+    // REQ-244: SEADUST/KRYSTAL — filtrar OC mensuales si hay pedido del día.
+    const ocSel = seleccionarDocsTrasOcMensual({
+      texto: input.texto, contexto, documentos,
+    });
+    advertencias.push(...ocSel.advertencias);
+    const aLeer = ocSel.aLeer as DocumentoParaLeer[];
 
     const uso = { tokensTotal: 0, costoUSD: 0, costoConocido: true };
     const lecturas = await mapConLimite(
@@ -1198,9 +1195,9 @@ export class PedidoIaService {
     );
 
     return rows.map((row) => {
-      const titulo = tituloFromMetadatos(row.metadatosCatalogo);
+      const titulo = tituloFromMetadatosPedido(row.metadatosCatalogo);
       const nombre = (titulo || row.descripcion || row.sku || '').trim();
-      return catalogKey(nombre, row.sku ?? '');
+      return catalogKeyPedido(nombre, row.sku ?? '');
     });
   }
 }

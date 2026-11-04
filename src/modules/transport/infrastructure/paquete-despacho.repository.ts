@@ -7,7 +7,9 @@ import {
   TipoMovimiento,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
+import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 import { syncUbicacionEstadoSlot } from '../../inventory/utils/sync-ubicacion-estado-slot.util';
+import { assertOrdenesListasParaPaquete } from '../../sales/services/validar-captura-despacho.service';
 import {
   OrdenVentaEstadoError,
   registrarDespachoOv,
@@ -25,16 +27,12 @@ import type {
   PaqueteDespachoResponse,
 } from '../interfaces/transport.interfaces';
 
-const ESTADOS_OV_PAQUETE: EstadoOrdenVenta[] = [
-  EstadoOrdenVenta.confirmada,
-  EstadoOrdenVenta.en_preparacion,
-  EstadoOrdenVenta.parcialmente_despachada,
-  EstadoOrdenVenta.despachada,
-];
-
 @Injectable()
 export class PaqueteDespachoRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly schemaLocator: TenantSchemaLocator,
+  ) {}
 
   crearPaquete(
     input: CrearPaqueteDespachoInput,
@@ -79,17 +77,12 @@ export class PaqueteDespachoRepository {
         throw new Error('OV_NO_ENCONTRADA');
       }
 
-      for (const orden of ordenes) {
-        if (!ESTADOS_OV_PAQUETE.includes(orden.estado)) {
-          throw new Error(`OV_ESTADO_INVALIDO:${orden.codigo}`);
-        }
-        if (orden.lineas.length === 0) {
-          throw new Error(`OV_SIN_LINEAS:${orden.codigo}`);
-        }
-        if (orden.guiasEnvio.length > 0) {
-          throw new Error(`OV_YA_EN_TRANSPORTE:${orden.codigo}`);
-        }
-      }
+      await assertOrdenesListasParaPaquete(
+        this.prisma,
+        this.schemaLocator,
+        codigoCuenta,
+        ordenes,
+      );
 
       const salidaIds = await this.listSalidaUbicacionIds(tx, input.idBodega);
       if (salidaIds.length === 0) {
