@@ -806,7 +806,7 @@ export class PedidoIaService {
     const origenCorreo = (pedido.origenCorreo ?? []) as OrigenCorreoRenglon[];
     if (origenCorreo.length === 0) {
       throw new BadRequestException(
-        'La IA no extrajo renglones de producto; no se crea la OV.',
+        'No se encontraron productos con cantidades en el correo ni en sus adjuntos, por eso no se creó la OV.',
       );
     }
 
