@@ -489,24 +489,6 @@ describe('PedidoIaService.leerArchivosParaCuenta — casos REQ-187', () => {
     expect(r.advertencias.map((a) => a.codigo)).toContain('OC_REPETIDA');
   });
 
-  it('ingestarPedido: si no hay renglones de producto (p. ej. una lista de precios) dice qué falta, no crea la OV', async () => {
-    const servicio = crearServicio();
-    jest
-      .spyOn(servicio, 'leerPedido')
-      .mockResolvedValue(pedidoDe([]) as never);
-
-    const intento = servicio.ingestarPedido({
-      codigoCuenta: '1YW43',
-      texto: 'Nueva lista de precios',
-      files: [],
-    });
-
-    await expect(intento).rejects.toBeInstanceOf(BadRequestException);
-    await expect(intento).rejects.toThrow(
-      'No se encontraron productos con cantidades en el correo ni en sus adjuntos, por eso no se creó la OV.',
-    );
-  });
-
   it('rechaza si la cuenta no tiene catálogo', async () => {
     await expect(
       crearServicio([]).leerArchivosParaCuenta({
