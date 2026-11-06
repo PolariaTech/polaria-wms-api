@@ -120,12 +120,12 @@ export class OrdenVentaDivisionService {
         await tx.$executeRawUnsafe(
           `UPDATE ${schema}.orden_venta
            SET origen_correo = $2::jsonb,
-               orden_compra_hotel = COALESCE($3, orden_compra_hotel),
+               orden_compra_hotel = $3,
                updated_at = now()
            WHERE id_orden_venta = $1::uuid`,
           idOrdenVenta,
           JSON.stringify(reenumerar([...quedan.values()].flat())),
-          ocQuedan.length === 1 ? ocQuedan[0] : null,
+          ocQuedan[0] ?? null,
         );
 
         this.logger.log(

@@ -87,6 +87,24 @@ describe('OrdenVentaDivisionService', () => {
     expect(actualiza.valores[2]).toBe('4502988065');
   });
 
+  it('con tres OC, sale una y la actual conserva una de las dos que quedan', async () => {
+    const { service, consultas } = armar({
+      ...filaBase,
+      origenCorreo: [
+        renglon('OC-A', 'x', 0),
+        renglon('OC-B', 'y', 1),
+        renglon('OC-C', 'z', 2),
+      ],
+    });
+
+    const res = await service.dividir(ID_OV, { ocSalen: ['OC-A'] }, ctx);
+
+    expect(res.ocQuedan).toEqual(['OC-B', 'OC-C']);
+    const actualiza = consultas.find((c) => c.sql.startsWith('UPDATE'))!;
+    expect(actualiza.valores[2]).toBe('OC-B');
+    expect(JSON.parse(actualiza.valores[1] as string)).toHaveLength(2);
+  });
+
   it('compara las OC sin importar espacios ni mayúsculas', async () => {
     const { service } = armar({
       ...filaBase,

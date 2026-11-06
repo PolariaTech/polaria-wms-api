@@ -125,7 +125,8 @@ export interface LecturaPorDocumento {
   costoUSD: number | null;
 }
 
-const GRUPOS_INGEST = Symbol('gruposIngest');
+/** Marca del pedido leído con los grupos (una OV por día y OC) que persiste la ingesta. */
+export const GRUPOS_INGEST = Symbol('gruposIngest');
 
 function gruposIngestDe(
   pedido: PedidoExtraido & { textoOrigen?: string | null },
