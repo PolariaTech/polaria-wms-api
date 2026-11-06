@@ -5,7 +5,6 @@ import {
   WmsRol,
 } from '../../../generated/prisma/client';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
-import type { OpenAiReagrupacionClient } from '../ai/openai-reagrupacion.client';
 import type { PropuestaReagrupacionBodyDto } from '../dto/propuesta-reagrupacion.dto';
 import type { OrdenVentaRepository } from '../infrastructure/orden-venta.repository';
 import { OrdenTrabajoReagrupacionService } from './orden-trabajo-reagrupacion.service';
@@ -71,7 +70,7 @@ describe('OrdenTrabajoReagrupacionService: división en otra OV', () => {
     llm = { proponer: jest.fn() };
     service = new OrdenTrabajoReagrupacionService(
       repository as unknown as OrdenVentaRepository,
-      llm as OpenAiReagrupacionClient,
+      llm,
     );
   });
 
