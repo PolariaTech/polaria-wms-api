@@ -42,11 +42,15 @@ import {
 import { buildTextoOrigenPedido } from '../ai/utils/texto-origen-pedido';
 import { stampOrigenCorreoMeta } from '../ai/utils/stamp-origen-correo-meta';
 import {
+  agruparPedidosPorFechaEntrega,
+  fusionarPedidos,
+} from '../ai/utils/agrupar-pedidos-por-fecha';
+import { insertarOrdenIngestada } from '../ai/utils/insertar-orden-ingesta';
+import {
   groupOrigenCorreoToOrdenesTrabajo,
   type OrigenCorreoRenglon,
 } from '../ai/utils/origen-correo-ordenes-trabajo';
 import { recordOrdenVentaAudit } from '../utils/record-orden-venta-audit';
-import { sanitizeTelefonoContactoOrNull } from '../ai/utils/sanitize-telefono-contacto';
 import {
   catalogKeyPedido,
   seleccionarDocsTrasOcMensual,
@@ -111,6 +115,8 @@ export interface DocumentoLeido {
 
 export interface LecturaPorDocumento {
   pedido: PedidoExtraido;
+  /** Un pedido por fecha de entrega. Un solo día queda en un elemento. */
+  grupos: PedidoExtraido[];
   textoOrigen: string;
   documentos: DocumentoLeido[];
   advertencias: AdvertenciaLectura[];
@@ -118,6 +124,22 @@ export interface LecturaPorDocumento {
   tokensTotal: number;
   costoUSD: number | null;
 }
+
+const GRUPOS_INGEST = Symbol('gruposIngest');
+
+function gruposIngestDe(
+  pedido: PedidoExtraido & { textoOrigen?: string | null },
+): Array<PedidoExtraido & { textoOrigen?: string | null }> {
+  const grupos = (
+    pedido as PedidoExtraido & {
+      [GRUPOS_INGEST]?: Array<PedidoExtraido & { textoOrigen?: string | null }>;
+    }
+  )[GRUPOS_INGEST];
+  const lista = grupos?.length ? grupos : [pedido];
+  return lista.filter((grupo) => (grupo.origenCorreo ?? []).length > 0);
+}
+
+export { fusionarPedidos };
 
 export interface DocumentoParaLeer {
   nombre: string;
@@ -166,7 +188,9 @@ export function separarContextoYDocumentos(
 
   const sueltos = new Set(
     textos
-      .filter((archivoTexto) => !archivoTexto.nombre.includes(SEPARADOR_ADJUNTO_EML))
+      .filter(
+        (archivoTexto) => !archivoTexto.nombre.includes(SEPARADOR_ADJUNTO_EML),
+      )
       .map((archivoTexto) => nombreBaseAdjunto(archivoTexto.nombre)),
   );
 
@@ -252,41 +276,6 @@ export function sumarUso(
           0,
         ),
   };
-}
-
-/**
- * Une lecturas de varios documentos (o de varios bloques de un documento): los campos de
- * cabecera salen del primero que los trae; renglones y líneas se concatenan.
- */
-export function fusionarPedidos(
-  pedidos: readonly PedidoExtraido[],
-): PedidoExtraido {
-  if (pedidos.length === 1) return pedidos[0];
-
-  const base = { ...pedidos[0] } as unknown as Record<string, unknown>;
-  for (const clave of Object.keys(base)) {
-    if (Array.isArray(base[clave])) continue;
-    const valor = pedidos
-      .map((pedidoParcial) => (pedidoParcial as unknown as Record<string, unknown>)[clave])
-      .find((valor) => valor !== null && valor !== undefined && valor !== '');
-    base[clave] = valor ?? base[clave];
-  }
-
-  const unido = base as unknown as PedidoExtraido;
-  unido.lineas = pedidos.flatMap((pedidoParcial) => pedidoParcial.lineas);
-  unido.origenCorreo = pedidos
-    .flatMap((pedidoParcial) => pedidoParcial.origenCorreo)
-    .map((renglon, indice) => ({ ...renglon, _lineaIndex: indice }));
-  unido.archivosNoLegibles = [
-    ...new Set(pedidos.flatMap((pedidoParcial) => pedidoParcial.archivosNoLegibles)),
-  ];
-  const advertencias = [
-    ...new Set(
-      pedidos.map((pedidoParcial) => pedidoParcial.advertencia).filter((advertencia): advertencia is string => !!advertencia),
-    ),
-  ];
-  unido.advertencia = advertencias.length > 0 ? advertencias.join(' | ') : null;
-  return unido;
 }
 
 /** Código de almacén del cliente dentro de un nombre: `AR87` en «FYV AR87 Rest Medit 20». */
@@ -455,6 +444,14 @@ export class PedidoIaService {
           horario: input.horario,
         },
       );
+      const gruposIngest = lectura.grupos.map((grupo) => ({
+        ...grupo,
+        textoOrigen: lectura.textoOrigen || null,
+        origenCorreo: stampOrigenCorreoMeta(grupo.origenCorreo ?? [], {
+          numeroCorreo: input.numeroCorreo,
+          horario: input.horario,
+        }),
+      }));
 
       this.logger.log(
         JSON.stringify({
@@ -476,13 +473,17 @@ export class PedidoIaService {
         }),
       );
 
-      return {
+      const resultado = {
         ...lectura.pedido,
         origenCorreo,
         textoOrigen: lectura.textoOrigen || null,
         documentos: lectura.documentos,
         advertencias: lectura.advertencias,
       };
+      Object.defineProperty(resultado, GRUPOS_INGEST, {
+        value: gruposIngest,
+      });
+      return resultado;
     } catch (err) {
       this.logger.error(
         JSON.stringify({
@@ -551,7 +552,9 @@ export class PedidoIaService {
 
     // REQ-244: SEADUST/KRYSTAL — filtrar OC mensuales si hay pedido del día.
     const ocSel = seleccionarDocsTrasOcMensual({
-      texto: input.texto, contexto, documentos,
+      texto: input.texto,
+      contexto,
+      documentos,
     });
     advertencias.push(...ocSel.advertencias);
     const aLeer = ocSel.aLeer as DocumentoParaLeer[];
@@ -595,7 +598,12 @@ export class PedidoIaService {
       }
     }
 
-    const pedido = fusionarPedidos(lecturas.map((lectura) => lectura.pedido));
+    const pedidosDocumento = lecturas.map((lectura) => lectura.pedido);
+    const grupos = agruparPedidosPorFechaEntrega(pedidosDocumento);
+    const pedido =
+      grupos.length === 1 && grupos[0]
+        ? grupos[0]
+        : fusionarPedidos(pedidosDocumento);
     pedido.archivosNoLegibles = [
       ...new Set([
         ...pedido.archivosNoLegibles,
@@ -612,6 +620,7 @@ export class PedidoIaService {
 
     return {
       pedido,
+      grupos,
       textoOrigen,
       documentos: documentosLeidos,
       advertencias,
@@ -671,9 +680,14 @@ export class PedidoIaService {
             ...(indiceBloque === 0 ? imagenes : []),
           ]),
       );
-      const fusionado = fusionarPedidos(partes.map((parteLeida) => parteLeida.pedido));
+      const fusionado = fusionarPedidos(
+        partes.map((parteLeida) => parteLeida.pedido),
+      );
       unificarAlmacenesPorCodigo(fusionado);
-      return { pedido: fusionado, uso: sumarUso(partes.map((parteLeida) => parteLeida.uso)) };
+      return {
+        pedido: fusionado,
+        uso: sumarUso(partes.map((parteLeida) => parteLeida.uso)),
+      };
     };
 
     /** Lectura completa en una llamada; null si se cortó por el tope de salida. */
@@ -801,10 +815,11 @@ export class PedidoIaService {
     idOrdenVenta: string;
     codigo: string;
     pedido: PedidoExtraido & { textoOrigen: string | null };
+    ordenes: Array<{ idOrdenVenta: string; codigo: string }>;
   }> {
-    const pedido = await this.leerPedido(input);
-    const origenCorreo = (pedido.origenCorreo ?? []) as OrigenCorreoRenglon[];
-    if (origenCorreo.length === 0) {
+    const leido = await this.leerPedido(input);
+    const grupos = gruposIngestDe(leido);
+    if (grupos.length === 0) {
       throw new BadRequestException(
         'No se encontraron productos con cantidades en el correo ni en sus adjuntos, por eso no se creó la OV.',
       );
@@ -816,174 +831,142 @@ export class PedidoIaService {
     const schema = this.tenantLocator.assertSafeSchemaIdent(
       ctx.schemaName?.trim() || 'public',
     );
-
     const codigoCuenta = input.codigoCuenta.trim();
-    const first = origenCorreo[0]!;
-    const pick = (...vals: Array<string | null | undefined>) => {
-      for (const v of vals) {
-        const t = (v ?? '').trim();
-        if (t) return t;
-      }
-      return null;
-    };
-
     const idBodega = await this.resolveIdBodegaIngest(
       schema,
       codigoCuenta,
       input.idBodega,
     );
     const idCliente = await this.resolveIdClienteIngest(schema, codigoCuenta);
-    const idComprador = await this.resolveIdCompradorIngest(
-      schema,
+    const origenArchivos = await this.subirAdjuntosIngest(
       codigoCuenta,
-      pick(pedido.nombreCliente, first['Nombre cliente'], input.cliente),
+      input.files,
+      input.origenArchivos,
     );
 
-    const fechaRaw = pick(pedido.fechaEntrega, first.Fecha);
-    const fechaEntrega =
-      fechaRaw && /^\d{4}-\d{2}-\d{2}/.test(fechaRaw)
-        ? fechaRaw.slice(0, 10)
-        : fechaRaw;
-
-    let origenArchivos: string | null = input.origenArchivos?.trim() || null;
-    if (input.files.length > 0) {
-      const { uploadOvAdjuntosMulter, serializeOrigenArchivosJson } =
-        await import('../ai/upload-ov-adjunto-cloudinary');
-      const uploaded = await uploadOvAdjuntosMulter(input.files, codigoCuenta);
-      origenArchivos =
-        serializeOrigenArchivosJson(uploaded) ||
-        input.files
-          .map((archivo) => archivo.originalname?.trim())
-          .filter(Boolean)
-          .join(', ') ||
-        origenArchivos;
-      if (uploaded.length < input.files.length) {
-        this.logger.warn(
-          JSON.stringify({
-            evento: 'ingestar-pedido-adjuntos',
+    const ordenes: Array<{ idOrdenVenta: string; codigo: string }> = [];
+    for (const pedido of grupos) {
+      const origenCorreo = pedido.origenCorreo ?? [];
+      const idComprador = await this.resolveIdCompradorIngest(
+        schema,
+        codigoCuenta,
+        (
+          pedido.nombreCliente ??
+          origenCorreo[0]?.['Nombre cliente'] ??
+          input.cliente ??
+          ''
+        ).trim() || null,
+      );
+      let creada: { idOrdenVenta: string; codigo: string };
+      try {
+        creada = await insertarOrdenIngestada(
+          (consulta, ...valores) =>
+            this.prisma.$queryRawUnsafe(consulta, ...valores),
+          {
+            schema,
             codigoCuenta,
-            subidos: uploaded.length,
-            recibidos: input.files.length,
+            idBodega,
+            idCliente,
+            idComprador,
+            origenArchivos,
+            pedido,
+            origenCorreo,
+          },
+        );
+      } catch (error) {
+        const mensaje = error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          JSON.stringify({
+            evento: 'ingestar-pedido',
+            exito: false,
+            codigoCuenta,
+            error: mensaje,
           }),
         );
+        throw error;
       }
-    }
-
-    let rows: Array<{ idOrdenVenta: string; codigo: string }>;
-    try {
-      rows = await this.prisma.$queryRawUnsafe<
-        Array<{ idOrdenVenta: string; codigo: string }>
-      >(
-        `INSERT INTO ${schema}.orden_venta (
-           codigo,
-           codigo_cuenta,
-           id_bodega,
-           id_cliente,
-           id_comprador,
-           estado,
-           origen_correo,
-           origen_texto,
-           origen_archivos,
-           orden_compra_hotel,
-           centro_consumo,
-           contacto_entrega,
-           fecha_entrega,
-           ventana_desde,
-           ventana_hasta,
-           direccion_entrega,
-           anden,
-           telefono_contacto,
-           notas_almacen,
-           prioridad
-         ) VALUES (
-           '',
-           $1,
-           $2::uuid,
-           $3::uuid,
-           $4::uuid,
-           'por_confirmar',
-           $5::jsonb,
-           $6,
-           $7,
-           $8,
-           $9,
-           $10,
-           $11,
-           $12,
-           $13,
-           $14,
-           $15,
-           $16,
-           $17,
-           $18
-         )
-         RETURNING id_orden_venta AS "idOrdenVenta", codigo`,
+      await this.auditarOvIngestada(
+        schema,
         codigoCuenta,
         idBodega,
-        idCliente,
-        idComprador,
-        JSON.stringify(origenCorreo),
-        pedido.textoOrigen,
-        origenArchivos,
-        pick(pedido.ordenCompraHotel, first['Numero pedido']),
-        pick(pedido.centroConsumo, first.Almacen),
-        pick(pedido.contacto, first['Responsable externo']),
-        fechaEntrega,
-        pick(pedido.horarioDesde, first['Ventana desde']),
-        pick(pedido.horarioHasta, first['Ventana hasta']),
-        pick(pedido.direccion, first['Direccion entrega'], first.Destino),
-        pick(pedido.anden, first.Anden),
-        sanitizeTelefonoContactoOrNull(
-          pick(pedido.telefono, first['Telefono contacto']),
-        ),
-        pick(pedido.observaciones, first['Notas generales']),
-        pick(first.Prioridad),
+        creada,
+        origenCorreo,
       );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        JSON.stringify({
-          evento: 'ingestar-pedido',
-          exito: false,
-          codigoCuenta,
-          error: msg,
-        }),
-      );
-      if (/cliente .* no pertenece/i.test(msg)) {
-        throw new BadRequestException(
-          'No se pudo asignar un cliente de catálogo a la OV. Revisa que la cuenta tenga al menos un cliente activo.',
-        );
-      }
-      throw new BadRequestException(
-        `No se pudo crear la OV: ${msg.slice(0, 240)}`,
-      );
+      ordenes.push(creada);
     }
 
-    const created = rows[0];
-    if (!created) {
+    const primera = ordenes[0];
+    const pedidoPrimero = grupos[0];
+    if (!primera || !pedidoPrimero) {
       throw new ServiceUnavailableException(
         'No se pudo crear la orden de venta.',
       );
     }
-
     this.logger.log(
       JSON.stringify({
         evento: 'ingestar-pedido',
         exito: true,
-        codigoCuenta: input.codigoCuenta.trim(),
-        idOrdenVenta: created.idOrdenVenta,
-        codigo: created.codigo,
-        renglones: origenCorreo.length,
+        codigoCuenta,
+        ordenes: ordenes.length,
+        idOrdenVenta: primera.idOrdenVenta,
+        codigo: primera.codigo,
       }),
     );
+    return {
+      idOrdenVenta: primera.idOrdenVenta,
+      codigo: primera.codigo,
+      pedido: {
+        ...pedidoPrimero,
+        textoOrigen: pedidoPrimero.textoOrigen ?? null,
+      },
+      ordenes,
+    };
+  }
 
+  private async subirAdjuntosIngest(
+    codigoCuenta: string,
+    files: Express.Multer.File[],
+    origenArchivos: string | undefined,
+  ): Promise<string | null> {
+    let origen: string | null = origenArchivos?.trim() || null;
+    if (files.length === 0) return origen;
+    const { uploadOvAdjuntosMulter, serializeOrigenArchivosJson } =
+      await import('../ai/upload-ov-adjunto-cloudinary');
+    const uploaded = await uploadOvAdjuntosMulter(files, codigoCuenta);
+    origen =
+      serializeOrigenArchivosJson(uploaded) ||
+      files
+        .map((archivo) => archivo.originalname?.trim())
+        .filter(Boolean)
+        .join(', ') ||
+      origen;
+    if (uploaded.length < files.length) {
+      this.logger.warn(
+        JSON.stringify({
+          evento: 'ingestar-pedido-adjuntos',
+          codigoCuenta,
+          subidos: uploaded.length,
+          recibidos: files.length,
+        }),
+      );
+    }
+    return origen;
+  }
+
+  private async auditarOvIngestada(
+    schema: string,
+    codigoCuenta: string,
+    idBodega: string,
+    creada: { idOrdenVenta: string; codigo: string },
+    origenCorreo: OrigenCorreoRenglon[],
+  ): Promise<void> {
     const otIds = groupOrigenCorreoToOrdenesTrabajo(origenCorreo).map(
       (ot) => ot.id,
     );
     await recordOrdenVentaAudit(this.prisma, {
       schemaName: schema,
       codigoCuenta,
-      idOrdenVenta: created.idOrdenVenta,
+      idOrdenVenta: creada.idOrdenVenta,
       accion: 'creacion',
       mensaje:
         otIds.length > 1
@@ -994,16 +977,10 @@ export class PedidoIaService {
       autorNombre: 'Mateo / bot',
       payloadExtra: {
         tipo: 'ingestar_pedido',
-        codigo: created.codigo,
+        codigo: creada.codigo,
         ordenesTrabajo: otIds.length,
       },
     });
-
-    return {
-      idOrdenVenta: created.idOrdenVenta,
-      codigo: created.codigo,
-      pedido,
-    };
   }
 
   /** Cliente de catálogo obligatorio en orden_venta (trigger de referencias). */

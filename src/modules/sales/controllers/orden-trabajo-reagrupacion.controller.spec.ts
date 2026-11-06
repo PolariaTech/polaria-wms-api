@@ -53,6 +53,15 @@ describe('OrdenTrabajoReagrupacionController (CA1, R1)', () => {
     expect(guards).not.toContain(PedidoIaApiKeyGuard);
   });
 
+  it('la división de la OV exige los mismos roles que la propuesta', () => {
+    const roles = Reflect.getMetadata(
+      ROLES_KEY,
+      OrdenTrabajoReagrupacionController.prototype.dividir,
+    ) as WmsRol[];
+
+    expect(roles).toEqual([...ROLES_REAGRUPACION_OT]);
+  });
+
   it('restringe el endpoint a operador_cuenta y administrador_cuenta', () => {
     const roles = Reflect.getMetadata(
       ROLES_KEY,

@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import {
+  validarDivision,
+  type DivisionValidada,
+} from './reagrupacion-division.validator';
 
 /**
  * Reagrupación de OT con IA (POL-390 / REQ-125).
@@ -109,6 +113,7 @@ export interface PropuestaValidada {
 
 export type ResultadoSalidaModelo =
   | { tipo: 'propuesta'; propuesta: PropuestaValidada }
+  | { tipo: 'division'; division: DivisionValidada }
   | { tipo: 'sin_cambios' }
   | { tipo: 'aclaracion' }
   | { tipo: 'rechazo' }
@@ -294,14 +299,33 @@ export function validarSalidaModelo(
 ): ResultadoSalidaModelo {
   if (
     !esObjetoPlano(salida) ||
-    !clavesExactas(salida, ['resultado', 'ots']) ||
+    !(
+      clavesExactas(salida, ['resultado', 'ots']) ||
+      clavesExactas(salida, ['resultado', 'ots', 'ocSalen'])
+    ) ||
     !Array.isArray(salida.ots)
   ) {
     return salidaInvalida('SALIDA_NO_VALIDA');
   }
 
+  // `ocSalen` solo tiene sentido con resultado "division"; en los demás debe venir vacío.
+  const ocSalenCruda: unknown = salida.ocSalen ?? [];
+  if (
+    !Array.isArray(ocSalenCruda) ||
+    ocSalenCruda.some((oc) => typeof oc !== 'string')
+  ) {
+    return salidaInvalida('SALIDA_NO_VALIDA');
+  }
+  if (salida.resultado !== 'division' && ocSalenCruda.length > 0) {
+    return salidaInvalida('SALIDA_NO_VALIDA');
+  }
+
   if (salida.resultado === 'aclaracion') return { tipo: 'aclaracion' };
   if (salida.resultado === 'rechazo') return { tipo: 'rechazo' };
+  if (salida.resultado === 'division') {
+    if (salida.ots.length > 0) return salidaInvalida('SALIDA_NO_VALIDA');
+    return validarDivision(ocSalenCruda as string[], estado);
+  }
   if (salida.resultado !== 'propuesta')
     return salidaInvalida('SALIDA_NO_VALIDA');
 

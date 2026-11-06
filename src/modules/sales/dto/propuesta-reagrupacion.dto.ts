@@ -169,7 +169,22 @@ export class MovimientoReagrupacionDto {
   aOtId!: string;
 }
 
-/** Respuesta 200: una propuesta, una aclaración o un rechazo. */
+/** Propuesta de partir la OV: una OV nueva por cada OC que sale (REQ-262). */
+export class DivisionReagrupacionDto {
+  @ApiProperty({ type: [String], description: 'OC que salen a OV nuevas.' })
+  ocSalen!: string[];
+
+  @ApiProperty({ type: [String], description: 'OC que se quedan en la OV.' })
+  ocQuedan!: string[];
+
+  @ApiProperty({
+    type: [String],
+    description: 'OT del borrador que viajan a las OV nuevas.',
+  })
+  otIdsQueSalen!: string[];
+}
+
+/** Respuesta 200: una propuesta, una división, una aclaración o un rechazo. */
 export class PropuestaReagrupacionResponseDto {
   @ApiProperty() requestId!: string;
 
@@ -181,6 +196,13 @@ export class PropuestaReagrupacionResponseDto {
   resumen?: ResumenReagrupacionDto;
   @ApiPropertyOptional({ type: [MovimientoReagrupacionDto] })
   movimientos?: MovimientoReagrupacionDto[];
+
+  @ApiPropertyOptional({
+    type: DivisionReagrupacionDto,
+    description:
+      'Si la instrucción pide otra orden de venta: qué OC salen y cuáles se quedan. Va con `propuestaId` y `baseHash`, sin `ots`.',
+  })
+  division?: DivisionReagrupacionDto;
 
   @ApiPropertyOptional({
     description: 'Texto fijo del servidor (no es texto del modelo).',

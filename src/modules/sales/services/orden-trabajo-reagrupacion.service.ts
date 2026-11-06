@@ -201,6 +201,14 @@ export class OrdenTrabajoReagrupacionService {
     if (resultado.tipo === 'sin_cambios') {
       return { requestId: body.requestId, aclaracion: MENSAJE_SIN_CAMBIOS };
     }
+    if (resultado.tipo === 'division') {
+      return {
+        requestId: body.requestId,
+        propuestaId: randomUUID(),
+        baseHash: calcularBaseHash(estadoBase),
+        division: resultado.division,
+      };
+    }
 
     return {
       requestId: body.requestId,

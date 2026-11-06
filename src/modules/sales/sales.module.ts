@@ -13,6 +13,7 @@ import { OrdenVentaRepository } from './infrastructure/orden-venta.repository';
 import { CorreoDescartadoService } from './services/correo-descartado.service';
 import { OrdenCorreoRelecturaService } from './services/orden-correo-relectura.service';
 import { OrdenTrabajoReagrupacionService } from './services/orden-trabajo-reagrupacion.service';
+import { OrdenVentaDivisionService } from './services/orden-venta-division.service';
 import { OrdenVentaService } from './services/orden-venta.service';
 import { PedidoIaService } from './services/pedido-ia.service';
 
@@ -35,6 +36,7 @@ import { PedidoIaService } from './services/pedido-ia.service';
     PedidoIaApiKeyGuard,
     OpenAiReagrupacionClient,
     OrdenTrabajoReagrupacionService,
+    OrdenVentaDivisionService,
     OrdenCorreoRelecturaService,
   ],
   exports: [PedidoIaService],

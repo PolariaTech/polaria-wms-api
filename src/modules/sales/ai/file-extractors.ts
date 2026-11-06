@@ -188,11 +188,66 @@ async function extraerContenidoPorTipo(
 // "attachment", nunca "inline" — así se distinguen los logos de firma embebidos, que se
 // ignoran) es otro, procesado con el mismo extraerContenidoPorTipo() de arriba y
 // nombrado "<correo> → <adjunto>" para que quede trazable en archivosNoLegibles y en los
-// logs. Un adjunto real que resulte ser una imagen (foto pegada como adjunto en vez de
-// inline) también se ignora — no es el caso de uso de este flujo (las fotos van por el
-// flujo de subida directa), y no hay evidencia de ese caso en los correos reales
-// probados en el prototipo. Un .eml anidado dentro de otro tampoco se recursiona — sin
-// evidencia real, fuera de alcance a propósito.
+// logs. Una foto adjunta (REQ-261: el pedido viene en la imagen) se conserva para la
+// visión. La imagen inline sigue ignorándose: es el logo o la firma. Un .eml anidado
+// dentro de otro tampoco se recursiona — sin evidencia real, fuera de alcance a propósito.
+const FIRMA_JPEG = Buffer.from([0xff, 0xd8, 0xff]);
+const FIRMA_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function mimePorFirma(contenido: Buffer): string | undefined {
+  if (contenido.length >= 3 && contenido.subarray(0, 3).equals(FIRMA_JPEG)) {
+    return "image/jpeg";
+  }
+  if (contenido.length >= 8 && contenido.subarray(0, 8).equals(FIRMA_PNG)) {
+    return "image/png";
+  }
+  const gif = contenido.subarray(0, 6).toString("ascii");
+  if (gif === "GIF87a" || gif === "GIF89a") return "image/gif";
+  return undefined;
+}
+
+function imagenDeAdjunto(
+  nombre: string,
+  mime: string,
+  contenido: Buffer,
+): ArchivoImagen {
+  return {
+    nombre,
+    tipo: "imagen",
+    mime,
+    base64: contenido.toString("base64"),
+  };
+}
+
+async function extraerAdjuntoReal(
+  nombreOriginal: string,
+  adjunto: { filename?: string; content: Buffer; contentDisposition?: string },
+): Promise<ArchivoExtraido | null> {
+  if (adjunto.contentDisposition !== "attachment") return null;
+
+  const nombreAdjunto = adjunto.filename || "adjunto sin nombre";
+  const nombre = `${nombreOriginal} → ${nombreAdjunto}`;
+  const porFirma = mimePorFirma(adjunto.content);
+  if (porFirma) return imagenDeAdjunto(nombre, porFirma, adjunto.content);
+
+  const extDeclarada = path.extname(nombreAdjunto).toLowerCase();
+  const real = await detectarTipoReal(adjunto.content);
+  if (real.mime?.startsWith(IMAGE_MIME_PREFIX)) {
+    return imagenDeAdjunto(nombre, real.mime, adjunto.content);
+  }
+
+  const extReal =
+    real.mime === COMPOUND_BINARY_MIME || !real.ext
+      ? extDeclarada
+      : `.${real.ext}`;
+  const contenido = await extraerContenidoPorTipo(
+    adjunto.content,
+    extReal,
+    extDeclarada,
+  );
+  return { nombre, ...contenido };
+}
+
 async function extractFromEml(
   buffer: Buffer,
   nombreOriginal: string,
@@ -236,25 +291,8 @@ async function extractFromEml(
   }
 
   for (const adjunto of parsed.attachments) {
-    if (adjunto.contentDisposition !== "attachment") continue; // ignora inline (logos de firma)
-
-    const nombreAdjunto = adjunto.filename || "adjunto sin nombre";
-    const nombre = `${nombreOriginal} → ${nombreAdjunto}`;
-    const extDeclarada = path.extname(nombreAdjunto).toLowerCase();
-    const real = await detectarTipoReal(adjunto.content);
-
-    if (real.mime?.startsWith(IMAGE_MIME_PREFIX)) continue; // ver comentario de arriba
-
-    const extReal =
-      real.mime === COMPOUND_BINARY_MIME || !real.ext
-        ? extDeclarada
-        : `.${real.ext}`;
-    const contenido = await extraerContenidoPorTipo(
-      adjunto.content,
-      extReal,
-      extDeclarada,
-    );
-    resultado.push({ nombre, ...contenido } as ArchivoExtraido);
+    const extraido = await extraerAdjuntoReal(nombreOriginal, adjunto);
+    if (extraido) resultado.push(extraido);
   }
 
   return resultado;
@@ -272,6 +310,16 @@ async function extractFromEml(
 async function extractFile(file: ArchivoSubido): Promise<ArchivoExtraido[]> {
   const extDeclarada = path.extname(file.originalname).toLowerCase();
   const nombre = file.originalname;
+
+  // .eml no tiene firma binaria fiable. La extensión o el MIME declarados bastan
+  // para abrirlo, y así no se llama a file-type antes de ver sus adjuntos.
+  const esCorreoDeclarado =
+    extDeclarada === ".eml" ||
+    file.mimetype === "message/rfc822" ||
+    file.mimetype === "application/eml";
+  if (esCorreoDeclarado) {
+    return extractFromEml(file.buffer, nombre);
+  }
 
   const real = await detectarTipoReal(file.buffer);
   // Si file-type no detecta nada (ej. texto plano — CSV/TXT no tienen firma binaria que
@@ -298,18 +346,6 @@ async function extractFile(file: ArchivoSubido): Promise<ArchivoExtraido[]> {
     real.mime === COMPOUND_BINARY_MIME || !real.ext
       ? extDeclarada
       : `.${real.ext}`;
-
-  // .eml no tiene firma binaria fiable en file-type; en prod el navegador a veces
-  // manda message/rfc822. La extensión/MIME declarados mandan sobre un sniff falso.
-  const esCorreo =
-    extDeclarada === ".eml" ||
-    extReal === ".eml" ||
-    file.mimetype === "message/rfc822" ||
-    file.mimetype === "application/eml";
-
-  if (esCorreo) {
-    return extractFromEml(file.buffer, nombre);
-  }
 
   const contenido = await extraerContenidoPorTipo(
     file.buffer,

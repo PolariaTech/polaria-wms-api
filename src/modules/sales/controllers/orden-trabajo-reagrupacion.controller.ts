@@ -32,7 +32,12 @@ import {
   PropuestaReagrupacionBodyDto,
   PropuestaReagrupacionResponseDto,
 } from '../dto/propuesta-reagrupacion.dto';
+import {
+  DividirOrdenVentaBodyDto,
+  DividirOrdenVentaResponseDto,
+} from '../dto/dividir-orden-venta.dto';
 import { OrdenTrabajoReagrupacionService } from '../services/orden-trabajo-reagrupacion.service';
+import { OrdenVentaDivisionService } from '../services/orden-venta-division.service';
 
 /** Solo quien opera pedidos de la cuenta puede pedir la reagrupación (R1). */
 export const ROLES_REAGRUPACION_OT = [
@@ -45,7 +50,10 @@ export const ROLES_REAGRUPACION_OT = [
 @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 @ApiBearerAuth('access-token')
 export class OrdenTrabajoReagrupacionController {
-  constructor(private readonly service: OrdenTrabajoReagrupacionService) {}
+  constructor(
+    private readonly service: OrdenTrabajoReagrupacionService,
+    private readonly division: OrdenVentaDivisionService,
+  ) {}
 
   @Post(':id/ordenes-trabajo/propuesta-reagrupacion')
   @Roles(...ROLES_REAGRUPACION_OT)
@@ -79,5 +87,32 @@ export class OrdenTrabajoReagrupacionController {
     @TenantCtx() ctx: TenantContext,
   ): Promise<PropuestaReagrupacionResponseDto> {
     return this.service.proponer(id, body, ctx);
+  }
+
+  @Post(':id/ordenes-trabajo/dividir')
+  @Roles(...ROLES_REAGRUPACION_OT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Partir la OV: una OV nueva por cada orden de compra que sale',
+    description:
+      'Solo para OV en `por_confirmar`. Copia la cabecera en cada OV nueva y deja en la actual las demás órdenes de compra. ' +
+      'Parte lo que está guardado: el cliente guarda el avance antes de llamar.',
+  })
+  @ApiOkResponse({ type: DividirOrdenVentaResponseDto })
+  @ApiUnauthorizedResponse()
+  @ApiForbiddenResponse()
+  @ApiNotFoundResponse({
+    description:
+      'La OV no existe o no pertenece a la cuenta (misma respuesta).',
+  })
+  @ApiConflictResponse({
+    description: 'La OV ya no está por confirmar (`OV_ESTADO_CAMBIO`).',
+  })
+  dividir(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: DividirOrdenVentaBodyDto,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<DividirOrdenVentaResponseDto> {
+    return this.division.dividir(id, body, ctx);
   }
 }
