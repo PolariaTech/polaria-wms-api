@@ -15,6 +15,8 @@
 - `src/modules/sales/dto/propuesta-reagrupacion.dto.ts`
 - `src/modules/sales/services/orden-trabajo-reagrupacion.service.ts`
 - `src/modules/sales/services/orden-trabajo-reagrupacion.service.spec.ts`
+- `src/modules/sales/services/pedido-ia.service.ts` — autorizada por el usuario el 2026-11-06
+- `src/modules/sales/services/pedido-ia.service.ingestar.spec.ts` — autorizada por el usuario el 2026-11-06
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
