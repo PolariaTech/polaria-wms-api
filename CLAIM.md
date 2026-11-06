@@ -27,6 +27,7 @@
 - `src/modules/sales/ai/file-extractors.ts` — autorizada por el usuario el 2026-11-06
 - `src/modules/sales/controllers/orden-trabajo-reagrupacion.controller.ts` — autorizada por el usuario el 2026-11-06
 - `src/modules/sales/sales.module.ts` — autorizada por el usuario el 2026-11-06
+- `src/modules/sales/controllers/orden-trabajo-reagrupacion.controller.spec.ts` — autorizada por el usuario el 2026-11-06
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
