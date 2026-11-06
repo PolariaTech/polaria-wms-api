@@ -852,9 +852,9 @@ export class PedidoIaService {
         schema,
         codigoCuenta,
         (
-          pedido.nombreCliente ??
-          origenCorreo[0]?.['Nombre cliente'] ??
-          input.cliente ??
+          pedido.nombreCliente?.trim() ||
+          origenCorreo[0]?.['Nombre cliente']?.trim() ||
+          input.cliente ||
           ''
         ).trim() || null,
       );

@@ -91,3 +91,65 @@ describe('PedidoIaService.ingestarPedido — una OV por día y OC (REQ-197, REQ-
     expect(res.idOrdenVenta).toBe('ov-1');
   });
 });
+
+describe('PedidoIaService.ingestarPedido — comprador del correo', () => {
+  async function ingestarConNombre(nombreCliente: string, cliente?: string) {
+    const prisma = {
+      $queryRawUnsafe: jest.fn((sql: string) =>
+        Promise.resolve(
+          sql.startsWith('INSERT')
+            ? [{ idOrdenVenta: 'ov-1', codigo: 'OV-1' }]
+            : [],
+        ),
+      ),
+    };
+    const servicio = new PedidoIaService(
+      prisma as never,
+      { get: jest.fn().mockReturnValue('sk-test') } as never,
+      { assertSafeSchemaIdent: (s: string) => s } as never,
+    );
+    const privados = servicio as unknown as Record<string, jest.Mock>;
+    privados.buildIntegrationTenantContext = jest
+      .fn()
+      .mockResolvedValue({ schemaName: 'demo' });
+    privados.resolveIdBodegaIngest = jest.fn().mockResolvedValue('bodega-1');
+    privados.resolveIdClienteIngest = jest.fn().mockResolvedValue('cliente-1');
+    privados.subirAdjuntosIngest = jest.fn().mockResolvedValue(null);
+    privados.resolveIdCompradorIngest = jest.fn().mockResolvedValue(null);
+    privados.auditarOvIngestada = jest.fn().mockResolvedValue(undefined);
+    jest.spyOn(servicio, 'leerPedido').mockResolvedValue({
+      ordenCompraHotel: 'OC-1',
+      nombreCliente,
+      lineas: [],
+      archivosNoLegibles: [],
+      advertencia: null,
+      origenCorreo: [
+        {
+          'Numero pedido': 'OC-1',
+          Producto: 'Aguacate',
+          'Nombre cliente': 'Hotel del correo',
+        },
+      ],
+    } as never);
+
+    await servicio.ingestarPedido({
+      codigoCuenta: '1YW43',
+      texto: 'pedido',
+      files: [],
+      cliente,
+    });
+    return privados.resolveIdCompradorIngest;
+  }
+
+  it('si la IA devuelve el nombre del cliente vacío, usa el «Nombre cliente» del correo', async () => {
+    const resolver = await ingestarConNombre('   ');
+
+    expect(resolver).toHaveBeenCalledWith('demo', '1YW43', 'Hotel del correo');
+  });
+
+  it('el nombre que lee la IA manda sobre el del correo', async () => {
+    const resolver = await ingestarConNombre('Hotel de la IA');
+
+    expect(resolver).toHaveBeenCalledWith('demo', '1YW43', 'Hotel de la IA');
+  });
+});
