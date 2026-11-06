@@ -14,6 +14,21 @@ export type ResultadoDivision =
   | { tipo: 'division'; division: DivisionValidada }
   | { tipo: 'invalida'; motivo: 'OT_INEXISTENTE' | 'SALIDA_NO_VALIDA' };
 
+/**
+ * Lee `ocSalen` de la salida cruda del modelo: debe ser una lista de textos, y solo
+ * con resultado "division" puede traer elementos. Devuelve null si no es válida.
+ */
+export function leerOcSalen(
+  cruda: unknown,
+  esDivision: boolean,
+): string[] | null {
+  const lista: unknown = cruda ?? [];
+  if (!Array.isArray(lista) || lista.some((oc) => typeof oc !== 'string')) {
+    return null;
+  }
+  return esDivision || lista.length === 0 ? (lista as string[]) : null;
+}
+
 /** Clave comparable de una orden de compra: sin espacios sobrantes ni mayúsculas. */
 export function claveOc(valor: string): string {
   return valor.trim().replace(/\s+/g, ' ').toUpperCase();

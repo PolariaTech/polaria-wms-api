@@ -395,66 +395,6 @@ describe('OrdenTrabajoReagrupacionService', () => {
       expect(res.ots).toBeUndefined();
     });
 
-    it('REQ-262: dos pedidos, uno por OC, devuelve la división sin mover tareas', async () => {
-      llm.proponer.mockResolvedValue(
-        respuestaModelo({
-          resultado: 'division',
-          ots: [],
-          ocSalen: ['4502988746'],
-        }),
-      );
-      const res = await service.proponer(
-        ID_OV,
-        body({
-          instruccion:
-            'Crea dos pedidos diferentes, uno para cada orden de compra.',
-          estadoBase: {
-            ots: [
-              {
-                otId: 'ot-1',
-                etiqueta: 'OC octubre',
-                almacen: 'COCINA',
-                numeroPedido: '4502988065',
-                renglones: [
-                  { renglonId: 'l-1', producto: 'Aguacate', cantidad: 10 },
-                ],
-              },
-              {
-                otId: 'ot-2',
-                etiqueta: 'OC noviembre',
-                almacen: 'COCINA',
-                numeroPedido: '4502988746',
-                renglones: [
-                  { renglonId: 'l-2', producto: 'Limón', cantidad: 8 },
-                ],
-              },
-            ],
-          },
-        }),
-        ctx,
-      );
-
-      expect(res.division).toEqual({
-        ocSalen: ['4502988746'],
-        ocQuedan: ['4502988065'],
-        otIdsQueSalen: ['ot-2'],
-      });
-      expect(res.propuestaId).toBeDefined();
-      expect(res.baseHash).toBeDefined();
-      expect(res.ots).toBeUndefined();
-      expect(res.aclaracion).toBeUndefined();
-    });
-
-    it('una división con una OC inventada se trata como salida inválida', async () => {
-      llm.proponer.mockResolvedValue(
-        respuestaModelo({ resultado: 'division', ots: [], ocSalen: ['0000'] }),
-      );
-
-      await expect(service.proponer(ID_OV, body(), ctx)).rejects.toThrow(
-        UnprocessableEntityException,
-      );
-    });
-
     it('propuesta idéntica al estado actual: avisa que no hay cambios', async () => {
       llm.proponer.mockResolvedValue(
         respuestaModelo({

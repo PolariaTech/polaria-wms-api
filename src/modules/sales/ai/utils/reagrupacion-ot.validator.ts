@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
 import {
+  MAX_TEXTO_REAGRUPACION,
+  sanitizarTextoCorto,
+} from './sanitizar-texto-corto';
+import {
+  leerOcSalen,
   validarDivision,
   type DivisionValidada,
 } from './reagrupacion-division.validator';
@@ -14,8 +19,7 @@ import {
  * modelo llega al cliente salvo `etiquetaSugerida`, ya saneada.
  */
 
-/** Largo máximo de cualquier texto que viaja al modelo o vuelve de él (R5, R8). */
-export const MAX_TEXTO_REAGRUPACION = 60;
+export { MAX_TEXTO_REAGRUPACION, sanitizarTextoCorto };
 
 /**
  * Techos técnicos PROVISIONALES contra entradas desbordadas. No son límites de
@@ -118,34 +122,6 @@ export type ResultadoSalidaModelo =
   | { tipo: 'aclaracion' }
   | { tipo: 'rechazo' }
   | { tipo: 'invalida'; motivo: MotivoRechazo };
-
-/** Caracteres de control, separadores de línea y de ancho cero. */
-function esCaracterInvisible(codigo: number): boolean {
-  return (
-    codigo <= 0x1f ||
-    (codigo >= 0x7f && codigo <= 0x9f) ||
-    (codigo >= 0x200b && codigo <= 0x200f) ||
-    codigo === 0x2028 ||
-    codigo === 0x2029 ||
-    codigo === 0xfeff
-  );
-}
-
-/** Quita caracteres de control y marcado, colapsa espacios y recorta por puntos de código. */
-export function sanitizarTextoCorto(
-  valor: unknown,
-  max: number = MAX_TEXTO_REAGRUPACION,
-): string {
-  if (typeof valor !== 'string') return '';
-  const limpio = Array.from(valor, (caracter) =>
-    esCaracterInvisible(caracter.codePointAt(0) ?? 0) ? ' ' : caracter,
-  )
-    .join('')
-    .replace(/[<>]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return Array.from(limpio).slice(0, max).join('');
-}
 
 function parseCantidad(valor: number | string | null | undefined): number {
   if (typeof valor === 'number') return valor;
@@ -308,23 +284,14 @@ export function validarSalidaModelo(
     return salidaInvalida('SALIDA_NO_VALIDA');
   }
 
-  // `ocSalen` solo tiene sentido con resultado "division"; en los demás debe venir vacío.
-  const ocSalenCruda: unknown = salida.ocSalen ?? [];
-  if (
-    !Array.isArray(ocSalenCruda) ||
-    ocSalenCruda.some((oc) => typeof oc !== 'string')
-  ) {
-    return salidaInvalida('SALIDA_NO_VALIDA');
-  }
-  if (salida.resultado !== 'division' && ocSalenCruda.length > 0) {
-    return salidaInvalida('SALIDA_NO_VALIDA');
-  }
+  const ocSalen = leerOcSalen(salida.ocSalen, salida.resultado === 'division');
+  if (!ocSalen) return salidaInvalida('SALIDA_NO_VALIDA');
 
   if (salida.resultado === 'aclaracion') return { tipo: 'aclaracion' };
   if (salida.resultado === 'rechazo') return { tipo: 'rechazo' };
   if (salida.resultado === 'division') {
     if (salida.ots.length > 0) return salidaInvalida('SALIDA_NO_VALIDA');
-    return validarDivision(ocSalenCruda as string[], estado);
+    return validarDivision(ocSalen, estado);
   }
   if (salida.resultado !== 'propuesta')
     return salidaInvalida('SALIDA_NO_VALIDA');
