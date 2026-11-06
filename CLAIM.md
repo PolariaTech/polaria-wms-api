@@ -24,6 +24,7 @@
 - `src/modules/sales/controllers/pedido-ia.controller.ts`
 - `src/modules/sales/dto/ingestar-pedido-response.dto.ts`
 - `src/modules/sales/dto/propuesta-reagrupacion.dto.ts`
+- `src/modules/sales/ai/file-extractors.ts` — autorizada por el usuario el 2026-11-06
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
