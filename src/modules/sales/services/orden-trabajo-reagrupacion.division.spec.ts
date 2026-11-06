@@ -71,7 +71,7 @@ describe('OrdenTrabajoReagrupacionService: división en otra OV', () => {
     llm = { proponer: jest.fn() };
     service = new OrdenTrabajoReagrupacionService(
       repository as unknown as OrdenVentaRepository,
-      llm as unknown as OpenAiReagrupacionClient,
+      llm as OpenAiReagrupacionClient,
     );
   });
 
