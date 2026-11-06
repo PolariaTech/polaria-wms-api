@@ -191,7 +191,8 @@ export class MovimientoReagrupacionDto {
 export class DivisionReagrupacionDto {
   @ApiProperty({
     enum: ['oc', 'dia', 'horario'],
-    description: 'Por qué se divide: orden de compra, día u horario de entrega.',
+    description:
+      'Por qué se divide: orden de compra, día u horario de entrega.',
   })
   criterio!: 'oc' | 'dia' | 'horario';
 

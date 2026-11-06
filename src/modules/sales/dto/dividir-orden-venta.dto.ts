@@ -37,7 +37,9 @@ export class DividirOrdenVentaBodyDto {
   @ArrayMinSize(1)
   @ArrayMaxSize(50)
   @Transform(({ value }: { value: unknown }) =>
-    Array.isArray(value) ? value.map((valor) => recortar({ value: valor })) : value,
+    Array.isArray(value)
+      ? value.map((valor) => recortar({ value: valor }))
+      : value,
   )
   @IsString({ each: true })
   @MinLength(1, { each: true })

@@ -70,7 +70,12 @@ function claveDeOt(criterio: CriterioDivision, ot: OtBase): string {
 }
 
 function valorDeOt(criterio: CriterioDivision, ot: OtBase): string {
-  const crudo = criterio === 'oc' ? ot.numeroPedido : criterio === 'dia' ? ot.fecha : ot.horario;
+  const crudo =
+    criterio === 'oc'
+      ? ot.numeroPedido
+      : criterio === 'dia'
+        ? ot.fecha
+        : ot.horario;
   return valorVisible(criterio, crudo);
 }
 

@@ -116,7 +116,13 @@ describe('openai-reagrupacion.client (CA8, R5, R6)', () => {
     const { required, properties } = REAGRUPACION_RESPONSE_SCHEMA.schema;
 
     expect(required).toEqual(['resultado', 'ots', 'criterio', 'valoresSalen']);
-    expect(properties.criterio.enum).toEqual(['oc', 'dia', 'horario', 'otro', 'ninguno']);
+    expect(properties.criterio.enum).toEqual([
+      'oc',
+      'dia',
+      'horario',
+      'otro',
+      'ninguno',
+    ]);
     expect(properties.resultado.enum).toContain('division');
     expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/"fecha"/);
     expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/"horario"/);
