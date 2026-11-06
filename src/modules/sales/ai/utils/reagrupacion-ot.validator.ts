@@ -3,11 +3,13 @@ import {
   MAX_TEXTO_REAGRUPACION,
   sanitizarTextoCorto,
 } from './sanitizar-texto-corto';
+import type { CriterioDivision } from './claves-division';
 import {
-  leerOcSalen,
+  leerDivisionCruda,
   validarDivision,
   type DivisionValidada,
 } from './reagrupacion-division.validator';
+import { clavesExactas, esObjetoPlano } from './salida-modelo.utils';
 
 /**
  * Reagrupación de OT con IA (POL-390 / REQ-125).
@@ -48,6 +50,9 @@ export interface OtBase {
   etiqueta: string;
   almacen: string;
   numeroPedido: string;
+  /** Día y horario de entrega de la tarea (REQ-262); pueden venir vacíos. */
+  fecha?: string;
+  horario?: string;
   renglones: RenglonBase[];
 }
 
@@ -62,6 +67,8 @@ export interface ContextoModelo {
     etiqueta: string;
     almacen: string;
     pedido: string;
+    fecha: string;
+    horario: string;
     renglones: Array<{
       r: string;
       producto: string;
@@ -118,6 +125,7 @@ export interface PropuestaValidada {
 export type ResultadoSalidaModelo =
   | { tipo: 'propuesta'; propuesta: PropuestaValidada }
   | { tipo: 'division'; division: DivisionValidada }
+  | { tipo: 'division_imposible'; criterio: CriterioDivision | 'otro' }
   | { tipo: 'sin_cambios' }
   | { tipo: 'aclaracion' }
   | { tipo: 'rechazo' }
@@ -202,6 +210,8 @@ export function construirContextoModelo(estado: EstadoBase): {
       etiqueta: sanitizarTextoCorto(ot.etiqueta),
       almacen: sanitizarTextoCorto(ot.almacen),
       pedido: sanitizarTextoCorto(ot.numeroPedido),
+      fecha: sanitizarTextoCorto(ot.fecha),
+      horario: sanitizarTextoCorto(ot.horario),
       renglones: ot.renglones.map((renglon) => {
         contadorRenglon += 1;
         const refRenglon = `r${contadorRenglon}`;
@@ -242,22 +252,6 @@ export function calcularBaseHash(estado: EstadoBase): string {
   return createHash('sha256').update(JSON.stringify(canonico)).digest('hex');
 }
 
-function esObjetoPlano(valor: unknown): valor is Record<string, unknown> {
-  return typeof valor === 'object' && valor !== null && !Array.isArray(valor);
-}
-
-function clavesExactas(
-  objeto: Record<string, unknown>,
-  esperadas: readonly string[],
-): boolean {
-  const claves = Object.keys(objeto).sort();
-  const ordenadas = [...esperadas].sort();
-  return (
-    claves.length === ordenadas.length &&
-    claves.every((clave, i) => clave === ordenadas[i])
-  );
-}
-
 const salidaInvalida = (motivo: MotivoRechazo): ResultadoSalidaModelo => ({
   tipo: 'invalida',
   motivo,
@@ -277,21 +271,24 @@ export function validarSalidaModelo(
     !esObjetoPlano(salida) ||
     !(
       clavesExactas(salida, ['resultado', 'ots']) ||
-      clavesExactas(salida, ['resultado', 'ots', 'ocSalen'])
+      clavesExactas(salida, ['resultado', 'ots', 'criterio', 'valoresSalen'])
     ) ||
     !Array.isArray(salida.ots)
   ) {
     return salidaInvalida('SALIDA_NO_VALIDA');
   }
 
-  const ocSalen = leerOcSalen(salida.ocSalen, salida.resultado === 'division');
-  if (!ocSalen) return salidaInvalida('SALIDA_NO_VALIDA');
+  const cruda = leerDivisionCruda(salida, salida.resultado === 'division');
+  if (!cruda) return salidaInvalida('SALIDA_NO_VALIDA');
 
   if (salida.resultado === 'aclaracion') return { tipo: 'aclaracion' };
   if (salida.resultado === 'rechazo') return { tipo: 'rechazo' };
   if (salida.resultado === 'division') {
     if (salida.ots.length > 0) return salidaInvalida('SALIDA_NO_VALIDA');
-    return validarDivision(ocSalen, estado);
+    const division = validarDivision(cruda, estado);
+    return division.tipo === 'imposible'
+      ? { tipo: 'division_imposible', criterio: division.criterio }
+      : division;
   }
   if (salida.resultado !== 'propuesta')
     return salidaInvalida('SALIDA_NO_VALIDA');

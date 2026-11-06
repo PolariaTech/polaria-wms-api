@@ -112,6 +112,17 @@ describe('openai-reagrupacion.client (CA8, R5, R6)', () => {
     expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/NO pidas aclaración/);
   });
 
+  it('el esquema pide criterio y valores, y el prompt distingue orden de compra, día y horario (REQ-262)', () => {
+    const { required, properties } = REAGRUPACION_RESPONSE_SCHEMA.schema;
+
+    expect(required).toEqual(['resultado', 'ots', 'criterio', 'valoresSalen']);
+    expect(properties.criterio.enum).toEqual(['oc', 'dia', 'horario', 'otro', 'ninguno']);
+    expect(properties.resultado.enum).toContain('division');
+    expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/"fecha"/);
+    expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/"horario"/);
+    expect(REAGRUPACION_SYSTEM_PROMPT).toMatch(/NUNCA es una división/);
+  });
+
   it('incluye historial y corrección solo cuando existen', () => {
     const base = JSON.parse(buildReagrupacionMessages(solicitud())[1].content);
     expect(base.historial).toEqual([]);
