@@ -70,6 +70,24 @@ export class OtReagrupacionDto {
   @MaxLength(500)
   numeroPedido!: string;
 
+  @ApiPropertyOptional({
+    example: '2026-11-07',
+    description: 'Día de entrega de la tarea (REQ-262). Puede venir vacío.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  fecha?: string;
+
+  @ApiPropertyOptional({
+    example: '06:00 - 08:00',
+    description: 'Horario de entrega de la tarea (REQ-262). Puede venir vacío.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  horario?: string;
+
   @ApiProperty({ type: [RenglonReagrupacionDto] })
   @IsArray()
   @ValidateNested({ each: true })
@@ -169,7 +187,35 @@ export class MovimientoReagrupacionDto {
   aOtId!: string;
 }
 
-/** Respuesta 200: una propuesta, una aclaración o un rechazo. */
+/** Propuesta de partir la OV: una OV nueva por cada valor que sale (REQ-262). */
+export class DivisionReagrupacionDto {
+  @ApiProperty({
+    enum: ['oc', 'dia', 'horario'],
+    description:
+      'Por qué se divide: orden de compra, día u horario de entrega.',
+  })
+  criterio!: 'oc' | 'dia' | 'horario';
+
+  @ApiProperty({
+    type: [String],
+    description: 'Valores del criterio que salen a OV nuevas, una por valor.',
+  })
+  valoresSalen!: string[];
+
+  @ApiProperty({
+    type: [String],
+    description: 'Valores que se quedan juntos en la OV actual.',
+  })
+  valoresQuedan!: string[];
+
+  @ApiProperty({
+    type: [String],
+    description: 'OT del borrador que viajan a las OV nuevas.',
+  })
+  otIdsQueSalen!: string[];
+}
+
+/** Respuesta 200: una propuesta, una división, una aclaración o un rechazo. */
 export class PropuestaReagrupacionResponseDto {
   @ApiProperty() requestId!: string;
 
@@ -181,6 +227,13 @@ export class PropuestaReagrupacionResponseDto {
   resumen?: ResumenReagrupacionDto;
   @ApiPropertyOptional({ type: [MovimientoReagrupacionDto] })
   movimientos?: MovimientoReagrupacionDto[];
+
+  @ApiPropertyOptional({
+    type: DivisionReagrupacionDto,
+    description:
+      'Si la instrucción pide otra orden de venta: por qué criterio y qué valores salen o se quedan. Va con `propuestaId` y `baseHash`, sin `ots`.',
+  })
+  division?: DivisionReagrupacionDto;
 
   @ApiPropertyOptional({
     description: 'Texto fijo del servidor (no es texto del modelo).',

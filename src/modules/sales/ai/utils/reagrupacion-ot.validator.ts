@@ -1,4 +1,15 @@
 import { createHash } from 'node:crypto';
+import {
+  MAX_TEXTO_REAGRUPACION,
+  sanitizarTextoCorto,
+} from './sanitizar-texto-corto';
+import type { CriterioDivision } from './claves-division';
+import {
+  leerDivisionCruda,
+  validarDivision,
+  type DivisionValidada,
+} from './reagrupacion-division.validator';
+import { clavesExactas, esObjetoPlano } from './salida-modelo.utils';
 
 /**
  * Reagrupación de OT con IA (POL-390 / REQ-125).
@@ -10,8 +21,7 @@ import { createHash } from 'node:crypto';
  * modelo llega al cliente salvo `etiquetaSugerida`, ya saneada.
  */
 
-/** Largo máximo de cualquier texto que viaja al modelo o vuelve de él (R5, R8). */
-export const MAX_TEXTO_REAGRUPACION = 60;
+export { MAX_TEXTO_REAGRUPACION, sanitizarTextoCorto };
 
 /**
  * Techos técnicos PROVISIONALES contra entradas desbordadas. No son límites de
@@ -40,6 +50,9 @@ export interface OtBase {
   etiqueta: string;
   almacen: string;
   numeroPedido: string;
+  /** Día y horario de entrega de la tarea (REQ-262); pueden venir vacíos. */
+  fecha?: string;
+  horario?: string;
   renglones: RenglonBase[];
 }
 
@@ -54,6 +67,8 @@ export interface ContextoModelo {
     etiqueta: string;
     almacen: string;
     pedido: string;
+    fecha: string;
+    horario: string;
     renglones: Array<{
       r: string;
       producto: string;
@@ -109,38 +124,12 @@ export interface PropuestaValidada {
 
 export type ResultadoSalidaModelo =
   | { tipo: 'propuesta'; propuesta: PropuestaValidada }
+  | { tipo: 'division'; division: DivisionValidada }
+  | { tipo: 'division_imposible'; criterio: CriterioDivision | 'otro' }
   | { tipo: 'sin_cambios' }
   | { tipo: 'aclaracion' }
   | { tipo: 'rechazo' }
   | { tipo: 'invalida'; motivo: MotivoRechazo };
-
-/** Caracteres de control, separadores de línea y de ancho cero. */
-function esCaracterInvisible(codigo: number): boolean {
-  return (
-    codigo <= 0x1f ||
-    (codigo >= 0x7f && codigo <= 0x9f) ||
-    (codigo >= 0x200b && codigo <= 0x200f) ||
-    codigo === 0x2028 ||
-    codigo === 0x2029 ||
-    codigo === 0xfeff
-  );
-}
-
-/** Quita caracteres de control y marcado, colapsa espacios y recorta por puntos de código. */
-export function sanitizarTextoCorto(
-  valor: unknown,
-  max: number = MAX_TEXTO_REAGRUPACION,
-): string {
-  if (typeof valor !== 'string') return '';
-  const limpio = Array.from(valor, (caracter) =>
-    esCaracterInvisible(caracter.codePointAt(0) ?? 0) ? ' ' : caracter,
-  )
-    .join('')
-    .replace(/[<>]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return Array.from(limpio).slice(0, max).join('');
-}
 
 function parseCantidad(valor: number | string | null | undefined): number {
   if (typeof valor === 'number') return valor;
@@ -221,6 +210,8 @@ export function construirContextoModelo(estado: EstadoBase): {
       etiqueta: sanitizarTextoCorto(ot.etiqueta),
       almacen: sanitizarTextoCorto(ot.almacen),
       pedido: sanitizarTextoCorto(ot.numeroPedido),
+      fecha: sanitizarTextoCorto(ot.fecha),
+      horario: sanitizarTextoCorto(ot.horario),
       renglones: ot.renglones.map((renglon) => {
         contadorRenglon += 1;
         const refRenglon = `r${contadorRenglon}`;
@@ -261,22 +252,6 @@ export function calcularBaseHash(estado: EstadoBase): string {
   return createHash('sha256').update(JSON.stringify(canonico)).digest('hex');
 }
 
-function esObjetoPlano(valor: unknown): valor is Record<string, unknown> {
-  return typeof valor === 'object' && valor !== null && !Array.isArray(valor);
-}
-
-function clavesExactas(
-  objeto: Record<string, unknown>,
-  esperadas: readonly string[],
-): boolean {
-  const claves = Object.keys(objeto).sort();
-  const ordenadas = [...esperadas].sort();
-  return (
-    claves.length === ordenadas.length &&
-    claves.every((clave, i) => clave === ordenadas[i])
-  );
-}
-
 const salidaInvalida = (motivo: MotivoRechazo): ResultadoSalidaModelo => ({
   tipo: 'invalida',
   motivo,
@@ -294,14 +269,27 @@ export function validarSalidaModelo(
 ): ResultadoSalidaModelo {
   if (
     !esObjetoPlano(salida) ||
-    !clavesExactas(salida, ['resultado', 'ots']) ||
+    !(
+      clavesExactas(salida, ['resultado', 'ots']) ||
+      clavesExactas(salida, ['resultado', 'ots', 'criterio', 'valoresSalen'])
+    ) ||
     !Array.isArray(salida.ots)
   ) {
     return salidaInvalida('SALIDA_NO_VALIDA');
   }
 
+  const cruda = leerDivisionCruda(salida, salida.resultado === 'division');
+  if (!cruda) return salidaInvalida('SALIDA_NO_VALIDA');
+
   if (salida.resultado === 'aclaracion') return { tipo: 'aclaracion' };
   if (salida.resultado === 'rechazo') return { tipo: 'rechazo' };
+  if (salida.resultado === 'division') {
+    if (salida.ots.length > 0) return salidaInvalida('SALIDA_NO_VALIDA');
+    const division = validarDivision(cruda, estado);
+    return division.tipo === 'imposible'
+      ? { tipo: 'division_imposible', criterio: division.criterio }
+      : division;
+  }
   if (salida.resultado !== 'propuesta')
     return salidaInvalida('SALIDA_NO_VALIDA');
 

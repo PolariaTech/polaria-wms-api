@@ -26,6 +26,7 @@ import {
   type MotivoRechazo,
   type ResultadoSalidaModelo,
 } from '../ai/utils/reagrupacion-ot.validator';
+import { mensajeDivisionImposible } from '../ai/utils/reagrupacion-division.validator';
 import type {
   PropuestaReagrupacionBodyDto,
   PropuestaReagrupacionResponseDto,
@@ -107,6 +108,8 @@ export class OrdenTrabajoReagrupacionService {
         etiqueta: ot.etiqueta,
         almacen: ot.almacen,
         numeroPedido: ot.numeroPedido,
+        fecha: ot.fecha,
+        horario: ot.horario,
         renglones: ot.renglones.map((renglon) => ({
           renglonId: renglon.renglonId,
           producto: renglon.producto,
@@ -200,6 +203,20 @@ export class OrdenTrabajoReagrupacionService {
     }
     if (resultado.tipo === 'sin_cambios') {
       return { requestId: body.requestId, aclaracion: MENSAJE_SIN_CAMBIOS };
+    }
+    if (resultado.tipo === 'division_imposible') {
+      return {
+        requestId: body.requestId,
+        aclaracion: mensajeDivisionImposible(resultado.criterio),
+      };
+    }
+    if (resultado.tipo === 'division') {
+      return {
+        requestId: body.requestId,
+        propuestaId: randomUUID(),
+        baseHash: calcularBaseHash(estadoBase),
+        division: resultado.division,
+      };
     }
 
     return {
