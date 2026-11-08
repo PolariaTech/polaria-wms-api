@@ -1,0 +1,80 @@
+name: Reapuntar PR apilados
+
+on:
+  pull_request:
+    types: [closed]
+
+# Evita ejecuciones simultáneas para el mismo PR
+concurrency:
+  group: retarget-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  retarget:
+    # Solo PR fusionados y de este mismo repo (no forks)
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reapuntar PR cuya base es la rama fusionada
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const fusionada = context.payload.pull_request.head.ref;
+            const nuevaBase = context.payload.pull_request.base.ref;
+
+            // Nunca reapuntar si la rama fusionada es la propia base (ej. main)
+            if (fusionada === nuevaBase) {
+              core.info('La rama fusionada es igual a la base; nada que hacer.');
+              return;
+            }
+
+            // Todos los PR abiertos apuntando a la rama fusionada (con paginación)
+            const hijos = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', base: fusionada, per_page: 100,
+            });
+
+            if (hijos.length === 0) {
+              core.info(`Ningún PR abierto apunta a ${fusionada}.`);
+              return;
+            }
+
+            const resumen = [];
+            for (const pr of hijos) {
+              try {
+                await github.rest.pulls.update({
+                  owner, repo, pull_number: pr.number, base: nuevaBase,
+                });
+
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: pr.number,
+                  body: [
+                    `La rama \`${fusionada}\` se fusionó, así que este PR ahora apunta a \`${nuevaBase}\`.`,
+                    '',
+                    'Si la fusión fue con *squash*, revisa conflictos o commits repetidos y actualiza tu rama así:',
+                    '```bash',
+                    'git fetch origin',
+                    `git rebase --onto origin/${nuevaBase} ${fusionada} ${pr.head.ref}`,
+                    `git push --force-with-lease origin ${pr.head.ref}`,
+                    '```',
+                  ].join('\n'),
+                });
+
+                resumen.push(`#${pr.number} -> ${nuevaBase}`);
+              } catch (error) {
+                // Un fallo en un PR no debe impedir procesar los demás
+                core.warning(`No se pudo reapuntar #${pr.number}: ${error.message}`);
+              }
+            }
+
+            core.summary
+              .addHeading('PR reapuntados')
+              .addList(resumen)
+              .write();
