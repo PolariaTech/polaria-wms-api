@@ -151,4 +151,147 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       (prisma.$queryRawUnsafe.mock.calls[0] as unknown[]).slice(1),
     ).toEqual(['023WA', ['a', 'b']]);
   });
+
+  describe('listarEntradas (POL-410)', () => {
+    const FILTRO = { modo: 'todos' as const, pagina: 1, tamano: 25 };
+
+    /** Responde el conteo y la página según lo que pide el SQL. */
+    function conFilas(filas: unknown[], total = filas.length) {
+      const montado = montar();
+      montado.prisma.$queryRawUnsafe.mockImplementation((sql: string) =>
+        Promise.resolve(/count\(\*\)/i.test(sql) ? [{ total }] : filas),
+      );
+      return montado;
+    }
+
+    const sqlDe = (prisma: ReturnType<typeof montar>['prisma'], i: number) =>
+      (prisma.$queryRawUnsafe.mock.calls[i] as [string, ...unknown[]])[0];
+    const paramsDe = (prisma: ReturnType<typeof montar>['prisma'], i: number) =>
+      (prisma.$queryRawUnsafe.mock.calls[i] as unknown[]).slice(1);
+
+    it('lee de correo_pedido_entrada del esquema de la empresa, siempre filtrado por cuenta', async () => {
+      const { repo, prisma } = conFilas([]);
+
+      await repo.listarEntradas('emp_demo', '023WA', FILTRO);
+
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+      for (const i of [0, 1]) {
+        expect(sqlDe(prisma, i)).toContain('"emp_demo".correo_pedido_entrada');
+        expect(sqlDe(prisma, i)).toContain('codigo_cuenta = $1');
+        expect(paramsDe(prisma, i)[0]).toBe('023WA');
+      }
+    });
+
+    it.each([
+      ['vacío', ''],
+      ['solo espacios', '   '],
+    ])(
+      'no consulta nada si falta la cuenta (%s): sin filtro por cuenta se verían los correos de todas',
+      async (_caso, cuenta) => {
+        const { repo, prisma } = conFilas([]);
+
+        await expect(
+          repo.listarEntradas('emp_demo', cuenta, FILTRO),
+        ).rejects.toThrow(/cuenta/i);
+        expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+      },
+    );
+
+    it('devuelve el total y las filas con los nombres del contrato', async () => {
+      const fila = { messageId: 'abc123def', resultado: null };
+      const { repo } = conFilas([fila], 41);
+
+      const resultado = await repo.listarEntradas('emp_demo', '023WA', FILTRO);
+
+      expect(resultado).toEqual({ total: 41, filas: [fila] });
+    });
+
+    it('pagina en SQL, de la más reciente a la más antigua', async () => {
+      const { repo, prisma } = conFilas([]);
+
+      await repo.listarEntradas('emp_demo', '023WA', {
+        ...FILTRO,
+        pagina: 3,
+        tamano: 10,
+      });
+
+      const sql = sqlDe(prisma, 1);
+      expect(sql).toMatch(/ORDER BY recibido_en DESC/i);
+      expect(sql).toMatch(/LIMIT \$\d+ OFFSET \$\d+/);
+      expect(paramsDe(prisma, 1)).toEqual(expect.arrayContaining([10, 20]));
+    });
+
+    it('el modo descartados solo trae los que el workflow descartó', async () => {
+      const { repo, prisma } = conFilas([]);
+
+      await repo.listarEntradas('emp_demo', '023WA', {
+        ...FILTRO,
+        modo: 'descartados',
+      });
+
+      expect(sqlDe(prisma, 1)).toContain('nuevo_pedido = false');
+      expect(sqlDe(prisma, 0)).toContain('nuevo_pedido = false');
+    });
+
+    it('el modo todos no filtra por nuevo_pedido', async () => {
+      const { repo, prisma } = conFilas([]);
+
+      await repo.listarEntradas('emp_demo', '023WA', FILTRO);
+
+      expect(sqlDe(prisma, 0)).not.toContain('nuevo_pedido');
+      expect(sqlDe(prisma, 1)).not.toContain('nuevo_pedido = ');
+    });
+
+    it('filtra por fechas, remitente y asunto con parámetros, nunca en el texto del SQL', async () => {
+      const { repo, prisma } = conFilas([]);
+
+      await repo.listarEntradas('emp_demo', '023WA', {
+        ...FILTRO,
+        desde: '2026-11-01T00:00:00.000Z',
+        hasta: '2026-11-09T23:59:59.000Z',
+        remitente: 'hotel',
+        asunto: 'pedido',
+      });
+
+      const sql = sqlDe(prisma, 1);
+      expect(sql).toMatch(/recibido_en >= \$\d+/);
+      expect(sql).toMatch(/recibido_en <= \$\d+/);
+      expect(sql).toMatch(/de ILIKE \$\d+/);
+      expect(sql).toMatch(/asunto ILIKE \$\d+/);
+      expect(sql).not.toContain('hotel');
+      expect(paramsDe(prisma, 1)).toEqual(
+        expect.arrayContaining(['%hotel%', '%pedido%']),
+      );
+    });
+
+    it('un % o un _ escritos por el usuario se buscan tal cual, no como comodín', async () => {
+      const { repo, prisma } = conFilas([]);
+
+      await repo.listarEntradas('emp_demo', '023WA', {
+        ...FILTRO,
+        remitente: '100%_a\\b',
+      });
+
+      expect(paramsDe(prisma, 1)).toContain('%100\\%\\_a\\\\b%');
+    });
+
+    it('usa public cuando la cuenta no tiene esquema propio', async () => {
+      const { repo, prisma } = conFilas([]);
+
+      await repo.listarEntradas(null, '023WA', FILTRO);
+
+      expect(sqlDe(prisma, 1)).toContain('"public".correo_pedido_entrada');
+    });
+
+    it('rechaza un nombre de esquema inseguro', async () => {
+      const { repo, locator } = conFilas([]);
+      locator.assertSafeSchemaIdent.mockImplementation(() => {
+        throw new Error('esquema inválido');
+      });
+
+      await expect(
+        repo.listarEntradas('x"; DROP TABLE y;--', '023WA', FILTRO),
+      ).rejects.toThrow('esquema inválido');
+    });
+  });
 });

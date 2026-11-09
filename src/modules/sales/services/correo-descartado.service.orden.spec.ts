@@ -34,8 +34,11 @@ const ingreso = (parcial: Partial<CorreoIngresoFila>): CorreoIngresoFila => ({
 });
 
 function montar() {
-  const n8n = { listar: jest.fn(), obtener: jest.fn() };
-  const ingresos = { listarPorMessageIds: jest.fn().mockResolvedValue([]) };
+  const n8n = { obtener: jest.fn() };
+  const ingresos = {
+    listarEntradas: jest.fn(),
+    listarPorMessageIds: jest.fn().mockResolvedValue([]),
+  };
   const config = { get: jest.fn().mockReturnValue('023WA') };
   const servicio = new CorreoDescartadoService(
     n8n as unknown as N8nCorreosClient,
@@ -48,8 +51,8 @@ function montar() {
 
 describe('CorreoDescartadoService: OV de cada correo (REQ-275)', () => {
   it('muestra la OV que anotó n8n y, si no hay, la del ingreso hecho a mano en el WMS', async () => {
-    const { servicio, n8n, ingresos } = montar();
-    n8n.listar.mockResolvedValue({
+    const { servicio, ingresos } = montar();
+    ingresos.listarEntradas.mockResolvedValue({
       total: 4,
       filas: [
         { messageId: 'de-n8n-1234', codigoOrdenVenta: 'OV-00001132' },
@@ -83,8 +86,8 @@ describe('CorreoDescartadoService: OV de cada correo (REQ-275)', () => {
   });
 
   it('un ingreso con error no cuenta como OV', async () => {
-    const { servicio, n8n, ingresos } = montar();
-    n8n.listar.mockResolvedValue({
+    const { servicio, ingresos } = montar();
+    ingresos.listarEntradas.mockResolvedValue({
       total: 1,
       filas: [{ messageId: 'abc123def', codigoOrdenVenta: null }],
     });
@@ -96,5 +99,31 @@ describe('CorreoDescartadoService: OV de cada correo (REQ-275)', () => {
 
     expect(filas[0].codigoOrdenVenta).toBeNull();
     expect(filas[0].ingreso).toMatchObject({ estado: 'error' });
+  });
+
+  it('un correo anterior a las columnas nuevas llega con esos cuatro campos en null (CA5)', async () => {
+    const { servicio, ingresos } = montar();
+    ingresos.listarEntradas.mockResolvedValue({
+      total: 1,
+      filas: [
+        {
+          messageId: 'viejo-123456',
+          resultado: null,
+          confianza: null,
+          tipo: null,
+          codigoOrdenVenta: null,
+        },
+      ],
+    });
+
+    const { filas } = await servicio.listar(query, ctx);
+
+    expect(filas[0]).toMatchObject({
+      resultado: null,
+      confianza: null,
+      tipo: null,
+      codigoOrdenVenta: null,
+      ingreso: null,
+    });
   });
 });

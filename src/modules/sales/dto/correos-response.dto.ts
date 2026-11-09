@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IngresoCorreoResponseDto } from './ingreso-correo-response.dto';
 
-/** Una fila del data table de correos de n8n, más el estado de ingreso en el WMS. */
+/** Una fila de la tabla `correo_pedido_entrada`, más el estado de ingreso en el WMS. */
 export class CorreoFilaDto {
   @ApiPropertyOptional({ nullable: true, example: '2026-11-03T13:27:51.000Z' })
   recibidoEn!: string | null;
@@ -75,19 +75,19 @@ export class CorreoFilaDto {
 
   @ApiPropertyOptional({
     nullable: true,
-    description: 'Id de la fila en el data table de n8n.',
+    description: 'Id de la fila en la tabla de correos.',
   })
   idRegistro!: string | null;
 
   @ApiPropertyOptional({
     nullable: true,
-    description: 'Cuándo se registró la fila en n8n (`createdAt`).',
+    description: 'Cuándo se registró la fila (`created_at`).',
   })
   registradoEn!: string | null;
 
   @ApiPropertyOptional({
     nullable: true,
-    description: 'Última actualización de la fila en n8n (`updatedAt`).',
+    description: 'Última actualización de la fila (`updated_at`).',
   })
   actualizadoEn!: string | null;
 
