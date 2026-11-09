@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ModoCorreos } from '../dto/correos-query.dto';
+import { MemoriaConVencimiento } from './memoria-con-vencimiento';
 
 /** Fila del data table `correos_aguacates_entrada`, ya con nombres en camelCase. */
 export interface CorreoN8nFila {
@@ -17,6 +18,13 @@ export interface CorreoN8nFila {
   adjunto: string | null;
   nuevoPedido: boolean | null;
   motivo: string | null;
+  /** Qué hizo el workflow con el correo: recibido, ingresado, duplicado, error o no_es_pedido. */
+  resultado: string | null;
+  /** Qué tan seguro estaba el clasificador: alta, media o baja. */
+  confianza: string | null;
+  tipo: string | null;
+  /** OV en que se convirtió el correo; varias separadas por coma si salieron más de una. */
+  codigoOrdenVenta: string | null;
   /** Columnas de sistema del data table (`id`, `createdAt`, `updatedAt`). */
   idRegistro: string | null;
   registradoEn: string | null;
@@ -60,6 +68,12 @@ const TIMEOUT_OBTENER_MS = 60_000;
 const CORREO_EN_MEMORIA_MS = 5 * 60_000;
 /** Pocos y de corta vida: un correo con adjuntos puede pesar varios MB en memoria. */
 const CORREOS_EN_MEMORIA_MAX = 5;
+/**
+ * El listado cambia poco: n8n anota cada correo una vez al llegar y otra al terminar de
+ * procesarlo. Abrir la pantalla, cambiar de pestaña o paginar no deben llamar al puente cada vez.
+ */
+const LISTADO_EN_MEMORIA_MS = 30_000;
+const LISTADOS_EN_MEMORIA_MAX = 20;
 
 type Objeto = Record<string, unknown>;
 
@@ -89,6 +103,10 @@ function aFila(crudo: Objeto): CorreoN8nFila | null {
     nuevoPedido:
       typeof crudo.nuevo_pedido === 'boolean' ? crudo.nuevo_pedido : null,
     motivo: texto(crudo.motivo),
+    resultado: texto(crudo.resultado),
+    confianza: texto(crudo.confianza),
+    tipo: texto(crudo.tipo),
+    codigoOrdenVenta: texto(crudo.codigo_orden_venta),
     idRegistro: identificador(crudo.id),
     registradoEn: texto(crudo.createdAt),
     actualizadoEn: texto(crudo.updatedAt),
@@ -121,10 +139,29 @@ export class N8nCorreosClient {
     { correo: CorreoN8nCompleto; expira: number }
   >();
   private readonly enCamino = new Map<string, Promise<CorreoN8nCompleto>>();
+  private readonly listados =
+    new MemoriaConVencimiento<ListarCorreosN8nResultado>(
+      LISTADO_EN_MEMORIA_MS,
+      LISTADOS_EN_MEMORIA_MAX,
+    );
 
   constructor(private readonly config: ConfigService) {}
 
-  async listar(
+  /** El listado de correos; el mismo filtro no vuelve a ir a n8n durante unos segundos. */
+  listar(input: ListarCorreosN8nInput): Promise<ListarCorreosN8nResultado> {
+    const clave = JSON.stringify([
+      input.modo,
+      input.pagina,
+      input.tamano,
+      input.desde ?? null,
+      input.hasta ?? null,
+      input.remitente ?? null,
+      input.asunto ?? null,
+    ]);
+    return this.listados.leer(clave, () => this.leerListado(input));
+  }
+
+  private async leerListado(
     input: ListarCorreosN8nInput,
   ): Promise<ListarCorreosN8nResultado> {
     const cuerpo = await this.llamar(

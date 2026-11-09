@@ -131,7 +131,13 @@ export class CorreoDescartadoService {
       tamano: query.tamano,
       filas: filas.map((fila) => {
         const ingreso = porId.get(fila.messageId);
-        return { ...fila, ingreso: ingreso ? aDto(ingreso) : null };
+        return {
+          ...fila,
+          codigoOrdenVenta:
+            fila.codigoOrdenVenta ??
+            (ingreso?.estado === 'ingresado' ? ingreso.codigoOrdenVenta : null),
+          ingreso: ingreso ? aDto(ingreso) : null,
+        };
       }),
     };
   }
