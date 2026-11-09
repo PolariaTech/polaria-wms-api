@@ -1,3 +1,4 @@
+import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import type { PrismaService } from '../../../core/database/prisma.service';
 import type { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 import {
@@ -292,6 +293,66 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       await expect(
         repo.listarEntradas('x"; DROP TABLE y;--', '023WA', FILTRO),
       ).rejects.toThrow('esquema inválido');
+    });
+
+    describe('cuando la base falla', () => {
+      const FALLO = new Error('connection refused to db.interna:5432');
+      let registro: jest.SpyInstance;
+
+      beforeEach(() => {
+        registro = jest
+          .spyOn(Logger.prototype, 'error')
+          .mockImplementation(() => undefined);
+      });
+      afterEach(() => {
+        registro.mockRestore();
+      });
+
+      it('responde 503 con un mensaje claro, sin detalles de la base', async () => {
+        const { repo, prisma } = montar();
+        prisma.$queryRawUnsafe.mockRejectedValue(FALLO);
+
+        const intento = repo.listarEntradas('emp_demo', '023WA', FILTRO);
+
+        await expect(intento).rejects.toBeInstanceOf(
+          ServiceUnavailableException,
+        );
+        await expect(intento).rejects.toMatchObject({
+          response: {
+            error: 'CORREOS_LECTURA_FALLIDA',
+            message:
+              'No se pudo leer la lista de correos. Intenta de nuevo en unos minutos.',
+          },
+        });
+        await expect(intento).rejects.not.toThrow(/connection refused/);
+      });
+
+      it('deja el error real en el registro para soporte', async () => {
+        const { repo, prisma } = montar();
+        prisma.$queryRawUnsafe.mockRejectedValue(FALLO);
+
+        await expect(
+          repo.listarEntradas('emp_demo', '023WA', FILTRO),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+        expect(registro).toHaveBeenCalledTimes(1);
+        expect(String(registro.mock.calls[0][0])).toContain(
+          'connection refused',
+        );
+      });
+
+      it('también responde 503 si falla solo una de las dos consultas', async () => {
+        const { repo, prisma } = montar();
+        prisma.$queryRawUnsafe.mockImplementation((sql: string) =>
+          /count\(\*\)/i.test(sql)
+            ? Promise.resolve([{ total: 3 }])
+            : Promise.reject(FALLO),
+        );
+
+        await expect(
+          repo.listarEntradas('emp_demo', '023WA', FILTRO),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      });
     });
   });
 });

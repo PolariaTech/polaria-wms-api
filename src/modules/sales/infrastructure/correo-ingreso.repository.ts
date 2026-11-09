@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../core/database/prisma.service';
 import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 import type { ModoCorreos } from '../dto/correos-query.dto';
@@ -86,6 +90,36 @@ const COLUMNAS_ENTRADA = `
 const contiene = (texto: string) =>
   `%${texto.replace(/[\\%_]/g, (caracter) => `\\${caracter}`)}%`;
 
+/**
+ * El WHERE de la lista de correos y sus parámetros (`$1` es siempre la cuenta). Cada valor
+ * del usuario viaja como parámetro; nunca se mezcla en el texto del SQL.
+ */
+function armarFiltroEntradas(
+  codigoCuenta: string,
+  filtro: FiltroCorreosEntrada,
+): { donde: string; params: unknown[] } {
+  const params: unknown[] = [codigoCuenta];
+  const condiciones = ['codigo_cuenta = $1'];
+  const agregar = (condicion: (marcador: string) => string, valor: unknown) => {
+    params.push(valor);
+    condiciones.push(condicion(`$${params.length}`));
+  };
+  if (filtro.modo === 'descartados') condiciones.push('nuevo_pedido = false');
+  if (filtro.desde) {
+    agregar((p) => `recibido_en >= ${p}::timestamptz`, filtro.desde);
+  }
+  if (filtro.hasta) {
+    agregar((p) => `recibido_en <= ${p}::timestamptz`, filtro.hasta);
+  }
+  if (filtro.remitente) {
+    agregar((p) => `de ILIKE ${p} ESCAPE '\\'`, contiene(filtro.remitente));
+  }
+  if (filtro.asunto) {
+    agregar((p) => `asunto ILIKE ${p} ESCAPE '\\'`, contiene(filtro.asunto));
+  }
+  return { donde: condiciones.join(' AND '), params };
+}
+
 const COLUMNAS = `
   id_correo_ingreso AS "idCorreoIngreso",
   message_id AS "messageId",
@@ -101,6 +135,8 @@ const COLUMNAS = `
  */
 @Injectable()
 export class CorreoIngresoRepository {
+  private readonly logger = new Logger(CorreoIngresoRepository.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly schemaLocator: TenantSchemaLocator,
@@ -221,47 +257,38 @@ export class CorreoIngresoRepository {
       schemaName ?? 'public',
     );
     const tabla = `"${schema}".correo_pedido_entrada`;
+    const { donde, params } = armarFiltroEntradas(codigoCuenta, filtro);
 
-    const params: unknown[] = [codigoCuenta];
-    const condiciones = ['codigo_cuenta = $1'];
-    const agregar = (
-      condicion: (marcador: string) => string,
-      valor: unknown,
-    ) => {
-      params.push(valor);
-      condiciones.push(condicion(`$${params.length}`));
-    };
-    if (filtro.modo === 'descartados') condiciones.push('nuevo_pedido = false');
-    if (filtro.desde) {
-      agregar((p) => `recibido_en >= ${p}::timestamptz`, filtro.desde);
+    try {
+      const [conteo, filas] = await Promise.all([
+        this.prisma.$queryRawUnsafe<{ total: number }[]>(
+          `SELECT count(*)::int AS total FROM ${tabla} WHERE ${donde}`,
+          ...params,
+        ),
+        this.prisma.$queryRawUnsafe<CorreoEntradaFila[]>(
+          `SELECT ${COLUMNAS_ENTRADA} FROM ${tabla}
+            WHERE ${donde}
+            ORDER BY recibido_en DESC NULLS LAST, created_at DESC
+            LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+          ...params,
+          filtro.tamano,
+          (filtro.pagina - 1) * filtro.tamano,
+        ),
+      ]);
+      return { total: conteo[0]?.total ?? 0, filas };
+    } catch (causa) {
+      // El detalle de la base queda en el registro para soporte; al cliente no se le muestra.
+      this.logger.error(
+        `No se pudo leer la lista de correos de ${schema} (cuenta ${codigoCuenta}): ${
+          causa instanceof Error ? causa.message : String(causa)
+        }`,
+      );
+      throw new ServiceUnavailableException({
+        error: 'CORREOS_LECTURA_FALLIDA',
+        message:
+          'No se pudo leer la lista de correos. Intenta de nuevo en unos minutos.',
+      });
     }
-    if (filtro.hasta) {
-      agregar((p) => `recibido_en <= ${p}::timestamptz`, filtro.hasta);
-    }
-    if (filtro.remitente) {
-      agregar((p) => `de ILIKE ${p} ESCAPE '\\'`, contiene(filtro.remitente));
-    }
-    if (filtro.asunto) {
-      agregar((p) => `asunto ILIKE ${p} ESCAPE '\\'`, contiene(filtro.asunto));
-    }
-    const donde = condiciones.join(' AND ');
-
-    const [conteo, filas] = await Promise.all([
-      this.prisma.$queryRawUnsafe<{ total: number }[]>(
-        `SELECT count(*)::int AS total FROM ${tabla} WHERE ${donde}`,
-        ...params,
-      ),
-      this.prisma.$queryRawUnsafe<CorreoEntradaFila[]>(
-        `SELECT ${COLUMNAS_ENTRADA} FROM ${tabla}
-          WHERE ${donde}
-          ORDER BY recibido_en DESC NULLS LAST, created_at DESC
-          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-        ...params,
-        filtro.tamano,
-        (filtro.pagina - 1) * filtro.tamano,
-      ),
-    ]);
-    return { total: conteo[0]?.total ?? 0, filas };
   }
 
   /** Para pintar la lista: el estado de ingreso de varios correos en una sola consulta. */
