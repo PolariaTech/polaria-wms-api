@@ -20,6 +20,7 @@
 - `src/modules/sales/infrastructure/correo-ingreso.repository.ts`
 - `src/modules/sales/infrastructure/correo-ingreso.repository.spec.ts`
 - `src/modules/sales/API.md`
+- `CHANGELOG.md` — autorizada por el usuario el 2026-11-09
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
