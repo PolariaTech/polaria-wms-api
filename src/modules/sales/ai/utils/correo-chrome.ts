@@ -48,14 +48,24 @@ export function parseCorreoChromeFromText(raw: string): CorreoChromeParsed {
 
   let body = text;
   if (from || to || subject) {
+    let previaEsCabecera = false;
     body = text
       .split('\n')
       .filter((line) => {
         const t = line.trim();
-        if (!t) return true;
-        return !/^(?:\*+)?(?:De|From|Para|To|Asunto|Subject|Date|Fecha|Cc|Cco|Bcc|Enviado el|Sent)(?:\*+)?\s*:/i.test(
-          t,
-        );
+        if (!t) {
+          previaEsCabecera = false;
+          return true;
+        }
+        const esCabecera =
+          /^(?:\*+)?(?:De|From|Para|To|Asunto|Subject|Date|Fecha|Cc|Cco|Bcc|Enviado el|Sent)(?:\*+)?\s*:/i.test(
+            t,
+          );
+        // REQ-258: un Cc/To largo se parte en varias líneas; la continuación
+        // pega con la cabecera y no debe quedar suelta en el cuerpo.
+        const esContinuacion = previaEsCabecera && !esCabecera;
+        previaEsCabecera = esCabecera || esContinuacion;
+        return !esCabecera && !esContinuacion;
       })
       .join('\n')
       .trim();
