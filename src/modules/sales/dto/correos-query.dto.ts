@@ -21,7 +21,7 @@ export const TAMANO_PAGINA_CORREOS_MAX = 50;
 
 /**
  * Query de GET /ventas/correos (REQ-104). La cuenta sale del JWT: no se manda.
- * Los filtros viajan a n8n, así que la página nunca baja toda la tabla.
+ * Los filtros se aplican en SQL, así que la página nunca baja toda la tabla.
  */
 export class CorreosQueryDto {
   @ApiPropertyOptional({

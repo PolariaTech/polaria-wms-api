@@ -47,7 +47,7 @@ const correo = (
 });
 
 function montar(cuentas = '023WA') {
-  const n8n = { listar: jest.fn(), obtener: jest.fn() };
+  const n8n = { obtener: jest.fn() };
   const config = { get: jest.fn().mockReturnValue(cuentas) };
   const servicio = new CorreoDescartadoService(
     n8n as unknown as N8nCorreosClient,

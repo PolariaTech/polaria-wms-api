@@ -4,39 +4,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ModoCorreos } from '../dto/correos-query.dto';
-
-/** Fila del data table `correos_aguacates_entrada`, ya con nombres en camelCase. */
-export interface CorreoN8nFila {
-  recibidoEn: string | null;
-  de: string | null;
-  para: string | null;
-  asunto: string | null;
-  messageId: string;
-  hilo: string | null;
-  adjunto: string | null;
-  nuevoPedido: boolean | null;
-  motivo: string | null;
-  /** Columnas de sistema del data table (`id`, `createdAt`, `updatedAt`). */
-  idRegistro: string | null;
-  registradoEn: string | null;
-  actualizadoEn: string | null;
-}
-
-export interface ListarCorreosN8nInput {
-  modo: ModoCorreos;
-  pagina: number;
-  tamano: number;
-  desde?: string;
-  hasta?: string;
-  remitente?: string;
-  asunto?: string;
-}
-
-export interface ListarCorreosN8nResultado {
-  total: number;
-  filas: CorreoN8nFila[];
-}
 
 export interface CorreoN8nAdjunto {
   nombre: string;
@@ -54,7 +21,6 @@ export interface CorreoN8nCompleto {
   adjuntos: CorreoN8nAdjunto[];
 }
 
-const TIMEOUT_LISTAR_MS = 20_000;
 const TIMEOUT_OBTENER_MS = 60_000;
 /** Un correo leído de Gmail se guarda un rato: abrirlo, bajar adjuntos e ingresarlo no lo piden otra vez. */
 const CORREO_EN_MEMORIA_MS = 5 * 60_000;
@@ -69,32 +35,6 @@ const esObjeto = (valor: unknown): valor is Objeto =>
 const texto = (valor: unknown): string | null =>
   typeof valor === 'string' && valor.trim() !== '' ? valor : null;
 
-/** El `id` del data table llega como número; se expone como texto. */
-const identificador = (valor: unknown): string | null =>
-  typeof valor === 'number' && Number.isFinite(valor)
-    ? String(valor)
-    : texto(valor);
-
-function aFila(crudo: Objeto): CorreoN8nFila | null {
-  const messageId = texto(crudo.message_id);
-  if (!messageId) return null;
-  return {
-    recibidoEn: texto(crudo.recibido_en),
-    de: texto(crudo.de),
-    para: texto(crudo.para),
-    asunto: texto(crudo.asunto),
-    messageId,
-    hilo: texto(crudo.hilo),
-    adjunto: texto(crudo.adjunto),
-    nuevoPedido:
-      typeof crudo.nuevo_pedido === 'boolean' ? crudo.nuevo_pedido : null,
-    motivo: texto(crudo.motivo),
-    idRegistro: identificador(crudo.id),
-    registradoEn: texto(crudo.createdAt),
-    actualizadoEn: texto(crudo.updatedAt),
-  };
-}
-
 function aAdjunto(crudo: Objeto): CorreoN8nAdjunto | null {
   const nombre = texto(crudo.nombre);
   const base64 = texto(crudo.base64);
@@ -108,9 +48,9 @@ function aAdjunto(crudo: Objeto): CorreoN8nAdjunto | null {
 
 /**
  * Puente con n8n (REQ-104). El WMS no habla con Gmail ni con la API general de n8n: llama
- * a dos webhooks de un workflow puente, con una sola llave (`N8N_CORREOS_API_KEY`).
+ * a un webhook de un workflow puente, con una sola llave (`N8N_CORREOS_API_KEY`). El listado
+ * de correos ya no pasa por aquí (POL-410): se lee de la tabla `correo_pedido_entrada`.
  *
- *  - POST {N8N_CORREOS_URL}/wms-correos-listar   → { total, filas: [fila del data table] }
  *  - POST {N8N_CORREOS_URL}/wms-correos-obtener  → { asunto, de, para, fecha, texto, html,
  *                                                    adjuntos: [{ nombre, mimeType, base64 }] }
  */
@@ -123,25 +63,6 @@ export class N8nCorreosClient {
   private readonly enCamino = new Map<string, Promise<CorreoN8nCompleto>>();
 
   constructor(private readonly config: ConfigService) {}
-
-  async listar(
-    input: ListarCorreosN8nInput,
-  ): Promise<ListarCorreosN8nResultado> {
-    const cuerpo = await this.llamar(
-      'wms-correos-listar',
-      { ...input, soloDescartados: input.modo === 'descartados' },
-      TIMEOUT_LISTAR_MS,
-    );
-    const filas = (Array.isArray(cuerpo.filas) ? cuerpo.filas : [])
-      .filter(esObjeto)
-      .map(aFila)
-      .filter((fila): fila is CorreoN8nFila => fila !== null);
-    const total =
-      typeof cuerpo.total === 'number' && Number.isFinite(cuerpo.total)
-        ? cuerpo.total
-        : filas.length;
-    return { total, filas };
-  }
 
   /**
    * El correo completo. Se guarda unos minutos en memoria, y dos peticiones simultáneas por

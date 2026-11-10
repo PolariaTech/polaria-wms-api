@@ -68,10 +68,11 @@ const esperarSegundoPlano = () =>
   new Promise<void>((resolver) => setImmediate(resolver));
 
 function montar(cuentas = '023WA') {
-  const n8n = { listar: jest.fn(), obtener: jest.fn() };
+  const n8n = { obtener: jest.fn() };
   const ingresos = {
     reservar: jest.fn(),
     buscar: jest.fn(),
+    listarEntradas: jest.fn(),
     listarPorMessageIds: jest.fn().mockResolvedValue([]),
     marcarIngresado: jest.fn().mockResolvedValue(undefined),
     marcarError: jest.fn().mockResolvedValue(undefined),
@@ -91,7 +92,7 @@ describe('CorreoDescartadoService (REQ-104)', () => {
   describe('listar', () => {
     it('cruza cada correo con su estado de ingreso en el WMS', async () => {
       const { servicio, n8n, ingresos } = montar();
-      n8n.listar.mockResolvedValue({
+      ingresos.listarEntradas.mockResolvedValue({
         total: 2,
         filas: [
           {
@@ -114,7 +115,13 @@ describe('CorreoDescartadoService (REQ-104)', () => {
 
       const resultado = await servicio.listar(query, ctx);
 
-      expect(n8n.listar).toHaveBeenCalledWith(query);
+      // lee de Supabase, de la cuenta del usuario, y no llama al Puente de n8n (CA3)
+      expect(ingresos.listarEntradas).toHaveBeenCalledWith(
+        'emp_demo',
+        '023WA',
+        query,
+      );
+      expect(n8n.obtener).not.toHaveBeenCalled();
       expect(ingresos.listarPorMessageIds).toHaveBeenCalledWith(
         'emp_demo',
         '023WA',
@@ -129,19 +136,19 @@ describe('CorreoDescartadoService (REQ-104)', () => {
     });
 
     it('rechaza una cuenta que no está habilitada para estos correos', async () => {
-      const { servicio, n8n } = montar('1YW43');
+      const { servicio, ingresos } = montar('1YW43');
       await expect(servicio.listar(query, ctx)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
-      expect(n8n.listar).not.toHaveBeenCalled();
+      expect(ingresos.listarEntradas).not.toHaveBeenCalled();
     });
 
     it('rechaza si no hay cuentas configuradas', async () => {
-      const { servicio, n8n } = montar('');
+      const { servicio, ingresos } = montar('');
       await expect(servicio.listar(query, ctx)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
-      expect(n8n.listar).not.toHaveBeenCalled();
+      expect(ingresos.listarEntradas).not.toHaveBeenCalled();
     });
   });
 

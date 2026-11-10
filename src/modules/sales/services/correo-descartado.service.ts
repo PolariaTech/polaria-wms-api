@@ -95,7 +95,8 @@ function mensajeDe(causa: unknown): string {
 }
 
 /**
- * REQ-104: lista los correos que n8n registró, deja ver un correo completo y permite al
+ * REQ-104: lista los correos que n8n registró en Supabase (POL-410: ya no pasa por el Puente
+ * de n8n), deja ver un correo completo (ese sí se lee en Gmail vía n8n) y permite al
  * operador ingresar a mano como OV los que el workflow descartó. El ingreso es asíncrono (la
  * lectura con IA pasa de los 30 s del proxy de Next): reserva la fila, responde 202 y termina
  * en segundo plano; la web consulta el estado hasta que pase a `ingresado` o `error`.
@@ -116,7 +117,11 @@ export class CorreoDescartadoService {
     ctx: TenantContext,
   ): Promise<CorreosListaResponseDto> {
     const cuenta = this.cuentaHabilitada(ctx);
-    const { total, filas } = await this.n8n.listar(query);
+    const { total, filas } = await this.ingresos.listarEntradas(
+      ctx.schemaName,
+      cuenta,
+      query,
+    );
     const ingresos = await this.ingresos.listarPorMessageIds(
       ctx.schemaName,
       cuenta,
@@ -131,7 +136,13 @@ export class CorreoDescartadoService {
       tamano: query.tamano,
       filas: filas.map((fila) => {
         const ingreso = porId.get(fila.messageId);
-        return { ...fila, ingreso: ingreso ? aDto(ingreso) : null };
+        return {
+          ...fila,
+          codigoOrdenVenta:
+            fila.codigoOrdenVenta ??
+            (ingreso?.estado === 'ingresado' ? ingreso.codigoOrdenVenta : null),
+          ingreso: ingreso ? aDto(ingreso) : null,
+        };
       }),
     };
   }

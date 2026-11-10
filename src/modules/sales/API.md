@@ -129,11 +129,11 @@ La salida del modelo es solo una propuesta. Se acepta únicamente si: cada rengl
 
 ## Correos de pedidos de n8n e ingreso manual (REQ-104)
 
-Lista los correos que el workflow de n8n registra en el data table `correos_aguacates_entrada` y deja al operador ingresar como OV los que el workflow descartó (no pasaron sus filtros). Requiere JWT y rol `operador_cuenta` o `administrador_cuenta`. Solo para las cuentas de `N8N_CORREOS_CUENTAS`; otra cuenta recibe 403 `CORREOS_NO_DISPONIBLES`.
+Lista los correos que el workflow de n8n registra en la tabla `correo_pedido_entrada` de Supabase (POL-410; antes era un data table de n8n) y deja al operador ingresar como OV los que el workflow descartó (no pasaron sus filtros). Requiere JWT y rol `operador_cuenta` o `administrador_cuenta`. Solo para las cuentas de `N8N_CORREOS_CUENTAS`; otra cuenta recibe 403 `CORREOS_NO_DISPONIBLES`.
 
 | Método y ruta | Qué hace |
 |---|---|
-| `GET /ventas/correos` | Lista paginada. Query: `modo` (`todos` o `descartados`), `pagina`, `tamano` (máx. 50), `desde`, `hasta`, `remitente`, `asunto`. Cada fila trae `ingreso` si el WMS ya la tiene como OV o la está procesando. Límite: 60 por minuto. |
+| `GET /ventas/correos` | Lista paginada. Query: `modo` (`todos` o `descartados`), `pagina`, `tamano` (máx. 50), `desde`, `hasta`, `remitente`, `asunto`. Cada fila trae `ingreso` si el WMS ya la tiene como OV o la está procesando, y lo que anotó el workflow: `resultado` (`recibido`, `ingresado`, `duplicado`, `error` o `no_es_pedido`; uno que se queda en `recibido` es un correo que el workflow no tomó), `confianza` (`alta`, `media` o `baja`), `tipo` y `codigoOrdenVenta` (la OV en que se convirtió el correo: la que anotó el workflow o, si no hay, la del ingreso hecho a mano; varias separadas por coma). El listado se filtra y se pagina en SQL, siempre por la cuenta del usuario (`codigo_cuenta`). Si la base no responde, 503 `CORREOS_LECTURA_FALLIDA` con un mensaje sin detalles técnicos; el detalle queda en el registro del api. Límite: 60 por minuto. |
 | `POST /ventas/correos/:messageId/ingresar` | Reserva el correo y responde **202**; la OV `por_confirmar` se crea en segundo plano con el mismo núcleo que `ingestar-pedido`. Límite: 10 por minuto. |
 | `GET /ventas/correos/:messageId/ingreso` | Estado del ingreso: `procesando`, `ingresado` (con `codigoOrdenVenta`) o `error` (con el motivo). Es el sondeo: salta los dos límites globales. |
 | `GET /ventas/correos/:messageId/contenido` | El correo completo para mostrarlo: cuerpo en texto y en HTML (tal cual llegó, no es seguro) y nombre, tipo y tamaño de cada adjunto, sin sus bytes. Se lee en Gmail vía n8n y se guarda 5 minutos en memoria (máximo 5 correos). Límite: 30 por minuto. |
@@ -145,9 +145,8 @@ La tabla `correo_pedido_ingreso` (migración 114) tiene llave única (`codigo_cu
 
 ### Puente con n8n
 
-El api no habla con Gmail: llama a dos webhooks de un workflow puente de n8n, con el header `X-Api-Key` (`N8N_CORREOS_API_KEY`).
+El api no habla con Gmail: llama a un webhook de un workflow puente de n8n, con el header `X-Api-Key` (`N8N_CORREOS_API_KEY`). El listado ya no pasa por el puente: se lee de la tabla `correo_pedido_entrada`.
 
-- `POST {N8N_CORREOS_URL}/wms-correos-listar`. Recibe `{ modo, soloDescartados, pagina, tamano, desde?, hasta?, remitente?, asunto? }` y responde `{ total, filas }` con las columnas del data table (`recibido_en`, `de`, `para`, `asunto`, `message_id`, `hilo`, `adjunto`, `nuevo_pedido`, `motivo`) y, si las manda, las de sistema `id`, `createdAt` y `updatedAt`.
 - `POST {N8N_CORREOS_URL}/wms-correos-obtener`. Recibe `{ messageId }` y responde `{ asunto, de, para, fecha, texto, html, adjuntos: [{ nombre, mimeType, base64 }] }`.
 
-Errores del puente: 503 `CORREOS_NO_CONFIGURADOS`, 502 `N8N_NO_RESPONDE`, `N8N_ERROR` o `N8N_RESPUESTA_INVALIDA`.
+Errores del puente (solo al abrir un correo): 503 `CORREOS_NO_CONFIGURADOS`, 502 `N8N_NO_RESPONDE`, `N8N_ERROR` o `N8N_RESPUESTA_INVALIDA`.
