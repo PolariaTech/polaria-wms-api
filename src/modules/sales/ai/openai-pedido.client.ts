@@ -25,6 +25,7 @@ import { REGLAS_LECTURA_PEDIDO } from './utils/reglas-lectura-pedido';
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 import { sanitizeTelefonoContacto } from "./utils/sanitize-telefono-contacto";
 import { extractCorreoContactoDesdeTexto } from "./utils/correo-chrome";
+import { pideReleerDocumentos } from "./utils/regla-releer-chat";
 
 export { calcularCantidadDesdeCajas, pesoPorCajaKg };
 export {
@@ -1066,23 +1067,8 @@ export function interpretarInstruccionConReglas(
   contexto: ContextoInterpretacionChat,
 ): InterpretacionInstruccionChat {
   const texto = contexto.instruccion.toLowerCase();
-  const pideDocumentos =
-    /\b(factura|total|pdf|correo|archivo|adjunto|documento|orden(?:es)? de compra|occ?|po)\b|releer|rele[eé]|verific|cuadr/.test(
-      texto,
-    );
-  // POL-413: «divide por orden de compra» reparte lo que ya existe; no es releer, salvo que
-  // además hable del correo, los archivos o los totales.
-  const repartePorOc =
-    /\b(?:divid|separ|part[ei]|repart|pas[ae]|mueve|move)\w*/.test(texto) &&
-    /\b(?:orden(?:es)? de compra|occ?|po)\b/.test(texto);
-  const pideLeerOtraVez =
-    /\b(?:factura|total|pdf|correo|archivo|adjunto|documento)\b|releer|rele[eé]|verific|cuadr/.test(
-      texto,
-    );
   const intencion: IntencionChatOt =
-    pideDocumentos &&
-    !(repartePorOc && !pideLeerOtraVez) &&
-    contexto.tieneArchivosOriginales
+    pideReleerDocumentos(texto) && contexto.tieneArchivosOriginales
       ? "releer_documentos"
       : "reorganizar";
 

@@ -26,7 +26,7 @@ export interface EntradaReconciliarRelectura {
   leidos: OrigenCorreoRenglon[];
   archivosIgnorados: string[];
   /** Archivos leídos y su OC: «Solo X» puede referirse a uno de ellos. */
-  documentos: { nombre: string; oc: string | null }[];
+  documentos: readonly { nombre: string; oc: string | null }[];
   advertencias: AdvertenciaLectura[];
 }
 
@@ -39,6 +39,16 @@ export interface ResultadoReconciliarRelectura {
 
 const AVISO_SIN_RECONCILIAR =
   'No se pudo aplicar tu instrucción diferencia por diferencia, así que se muestra todo lo que dicen los documentos. Revísalo antes de aplicar.';
+
+/** Suma dos costos; si alguno no se conoce, no se inventa un total. */
+export function sumarCostos(
+  lectura: number | null,
+  reconciliacion: number | null,
+): number | null {
+  return lectura === null || reconciliacion === null
+    ? lectura
+    : lectura + reconciliacion;
+}
 
 export async function reconciliarRelectura(
   input: EntradaReconciliarRelectura,
@@ -105,7 +115,7 @@ export async function reconciliarRelectura(
       instruccion,
       diferencias: diferencias.map((diferencia) => diferencia.publica),
       archivosIgnorados: input.archivosIgnorados,
-      documentos: input.documentos,
+      documentos: input.documentos.map(({ nombre, oc }) => ({ nombre, oc })),
     });
   } catch (error) {
     logger.warn(

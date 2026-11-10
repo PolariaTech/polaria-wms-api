@@ -23,10 +23,9 @@ import { sumarImportes } from '../ai/utils/checksum-total-documento';
 import {
   groupOrigenCorreoToOrdenesTrabajo,
   parseOrigenCorreoJson,
-  type OrigenCorreoRenglon,
 } from '../ai/utils/origen-correo-ordenes-trabajo';
 import { stampOrigenCorreoMeta } from '../ai/utils/stamp-origen-correo-meta';
-import { archivosAIgnorar } from '../ai/utils/relectura-archivos-ignorados';
+import { contar, diferenciaRenglones } from '../ai/utils/relectura-diferencias';
 import {
   interpretarInstruccionChat,
   interpretarInstruccionConReglas,
@@ -41,7 +40,14 @@ import type {
   PropuestaCorreccionCorreoResponseDto,
 } from '../dto/propuesta-correccion-correo.dto';
 import { PedidoIaService, type AdvertenciaLectura } from './pedido-ia.service';
-import { reconciliarRelectura } from './relectura-reconciliacion';
+import {
+  documentosIgnorados,
+  filtrarArchivosIgnorados,
+} from './relectura-archivos';
+import {
+  reconciliarRelectura,
+  sumarCostos,
+} from './relectura-reconciliacion';
 
 const ESTADO_POR_CONFIRMAR = 'por_confirmar';
 
@@ -78,43 +84,6 @@ interface FilaOrdenVenta {
   estado: string;
   origenCorreo: unknown;
   origenArchivos: string | null;
-}
-
-function claveRenglon(renglon: OrigenCorreoRenglon): string {
-  const norm = (campo: string | number | null | undefined) =>
-    String(campo ?? '')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, ' ');
-  return [
-    norm(renglon['Numero pedido']),
-    norm(renglon.Almacen),
-    norm(renglon.Producto),
-    norm(renglon.Cantidad),
-  ].join('|');
-}
-
-function contar(
-  renglones: readonly OrigenCorreoRenglon[],
-): Map<string, number> {
-  const conteo = new Map<string, number>();
-  for (const renglon of renglones) {
-    const clave = claveRenglon(renglon);
-    conteo.set(clave, (conteo.get(clave) ?? 0) + 1);
-  }
-  return conteo;
-}
-
-/** Cuántos renglones de `conteoOrigen` no están en `conteoReferencia` (multiconjuntos). */
-function diferencia(
-  conteoOrigen: ReadonlyMap<string, number>,
-  conteoReferencia: ReadonlyMap<string, number>,
-): number {
-  let total = 0;
-  for (const [clave, cantidad] of conteoOrigen) {
-    total += Math.max(0, cantidad - (conteoReferencia.get(clave) ?? 0));
-  }
-  return total;
 }
 
 /**
@@ -176,24 +145,12 @@ export class OrdenCorreoRelecturaService {
       });
     }
 
-    // POL-414: «ignora el archivo X» se resuelve aquí, por nombre y sin IA, antes de leer.
-    const ignorados = archivosAIgnorar(
+    // POL-414: «ignora el archivo X» se resuelve por nombre y sin IA, antes de leer.
+    const { aLeer: archivosALeer, ignorados } = filtrarArchivosIgnorados(
       body.instruccion,
-      descarga.archivos.map((archivo) => archivo.originalname),
+      descarga.archivos,
+      advertencias,
     );
-    for (const nombre of ignorados) {
-      advertencias.push({
-        codigo: 'ARCHIVO_IGNORADO',
-        documento: nombre,
-        detalle: 'No se leyó este archivo porque pediste ignorarlo.',
-      });
-    }
-    const archivosALeer =
-      ignorados.length > 0
-        ? descarga.archivos.filter(
-            (archivo) => !ignorados.includes(archivo.originalname),
-          )
-        : descarga.archivos;
 
     let lectura: Awaited<ReturnType<PedidoIaService['leerArchivosParaCuenta']>>;
     try {
@@ -276,7 +233,7 @@ export class OrdenCorreoRelecturaService {
         antes: antesRenglones,
         leidos: leidosRenglones,
         archivosIgnorados: ignorados,
-        documentos: lectura.documentos.map(({ nombre, oc }) => ({ nombre, oc })),
+        documentos: lectura.documentos,
         advertencias,
       },
       this.logger,
@@ -315,10 +272,7 @@ export class OrdenCorreoRelecturaService {
       importeAntes: sumarImportes(antesRenglones),
       importeDespues: sumarImportes(despuesRenglones),
       tokensTotal: lectura.tokensTotal + reconciliacion.tokensTotal,
-      costoUSD:
-        lectura.costoUSD === null || reconciliacion.costoUSD === null
-          ? lectura.costoUSD
-          : lectura.costoUSD + reconciliacion.costoUSD,
+      costoUSD: sumarCostos(lectura.costoUSD, reconciliacion.costoUSD),
       longitudInstruccion: body.instruccion?.length ?? 0,
     });
 
@@ -336,20 +290,7 @@ export class OrdenCorreoRelecturaService {
       baseHash,
       documentos: [
         ...lectura.documentos.map((documento) => ({ ...documento })),
-        // Un archivo ignorado aparece con 0 productos: se ve que no se leyó.
-        ...ignorados.map((nombre) => ({
-          nombre,
-          oc: null,
-          ocFuente: null,
-          renglones: 0,
-          verificacion: {
-            totalDocumento: null,
-            importe: 0,
-            diferencia: null,
-            cuadra: null,
-          },
-          relecturaPorBloques: false,
-        })),
+        ...documentosIgnorados(ignorados),
       ],
       ots: otsDespues.map((ot) => ({
         id: ot.id,
@@ -370,8 +311,8 @@ export class OrdenCorreoRelecturaService {
       diff: {
         otNuevas: [...idsDespues].filter((id) => !idsAntes.has(id)),
         otEliminadas: [...idsAntes].filter((id) => !idsDespues.has(id)),
-        renglonesAgregados: diferencia(conteoDespues, conteoAntes),
-        renglonesQuitados: diferencia(conteoAntes, conteoDespues),
+        renglonesAgregados: diferenciaRenglones(conteoDespues, conteoAntes),
+        renglonesQuitados: diferenciaRenglones(conteoAntes, conteoDespues),
       },
       advertencias,
       ...(reconciliacion.motivos.length > 0

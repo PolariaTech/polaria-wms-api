@@ -110,13 +110,25 @@ function claveSinProducto(renglon: OrigenCorreoRenglon): string {
   ].join('|');
 }
 
-function contar(renglones: readonly OrigenCorreoRenglon[]): Map<string, number> {
+export function contar(renglones: readonly OrigenCorreoRenglon[]): Map<string, number> {
   const conteo = new Map<string, number>();
   for (const renglon of renglones) {
-    const k = clave(renglon);
-    conteo.set(k, (conteo.get(k) ?? 0) + 1);
+    const claveRenglon = clave(renglon);
+    conteo.set(claveRenglon, (conteo.get(claveRenglon) ?? 0) + 1);
   }
   return conteo;
+}
+
+/** Cuántos renglones de `conteoOrigen` no están en `conteoReferencia` (multiconjuntos). */
+export function diferenciaRenglones(
+  conteoOrigen: ReadonlyMap<string, number>,
+  conteoReferencia: ReadonlyMap<string, number>,
+): number {
+  let total = 0;
+  for (const [claveRenglon, cantidad] of conteoOrigen) {
+    total += Math.max(0, cantidad - (conteoReferencia.get(claveRenglon) ?? 0));
+  }
+  return total;
 }
 
 /** Filas de `origen` que sobran respecto de `referencia` (multiconjuntos), en orden. */
@@ -127,9 +139,9 @@ function sobrantes(
   const restante = new Map(referencia);
   const resultado: OrigenCorreoRenglon[] = [];
   for (const renglon of origen) {
-    const k = clave(renglon);
-    const disponibles = restante.get(k) ?? 0;
-    if (disponibles > 0) restante.set(k, disponibles - 1);
+    const claveRenglon = clave(renglon);
+    const disponibles = restante.get(claveRenglon) ?? 0;
+    if (disponibles > 0) restante.set(claveRenglon, disponibles - 1);
     else resultado.push(renglon);
   }
   return resultado;
