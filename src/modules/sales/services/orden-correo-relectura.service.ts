@@ -26,6 +26,7 @@ import {
   type OrigenCorreoRenglon,
 } from '../ai/utils/origen-correo-ordenes-trabajo';
 import { stampOrigenCorreoMeta } from '../ai/utils/stamp-origen-correo-meta';
+import { archivosAIgnorar } from '../ai/utils/relectura-archivos-ignorados';
 import {
   interpretarInstruccionChat,
   interpretarInstruccionConReglas,
@@ -40,6 +41,7 @@ import type {
   PropuestaCorreccionCorreoResponseDto,
 } from '../dto/propuesta-correccion-correo.dto';
 import { PedidoIaService, type AdvertenciaLectura } from './pedido-ia.service';
+import { reconciliarRelectura } from './relectura-reconciliacion';
 
 const ESTADO_POR_CONFIRMAR = 'por_confirmar';
 
@@ -174,13 +176,33 @@ export class OrdenCorreoRelecturaService {
       });
     }
 
+    // POL-414: «ignora el archivo X» se resuelve aquí, por nombre y sin IA, antes de leer.
+    const ignorados = archivosAIgnorar(
+      body.instruccion,
+      descarga.archivos.map((archivo) => archivo.originalname),
+    );
+    for (const nombre of ignorados) {
+      advertencias.push({
+        codigo: 'ARCHIVO_IGNORADO',
+        documento: nombre,
+        detalle: 'No se leyó este archivo porque pediste ignorarlo.',
+      });
+    }
+    const archivosALeer =
+      ignorados.length > 0
+        ? descarga.archivos.filter(
+            (archivo) => !ignorados.includes(archivo.originalname),
+          )
+        : descarga.archivos;
+
     let lectura: Awaited<ReturnType<PedidoIaService['leerArchivosParaCuenta']>>;
     try {
       lectura = await this.pedidoIa.leerArchivosParaCuenta({
         codigoCuenta: orden.codigoCuenta,
         ctx,
         texto: '',
-        archivos: descarga.archivos,
+        archivos: archivosALeer,
+        ignorar: ignorados,
       });
     } catch (error) {
       if (error instanceof HttpException) throw error;
@@ -243,13 +265,23 @@ export class OrdenCorreoRelecturaService {
     const antesRenglones = parseOrigenCorreoJson(orden.origenCorreo);
     const primero = antesRenglones[0];
     // Conserva el sello del correo original (número y horario de ingestión).
-    const despuesRenglones = stampOrigenCorreoMeta(
-      lectura.pedido.origenCorreo,
+    const leidosRenglones = stampOrigenCorreoMeta(lectura.pedido.origenCorreo, {
+      numeroCorreo: primero?.['Numero correo'],
+      horario: primero?.Horario,
+    });
+    // POL-414: con una instrucción acotada, un paso de IA decide diferencia por diferencia.
+    const reconciliacion = await reconciliarRelectura(
       {
-        numeroCorreo: primero?.['Numero correo'],
-        horario: primero?.Horario,
+        instruccion: body.instruccion,
+        antes: antesRenglones,
+        leidos: leidosRenglones,
+        archivosIgnorados: ignorados,
+        documentos: lectura.documentos.map(({ nombre, oc }) => ({ nombre, oc })),
+        advertencias,
       },
+      this.logger,
     );
+    const despuesRenglones = reconciliacion.renglones;
 
     const otsAntes = groupOrigenCorreoToOrdenesTrabajo(antesRenglones);
     const otsDespues = groupOrigenCorreoToOrdenesTrabajo(despuesRenglones);
@@ -282,8 +314,11 @@ export class OrdenCorreoRelecturaService {
       renglonesDespues: despuesRenglones.length,
       importeAntes: sumarImportes(antesRenglones),
       importeDespues: sumarImportes(despuesRenglones),
-      tokensTotal: lectura.tokensTotal,
-      costoUSD: lectura.costoUSD,
+      tokensTotal: lectura.tokensTotal + reconciliacion.tokensTotal,
+      costoUSD:
+        lectura.costoUSD === null || reconciliacion.costoUSD === null
+          ? lectura.costoUSD
+          : lectura.costoUSD + reconciliacion.costoUSD,
       longitudInstruccion: body.instruccion?.length ?? 0,
     });
 
@@ -299,7 +334,23 @@ export class OrdenCorreoRelecturaService {
       requestId: body.requestId,
       propuestaId: randomUUID(),
       baseHash,
-      documentos: lectura.documentos.map((documento) => ({ ...documento })),
+      documentos: [
+        ...lectura.documentos.map((documento) => ({ ...documento })),
+        // Un archivo ignorado aparece con 0 productos: se ve que no se leyó.
+        ...ignorados.map((nombre) => ({
+          nombre,
+          oc: null,
+          ocFuente: null,
+          renglones: 0,
+          verificacion: {
+            totalDocumento: null,
+            importe: 0,
+            diferencia: null,
+            cuadra: null,
+          },
+          relecturaPorBloques: false,
+        })),
+      ],
       ots: otsDespues.map((ot) => ({
         id: ot.id,
         etiqueta: ot.label,
@@ -323,6 +374,9 @@ export class OrdenCorreoRelecturaService {
         renglonesQuitados: diferencia(conteoAntes, conteoDespues),
       },
       advertencias,
+      ...(reconciliacion.motivos.length > 0
+        ? { motivos: reconciliacion.motivos }
+        : {}),
       ...(expectativas ? { expectativas } : {}),
     };
   }

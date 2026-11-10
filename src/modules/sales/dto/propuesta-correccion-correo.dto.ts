@@ -146,6 +146,24 @@ export class ExpectativasResultadoDto {
   coincideImporte!: boolean | null;
 }
 
+/** Qué pasó con una diferencia entre la orden actual y lo que dicen los documentos. */
+export class MotivoDiferenciaDto {
+  @ApiProperty({ enum: ['cambiar', 'quitar', 'agregar'] })
+  tipo!: 'cambiar' | 'quitar' | 'agregar';
+  @ApiProperty({ description: 'La OT por su almacén y su pedido.' })
+  ot!: string;
+  @ApiProperty({
+    description: 'Producto como lo reconoce el operador («actual → leído» si cambia).',
+  })
+  producto!: string;
+  @ApiProperty({
+    description: 'true: se aplicó a la propuesta; false: la orden queda como está.',
+  })
+  aplicada!: boolean;
+  @ApiProperty({ description: 'Motivo corto en español, sin términos técnicos.' })
+  motivo!: string;
+}
+
 export class PropuestaCorreccionCorreoResponseDto {
   @ApiProperty() requestId!: string;
   @ApiProperty() propuestaId!: string;
@@ -161,6 +179,12 @@ export class PropuestaCorreccionCorreoResponseDto {
   @ApiProperty({ type: DiffCorreccionDto }) diff!: DiffCorreccionDto;
   @ApiProperty({ type: [AdvertenciaCorreccionDto] })
   advertencias!: AdvertenciaCorreccionDto[];
+  @ApiPropertyOptional({
+    type: [MotivoDiferenciaDto],
+    description:
+      'Solo con una instrucción que limita la corrección: por qué no se aplicó o se quitó cada diferencia.',
+  })
+  motivos?: MotivoDiferenciaDto[];
   @ApiPropertyOptional({
     type: ExpectativasResultadoDto,
     description: 'Solo si el usuario dijo cuántas OT o qué total esperaba.',

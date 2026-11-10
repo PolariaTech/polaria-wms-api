@@ -20,7 +20,9 @@ import OpenAI from 'openai';
 import {
   ExtraccionTruncadaError,
   extraerPedido,
+  INTERPRETACION_SYSTEM_PROMPT,
   interpretarInstruccionChat,
+  interpretarInstruccionConReglas,
   type ContextoInterpretacionChat,
 } from './openai-pedido.client';
 
@@ -305,6 +307,40 @@ describe('openai-pedido.client (REQ-187)', () => {
       await expect(interpretarInstruccionChat(contexto)).rejects.toThrow(
         'no devolvió contenido',
       );
+    });
+  });
+
+  describe('dividir por orden de compra desde el chat (POL-413)', () => {
+    const conOc = { ...contexto, otActuales: 4, pedidosDistintos: 2 };
+
+    it.each([
+      'Divide la orden de venta por orden de compra: la orden de compra OC-200 pasa a una orden de venta nueva y las demás se quedan en esta.',
+      'Separa las órdenes de compra en órdenes de venta distintas',
+      'Reparte por OC: la PO 4500 sale a otra orden de venta',
+    ])('el respaldo por reglas reorganiza: %s', (instruccion) => {
+      const resultado = interpretarInstruccionConReglas({ ...conOc, instruccion });
+
+      expect(resultado.intencion).toBe('reorganizar');
+    });
+
+    it.each([
+      'Vuelve a leer el correo, el total debe ser 27905.25',
+      'Relee los archivos: faltan OT de la orden de compra OC-200',
+      'Divide por orden de compra y verifica contra el correo',
+    ])('el respaldo por reglas sigue releyendo: %s', (instruccion) => {
+      const resultado = interpretarInstruccionConReglas({ ...conOc, instruccion });
+
+      expect(resultado.intencion).toBe('releer_documentos');
+    });
+
+    it('el prompt ya no manda «separar por orden de compra» a releer y lo pone en reorganizar', () => {
+      const [reorganizar, releer] = INTERPRETACION_SYSTEM_PROMPT.split('\n').filter(
+        (linea) => linea.startsWith('- "reorganizar"') || linea.startsWith('- "releer_documentos"'),
+      );
+
+      expect(reorganizar).toContain('orden de compra');
+      expect(releer).not.toContain('pide separar por orden de compra');
+      expect(releer).toContain('NO es releer');
     });
   });
 });

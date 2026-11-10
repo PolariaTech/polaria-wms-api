@@ -318,6 +318,32 @@ describe('PedidoIaService.leerArchivosParaCuenta — casos REQ-187', () => {
     ]);
   });
 
+  it('POL-414: «ignorar» descarta el PDF suelto y también su copia incrustada en el .eml', async () => {
+    modeloPerfecto();
+    extractFilesMock.mockResolvedValue([
+      cuerpo,
+      archivoPdf(doc081!, 'correo.eml → '),
+      archivoPdf(doc208!, 'correo.eml → '),
+      archivoPdf(doc081!),
+      archivoPdf(doc208!),
+    ]);
+
+    const r = await crearServicio().leerArchivosParaCuenta({
+      codigoCuenta: '1YW43',
+      ctx,
+      texto: '',
+      archivos: [],
+      ignorar: [doc081!.nombre.toUpperCase()],
+    });
+
+    expect(r.documentos.map((d) => d.oc)).toEqual(['4502987208']);
+    const leidos = extraerPedidoMock.mock.calls.flatMap(
+      ([entrada]: [{ archivosExtraidos: Array<{ nombre: string }> }]) =>
+        entrada.archivosExtraidos.map((a) => a.nombre),
+    );
+    expect(leidos.some((n: string) => n.includes(doc081!.nombre))).toBe(false);
+  });
+
   it('OV-940: un PDF da 20 OT / 134 renglones / 27,905.25', async () => {
     modeloPerfecto();
     extractFilesMock.mockResolvedValue([cuerpo, archivoPdf(doc940!)]);

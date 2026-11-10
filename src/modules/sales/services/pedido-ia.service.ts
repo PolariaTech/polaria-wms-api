@@ -95,7 +95,10 @@ export type CodigoAdvertenciaLectura =
   | 'ADJUNTO_RECHAZADO'
   | 'ADJUNTOS_EXCEDEN_TOPE'
   | 'EXPECTATIVA_OT_DISTINTA'
-  | 'EXPECTATIVA_IMPORTE_DISTINTO';
+  | 'EXPECTATIVA_IMPORTE_DISTINTO'
+  | 'ARCHIVO_IGNORADO'
+  | 'ALCANCE_INTERPRETADO'
+  | 'RECONCILIACION_NO_DISPONIBLE';
 
 export interface AdvertenciaLectura {
   codigo: CodigoAdvertenciaLectura;
@@ -512,6 +515,11 @@ export class PedidoIaService {
     ctx: TenantContext;
     texto: string;
     archivos: ArchivoSubido[];
+    /**
+     * POL-414: nombres de archivo que no se deben leer. También se descarta la copia que
+     * viene incrustada en un .eml, que de otro modo se leería al dejar de ser duplicado.
+     */
+    ignorar?: string[];
   }): Promise<LecturaPorDocumento> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY')?.trim();
     if (!apiKey) {
@@ -533,8 +541,20 @@ export class PedidoIaService {
     const archivosExtraidos = await extractFiles(input.archivos);
     const textoOrigen = buildTextoOrigenPedido(input.texto, archivosExtraidos);
     const hoyISO = new Date().toISOString().slice(0, 10);
-    const { contexto, documentos, noLegibles, duplicados } =
-      separarContextoYDocumentos(archivosExtraidos);
+    const separados = separarContextoYDocumentos(archivosExtraidos);
+    const { contexto, noLegibles, duplicados } = separados;
+    const nombresIgnorados = new Set(
+      (input.ignorar ?? []).map((nombre) => nombre.toLowerCase()),
+    );
+    const documentos =
+      nombresIgnorados.size === 0
+        ? separados.documentos
+        : separados.documentos.filter(
+            (documento) =>
+              !nombresIgnorados.has(
+                nombreBaseAdjunto(documento.nombre).toLowerCase(),
+              ),
+          );
 
     const advertencias: AdvertenciaLectura[] = duplicados.map((nombre) => ({
       codigo: 'ADJUNTO_DUPLICADO',
