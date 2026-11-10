@@ -14,6 +14,7 @@
 - `src/modules/sales/ai/utils/agrupar-pedidos-por-fecha.spec.ts`
 - `src/modules/sales/ai/openai-pedido.client.ts`
 - `src/modules/sales/ai/utils/insertar-orden-ingesta.ts`
+- `CHANGELOG.md` — autorizada por el usuario el 2026-11-10
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
