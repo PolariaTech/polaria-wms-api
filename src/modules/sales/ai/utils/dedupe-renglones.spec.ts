@@ -45,10 +45,12 @@ describe('quitarRenglonesRepetidosEntreDocumentos (REQ-288)', () => {
   });
 
   it('ignora tildes y mayúsculas al comparar', () => {
-    const a = pedido([{ ...cebolla, Producto: 'Jalapeño' }]);
-    const b = pedido([{ ...cebolla, Producto: 'JALAPENO' }]);
+    const cuerpo = pedido([{ ...cebolla, Producto: 'Jalapeño' }]);
+    const adjunto = pedido([{ ...cebolla, Producto: 'JALAPENO' }]);
 
-    expect(quitarRenglonesRepetidosEntreDocumentos([a, b]).descartados).toBe(1);
+    expect(
+      quitarRenglonesRepetidosEntreDocumentos([cuerpo, adjunto]).descartados,
+    ).toBe(1);
   });
 
   it('no toca los repetidos dentro de un mismo documento', () => {
@@ -64,16 +66,16 @@ describe('quitarRenglonesRepetidosEntreDocumentos (REQ-288)', () => {
   });
 
   it('conserva el renglón si cambia cantidad, unidad o almacén', () => {
-    const a = pedido([cebolla]);
-    const b = pedido([
+    const cuerpo = pedido([cebolla]);
+    const adjunto = pedido([
       { ...cebolla, Cantidad: 10 },
       { ...cebolla, Unidad: 'PZ' },
       { ...cebolla, Almacen: 'Banquetes' },
     ]);
 
     const { pedidos, descartados } = quitarRenglonesRepetidosEntreDocumentos([
-      a,
-      b,
+      cuerpo,
+      adjunto,
     ]);
 
     expect(descartados).toBe(0);
@@ -81,10 +83,13 @@ describe('quitarRenglonesRepetidosEntreDocumentos (REQ-288)', () => {
   });
 
   it('reindexa _lineaIndex del documento que perdió renglones', () => {
-    const a = pedido([cebolla]);
-    const b = pedido([cebolla, { ...cebolla, Producto: 'Tomate' }]);
+    const cuerpo = pedido([cebolla]);
+    const adjunto = pedido([cebolla, { ...cebolla, Producto: 'Tomate' }]);
 
-    const { pedidos } = quitarRenglonesRepetidosEntreDocumentos([a, b]);
+    const { pedidos } = quitarRenglonesRepetidosEntreDocumentos([
+      cuerpo,
+      adjunto,
+    ]);
 
     expect(pedidos[1]?.origenCorreo).toEqual([
       expect.objectContaining({ Producto: 'Tomate', _lineaIndex: 0 }),

@@ -20,47 +20,47 @@ const PEDIDO =
 
 describe('descartarDocumentosRepetidos (REQ-288)', () => {
   it('descarta el mismo texto con otro nombre y deja el suelto', () => {
-    const r = descartarDocumentosRepetidos(
+    const resultado = descartarDocumentosRepetidos(
       [texto('correo.eml → copia.pdf', PEDIDO), texto('pedido.pdf', PEDIDO)],
       opciones,
     );
-    expect(r.unicos.map((d) => d.nombre)).toEqual(['pedido.pdf']);
-    expect(r.duplicados).toEqual(['correo.eml → copia.pdf']);
+    expect(resultado.unicos.map((d) => d.nombre)).toEqual(['pedido.pdf']);
+    expect(resultado.duplicados).toEqual(['correo.eml → copia.pdf']);
   });
 
   it('compara sin importar espacios, tildes ni mayúsculas', () => {
-    const r = descartarDocumentosRepetidos(
+    const resultado = descartarDocumentosRepetidos(
       [
         texto('a.pdf', PEDIDO),
         texto('b.pdf', PEDIDO.toUpperCase().replace(/\n/g, '  \n ')),
       ],
       opciones,
     );
-    expect(r.unicos.map((d) => d.nombre)).toEqual(['a.pdf']);
+    expect(resultado.unicos.map((d) => d.nombre)).toEqual(['a.pdf']);
   });
 
   it('conserva documentos con texto distinto', () => {
-    const r = descartarDocumentosRepetidos(
+    const resultado = descartarDocumentosRepetidos(
       [texto('a.pdf', PEDIDO), texto('b.pdf', `${PEDIDO}\nChile serrano 5 KG`)],
       opciones,
     );
-    expect(r.unicos).toHaveLength(2);
-    expect(r.duplicados).toEqual([]);
+    expect(resultado.unicos).toHaveLength(2);
+    expect(resultado.duplicados).toEqual([]);
   });
 
   it('no trata como iguales dos textos demasiado cortos', () => {
-    const r = descartarDocumentosRepetidos(
+    const resultado = descartarDocumentosRepetidos(
       [texto('a.pdf', 'a'), texto('b.pdf', 'a')],
       opciones,
     );
-    expect(r.unicos).toHaveLength(2);
+    expect(resultado.unicos).toHaveLength(2);
   });
 
   it('sigue descartando el incrustado cuyo suelto tiene el mismo nombre', () => {
-    const r = descartarDocumentosRepetidos(
+    const resultado = descartarDocumentosRepetidos(
       [texto('c.eml → A.pdf', 'a'), texto('A.pdf', 'a')],
       opciones,
     );
-    expect(r.duplicados).toEqual(['c.eml → A.pdf']);
+    expect(resultado.duplicados).toEqual(['c.eml → A.pdf']);
   });
 });
