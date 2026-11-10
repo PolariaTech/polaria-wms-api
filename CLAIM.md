@@ -14,6 +14,7 @@
 - `src/modules/sales/services/orden-correo-relectura.service.spec.ts`
 - `src/modules/sales/services/pedido-ia.service.ts`
 - `src/modules/sales/services/pedido-ia.service.spec.ts`
+- `src/modules/sales/dto/propuesta-correccion-correo.dto.ts` — autorizada por el usuario el 2026-11-10
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
