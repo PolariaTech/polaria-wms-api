@@ -20,10 +20,8 @@ import {
 } from "./utils/clasificar-adjunto-oc-mensual";
 import { aplicarIdPedidoAplicativo, resolveDireccionEntregaDesdeTexto } from "./utils/direccion-correo-aplicativo";
 import { resolveCentroConsumoSinConfundirConCliente } from "./utils/centro-consumo-vs-cliente";
-import {
-  enrichAlmacenConCodigoDesdeTexto,
-  enrichLineasAlmacenConCodigoDesdeTexto,
-} from "./utils/enrich-almacen-codigo";
+import { enrichAlmacenConCodigoDesdeTexto, enrichLineasAlmacenConCodigoDesdeTexto } from "./utils/enrich-almacen-codigo";
+import { REGLAS_LECTURA_PEDIDO } from './utils/reglas-lectura-pedido';
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 import { sanitizeTelefonoContacto } from "./utils/sanitize-telefono-contacto";
 import { extractCorreoContactoDesdeTexto } from "./utils/correo-chrome";
@@ -588,7 +586,7 @@ export async function extraerPedido({
     `- "nombreCliente": denominación / hotel / comprador si aparece (Customer, Bill To, Hotel, Property, Cliente, etc.). No uses el PO ni el RFC como nombre. null solo si no hay ningún nombre.`,
     `- "nombreCliente" (REQ-116): en POs BirchStreet (bss_system@birchstreet.net) copia Property/Hotel/Bill To (ej. FAIRMONT MAYAKOBA), no el remitente ni la cocina.`,
     `- "especificacion" por línea (REQ-120): si hay columna/texto de madurez (amarillo, rojo, firme, enrriado), ponlo en lineas[].especificacion, no solo en observaciones.`,
-    `- Matching producto (REQ-115): NUNCA asignes productoCatalogo de otra familia (cebolla ≠ aguacate). Si hay duda → null.`,
+    ...REGLAS_LECTURA_PEDIDO,
     `- Una línea por cada fila de producto del documento. Si hay VARIOS Numero pedido / PO, o el MISMO PO con DISTINTOS Almacén / centro de consumo (ej. BAWH Bar Whisky vs COPM Coc Plaza Mx, o distintos 'Centro de costo' Xcaret), emite una línea por cada producto×destino con numeroPedido y almacen de ESA fila. NO mezcles destinos ni pedidos en una sola línea. NO omitas filas de páginas intermedias.`,
     `- "numeroPedido" + "almacen" separan órdenes de trabajo: mismo PO + distinto almacén = otra hija; distinto PO = otra hija aunque el almacén coincida.`,
     `- "almacen" / "centroConsumo" (crítico — no acortar): copia SIEMPRE código + nombre completos de la columna (ej. 'ABAN Banquetes Ali', no solo 'Banquetes Ali'; 'ACOE ComedorEmplea', no solo 'Comedor…'). El código de 3–6 letras identifica la cocina del cliente; perderlo rompe el surtido. Aunque el PDF trunque visualmente la celda, conserva todo el texto legible del código y del nombre.`,
