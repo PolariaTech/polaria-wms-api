@@ -6,17 +6,29 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { RolNivel, WmsRol } from '../../../generated/prisma/client';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
 import {
   interpretarInstruccionChat,
   interpretarInstruccionConReglas,
 } from '../ai/openai-pedido.client';
-import { descargarAdjuntosOv } from '../ai/storage-ov-adjuntos';
 import fixture from '../ai/utils/__fixtures__/relectura-ov-940-943.json';
-import type { PropuestaCorreccionCorreoBodyDto } from '../dto/propuesta-correccion-correo.dto';
+import { reconciliarDiferencias } from '../ai/openai-reconciliacion.client';
+import { descargarAdjuntosOv } from '../ai/storage-ov-adjuntos';
 import { OrdenCorreoRelecturaService } from './orden-correo-relectura.service';
-import type { DocumentoLeido } from './pedido-ia.service';
+import {
+  ID_OV,
+  REQUEST_ID,
+  ctx,
+  body,
+  renglonesDe,
+  documentoLeido,
+  doc940,
+  doc081,
+  doc208,
+  orden,
+  lectura943,
+  type DocFixture,
+} from './orden-correo-relectura.fixtures';
 
 jest.mock('../ai/storage-ov-adjuntos', () => ({
   ...jest.requireActual('../ai/storage-ov-adjuntos'),
@@ -26,100 +38,18 @@ jest.mock('../ai/openai-pedido.client', () => ({
   ...jest.requireActual('../ai/openai-pedido.client'),
   interpretarInstruccionChat: jest.fn(),
 }));
+jest.mock('../ai/openai-reconciliacion.client', () => ({
+  ...jest.requireActual('../ai/openai-reconciliacion.client'),
+  reconciliarDiferencias: jest.fn(),
+}));
 const descargarMock = descargarAdjuntosOv as jest.Mock;
 const interpretarMock = interpretarInstruccionChat as jest.Mock;
-
-const ID_OV = '550e8400-e29b-41d4-a716-446655440000';
-const ID_BODEGA = '660e8400-e29b-41d4-a716-446655440001';
-const REQUEST_ID = '770e8400-e29b-41d4-a716-446655440002';
-
-const ctx: TenantContext = {
-  idUsuario: 'user-1',
-  idRol: WmsRol.operador_cuenta,
-  nivelRol: RolNivel.cuenta,
-  codigoEmpresa: 'EMP001',
-  codigoCuenta: '1YW43',
-  codigosCuentaEmpresa: ['1YW43'],
-  idBodegas: [],
-  schemaName: 'emp_demo',
-};
-
-const body: PropuestaCorreccionCorreoBodyDto = { requestId: REQUEST_ID };
-
-type DocFixture = (typeof fixture.documentos)[number];
-type Fila = Record<string, string | number>;
-
-function renglonesDe(doc: DocFixture): Fila[] {
-  const filas: Fila[] = [];
-  for (const [almacen, datos] of Object.entries(doc.almacenes)) {
-    for (let i = 0; i < datos.renglones; i += 1) {
-      filas.push({
-        Producto: `PRODUCTO ${filas.length}`,
-        Almacen: almacen,
-        Cantidad: 1,
-        Precio: datos.importe / datos.renglones,
-        'Numero pedido': doc.oc,
-        'Numero correo': 'correo-1',
-        Horario: '2026-10-28 09:00:00',
-      });
-    }
-  }
-  return filas;
-}
-
-function documentoLeido(doc: DocFixture, cuadra: boolean | null = true): DocumentoLeido {
-  return {
-    nombre: doc.nombre,
-    oc: doc.oc,
-    ocFuente: 'ambas',
-    renglones: doc.renglones,
-    verificacion: {
-      totalDocumento: doc.totalDocumento,
-      importe: cuadra === false ? 1 : doc.totalDocumento,
-      diferencia: cuadra === false ? 1 - doc.totalDocumento : 0,
-      cuadra,
-    },
-    relecturaPorBloques: false,
-  };
-}
-
-const [doc940, doc081, doc208] = fixture.documentos;
-
-/** OV-943 tal como quedó mal leída: solo el primer PDF y apenas 60 de sus renglones (6 almacenes). */
-const origenIncompleto = renglonesDe(doc081!).slice(0, 60);
-
-function orden(parcial: Record<string, unknown> = {}) {
-  return {
-    idOrdenVenta: ID_OV,
-    codigoCuenta: '1YW43',
-    idBodega: ID_BODEGA,
-    estado: 'por_confirmar',
-    origenCorreo: origenIncompleto,
-    origenArchivos: JSON.stringify([
-      { nombre: 'correo.eml', path: '1yw43/a-correo.eml', mime: 'message/rfc822', bytes: 10 },
-      { nombre: doc081!.nombre, path: `1yw43/b-${doc081!.nombre}`, mime: 'application/pdf', bytes: 10 },
-      { nombre: doc208!.nombre, path: `1yw43/c-${doc208!.nombre}`, mime: 'application/pdf', bytes: 10 },
-    ]),
-    ...parcial,
-  };
-}
+const reconciliarMock = reconciliarDiferencias as jest.Mock;
 
 describe('OrdenCorreoRelecturaService', () => {
   let service: OrdenCorreoRelecturaService;
   let prisma: { $queryRawUnsafe: jest.Mock };
   let pedidoIa: { leerArchivosParaCuenta: jest.Mock };
-
-  function lectura943(cuadra: boolean | null = true, advertencias: unknown[] = []) {
-    return {
-      pedido: { origenCorreo: [...renglonesDe(doc081!), ...renglonesDe(doc208!)] },
-      textoOrigen: '',
-      documentos: [documentoLeido(doc081!, cuadra), documentoLeido(doc208!, cuadra)],
-      advertencias,
-      catalogoProductos: 197,
-      tokensTotal: 1000,
-      costoUSD: 0.01,
-    };
-  }
 
   beforeEach(() => {
     prisma = { $queryRawUnsafe: jest.fn().mockResolvedValue([orden()]) };
@@ -130,7 +60,11 @@ describe('OrdenCorreoRelecturaService', () => {
       rechazados: [],
       excedeTope: false,
     });
+    reconciliarMock
+      .mockReset()
+      .mockRejectedValue(new Error('sin IA en las pruebas'));
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
     service = new OrdenCorreoRelecturaService(
       prisma as never,
