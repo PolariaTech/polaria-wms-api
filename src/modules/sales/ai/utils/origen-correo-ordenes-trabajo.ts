@@ -1,9 +1,13 @@
+import {
+  baseGroupKeyOrigenCorreo,
+  contiguousOtIdsForRenglones,
+} from './origen-correo-ot-contigua';
+
 /**
  * Agrupa renglones de origen_correo en órdenes de trabajo (hijas) de una OV.
  *
- * Clave = Numero pedido + Almacen (centro de consumo).
- * Así un mismo PO con varios almacenes (AVA) genera varias hijas,
- * y varios PO con el mismo almacén (Marina) también.
+ * Clave base = Numero pedido + Almacen (+ Numero almacen).
+ * REQ-238: además respeta bloques contiguos en el orden del documento.
  */
 
 export interface OrigenCorreoRenglon {
@@ -53,10 +57,6 @@ function norm(value: string | null | undefined): string {
   return (value ?? "").toString().trim();
 }
 
-function normKey(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 function parseCantidad(value: number | string | undefined): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -67,16 +67,13 @@ function parseCantidad(value: number | string | undefined): number {
 }
 
 export function groupKeyOrigenCorreo(renglon: OrigenCorreoRenglon): string {
-  const pedido = norm(renglon["Numero pedido"]);
-  const almacen = norm(renglon.Almacen);
-  const referencia = norm(renglon["Referencia pedido"]);
-
-  if (pedido || almacen) {
-    return `pedido:${pedido ? normKey(pedido) : "_"}|almacen:${almacen ? normKey(almacen) : "_"}`;
-  }
-  if (referencia) return `ref:${normKey(referencia)}`;
-  return "default";
+  return baseGroupKeyOrigenCorreo(renglon);
 }
+
+export {
+  baseGroupKeyOrigenCorreo,
+  contiguousOtIdsForRenglones,
+} from './origen-correo-ot-contigua';
 
 function labelFromGroup(
   key: string,
@@ -106,13 +103,14 @@ export function groupOrigenCorreoToOrdenesTrabajo(
 ): OrdenTrabajoHija[] {
   if (!renglones || renglones.length === 0) return [];
 
+  const otIds = contiguousOtIdsForRenglones(renglones);
   const buckets = new Map<string, OrigenCorreoRenglon[]>();
-  for (const row of renglones) {
-    const key = groupKeyOrigenCorreo(row);
+  renglones.forEach((row, index) => {
+    const key = otIds[index] ?? groupKeyOrigenCorreo(row);
     const list = buckets.get(key);
     if (list) list.push(row);
     else buckets.set(key, [row]);
-  }
+  });
 
   const hijas: OrdenTrabajoHija[] = [];
   for (const [key, rows] of buckets) {
@@ -120,11 +118,11 @@ export function groupOrigenCorreoToOrdenesTrabajo(
     hijas.push({
       id: key,
       label: labelFromGroup(key, rows),
-      numeroPedido: norm(first["Numero pedido"]),
+      numeroPedido: norm(first['Numero pedido']),
       almacen: norm(first.Almacen),
-      referenciaPedido: norm(first["Referencia pedido"]),
+      referenciaPedido: norm(first['Referencia pedido']),
       fecha: norm(first.Fecha),
-      responsableExterno: norm(first["Responsable externo"]),
+      responsableExterno: norm(first['Responsable externo']),
       renglones: rows,
       totalCantidad: rows.reduce(
         (sum, row) => sum + parseCantidad(row.Cantidad),
@@ -133,7 +131,7 @@ export function groupOrigenCorreoToOrdenesTrabajo(
     });
   }
 
-  return hijas.sort((a, b) => a.label.localeCompare(b.label, "es"));
+  return hijas;
 }
 
 export function isOrigenCorreoArray(value: unknown): value is OrigenCorreoRenglon[] {
