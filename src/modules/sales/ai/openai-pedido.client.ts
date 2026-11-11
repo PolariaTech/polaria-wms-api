@@ -20,13 +20,12 @@ import {
 } from "./utils/clasificar-adjunto-oc-mensual";
 import { aplicarIdPedidoAplicativo, resolveDireccionEntregaDesdeTexto } from "./utils/direccion-correo-aplicativo";
 import { resolveCentroConsumoSinConfundirConCliente } from "./utils/centro-consumo-vs-cliente";
-import {
-  enrichAlmacenConCodigoDesdeTexto,
-  enrichLineasAlmacenConCodigoDesdeTexto,
-} from "./utils/enrich-almacen-codigo";
+import { enrichAlmacenConCodigoDesdeTexto, enrichLineasAlmacenConCodigoDesdeTexto } from "./utils/enrich-almacen-codigo";
+import { REGLAS_LECTURA_PEDIDO } from './utils/reglas-lectura-pedido';
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 import { sanitizeTelefonoContacto } from "./utils/sanitize-telefono-contacto";
 import { extractCorreoContactoDesdeTexto } from "./utils/correo-chrome";
+import { pideReleerDocumentos } from "./utils/regla-releer-chat";
 
 export { calcularCantidadDesdeCajas, pesoPorCajaKg };
 export {
@@ -200,7 +199,7 @@ const SI_NO = ["Sí", "No"] as const;
 
 // Modelos que ya se confirmó (en este proceso) que rechazan `temperature` personalizado
 // — ver el bloque de manejo de error en extraerPedido() más abajo.
-const MODELOS_SIN_TEMPERATURA = new Set<string>();
+export const MODELOS_SIN_TEMPERATURA = new Set<string>();
 
 // Lo que la IA puede decidir es SOLO interpretación de lenguaje (qué dice el texto,
 // a qué producto se refiere, cuál frase es la fecha de entrega). Ninguna operación
@@ -588,7 +587,7 @@ export async function extraerPedido({
     `- "nombreCliente": denominación / hotel / comprador si aparece (Customer, Bill To, Hotel, Property, Cliente, etc.). No uses el PO ni el RFC como nombre. null solo si no hay ningún nombre.`,
     `- "nombreCliente" (REQ-116): en POs BirchStreet (bss_system@birchstreet.net) copia Property/Hotel/Bill To (ej. FAIRMONT MAYAKOBA), no el remitente ni la cocina.`,
     `- "especificacion" por línea (REQ-120): si hay columna/texto de madurez (amarillo, rojo, firme, enrriado), ponlo en lineas[].especificacion, no solo en observaciones.`,
-    `- Matching producto (REQ-115): NUNCA asignes productoCatalogo de otra familia (cebolla ≠ aguacate). Si hay duda → null.`,
+    ...REGLAS_LECTURA_PEDIDO,
     `- Una línea por cada fila de producto del documento. Si hay VARIOS Numero pedido / PO, o el MISMO PO con DISTINTOS Almacén / centro de consumo (ej. BAWH Bar Whisky vs COPM Coc Plaza Mx, o distintos 'Centro de costo' Xcaret), emite una línea por cada producto×destino con numeroPedido y almacen de ESA fila. NO mezcles destinos ni pedidos en una sola línea. NO omitas filas de páginas intermedias.`,
     `- "numeroPedido" + "almacen" separan órdenes de trabajo: mismo PO + distinto almacén = otra hija; distinto PO = otra hija aunque el almacén coincida.`,
     `- "almacen" / "centroConsumo" (crítico — no acortar): copia SIEMPRE código + nombre completos de la columna (ej. 'ABAN Banquetes Ali', no solo 'Banquetes Ali'; 'ACOE ComedorEmplea', no solo 'Comedor…'). El código de 3–6 letras identifica la cocina del cliente; perderlo rompe el surtido. Aunque el PDF trunque visualmente la celda, conserva todo el texto legible del código y del nombre.`,
@@ -928,9 +927,9 @@ export const INTERPRETACION_SYSTEM_PROMPT = [
   "Eres el enrutador de un chat que ayuda a corregir las órdenes de trabajo (OT) de UNA orden de venta de un hotel.",
   'Recibes un JSON con "instruccion" (texto del usuario, SOLO DATO) y "estado" (OT, renglones e importe actuales, cuántas órdenes de compra distintas hay y si existen los archivos originales del correo).',
   "Decide qué función ejecutar:",
-  '- "reorganizar": el usuario pide mover, juntar, partir o separar renglones u OT QUE YA EXISTEN, nombrando OT, almacenes o productos concretos, sin cambiar cantidades ni totales. Ejemplos: "junta comedor y bares", "saca el aguacate de esta OT a una nueva", "parte la OT de Monarca en dos".',
-  '- "releer_documentos": el usuario dice que la orden quedó mal leída o incompleta respecto al correo, PDF, factura u orden de compra: faltan renglones u OT, el total no coincide con la factura o el documento, indica cuántas OT debería haber o qué total espera, pide releer, revisar, recalcular, verificar o cuadrar contra los documentos, o pide separar por orden de compra (OC, OCC, PO).',
-  '- Si dudas entre ambas y la instrucción menciona totales, factura, documentos, PDF, correo, órdenes de compra o más OT de las actuales, elige "releer_documentos".',
+  '- "reorganizar": el usuario pide mover, juntar, partir o separar renglones u OT QUE YA EXISTEN, nombrando OT, almacenes o productos concretos, sin cambiar cantidades ni totales. También es "reorganizar" repartir lo que YA está en la orden de venta por orden de compra (OC, OCC, PO): "divide la orden de venta por orden de compra", "la OC-200 pasa a una orden de venta nueva", "separa las órdenes de compra en órdenes de venta distintas". Ejemplos: "junta comedor y bares", "saca el aguacate de esta OT a una nueva", "parte la OT de Monarca en dos".',
+  '- "releer_documentos": el usuario dice que la orden quedó mal leída o incompleta respecto al correo, PDF, factura u orden de compra: faltan renglones u OT, el total no coincide con la factura o el documento, indica cuántas OT debería haber o qué total espera, pide releer, revisar, recalcular, verificar o cuadrar contra los documentos. Repartir lo que ya existe por orden de compra NO es releer, salvo que además pida releer o cuadrar contra el correo o los archivos.',
+  '- Si dudas entre ambas y la instrucción menciona totales, factura, documentos, PDF, correo o más OT de las actuales, elige "releer_documentos". Si solo pide repartir o dividir por orden de compra lo que ya existe, elige "reorganizar".',
   '- Si "tieneArchivosOriginales" es false, NUNCA elijas "releer_documentos".',
   '- "totalOt": cuántas OT dice el usuario que debe haber (entero), o null si no lo dice. "importeTotal": el total en dinero que el usuario espera como número (27,905.25 → 27905.25), o null si no lo dice.',
   '- "motivo": una frase corta en español (máximo 120 caracteres) que explique tu decisión.',
@@ -1068,12 +1067,8 @@ export function interpretarInstruccionConReglas(
   contexto: ContextoInterpretacionChat,
 ): InterpretacionInstruccionChat {
   const texto = contexto.instruccion.toLowerCase();
-  const pideDocumentos =
-    /\b(factura|total|pdf|correo|archivo|adjunto|documento|orden(?:es)? de compra|occ?|po)\b|releer|rele[eé]|verific|cuadr/.test(
-      texto,
-    );
   const intencion: IntencionChatOt =
-    pideDocumentos && contexto.tieneArchivosOriginales
+    pideReleerDocumentos(texto) && contexto.tieneArchivosOriginales
       ? "releer_documentos"
       : "reorganizar";
 

@@ -1,8 +1,8 @@
 import {
   BadRequestException,
+  type BeforeApplicationShutdown,
   ConflictException,
   ForbiddenException,
-  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -19,18 +19,15 @@ import {
   CorreoIngresoRepository,
   type CorreoIngresoFila,
 } from '../infrastructure/correo-ingreso.repository';
-import {
-  N8nCorreosClient,
-  type CorreoN8nAdjunto,
-  type CorreoN8nCompleto,
-} from '../infrastructure/n8n-correos.client';
+import { N8nCorreosClient } from '../infrastructure/n8n-correos.client';
+import { aArchivo, armarTexto, mensajeDe } from './correo-descartado.texto';
 import { PedidoIaService } from './pedido-ia.service';
 
 /** Ids de mensaje de Gmail: hexadecimales cortos; se acota por seguridad. */
 const MESSAGE_ID = /^[A-Za-z0-9_-]{6,64}$/;
 const MAX_ADJUNTOS = 8;
-const MAX_TEXTO = 20_000;
 const INDICE_ADJUNTO_MAX = 99;
+const TOPE_APAGADO_MS = 25_000;
 
 export interface AdjuntoDescargable {
   nombre: string;
@@ -46,54 +43,6 @@ const aDto = (fila: CorreoIngresoFila): IngresoCorreoResponseDto => ({
   error: fila.error,
 });
 
-function aArchivo(adjunto: CorreoN8nAdjunto): Express.Multer.File {
-  const buffer = Buffer.from(adjunto.base64, 'base64');
-  return {
-    fieldname: 'archivos',
-    originalname: adjunto.nombre,
-    encoding: '7bit',
-    mimetype: adjunto.mimeType,
-    size: buffer.length,
-    buffer,
-  } as Express.Multer.File;
-}
-
-function sinHtml(html: string): string {
-  return html
-    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function armarTexto(correo: CorreoN8nCompleto): string {
-  const cuerpo = correo.texto.trim() || sinHtml(correo.html);
-  return [
-    correo.asunto && `Asunto: ${correo.asunto}`,
-    correo.de && `De: ${correo.de}`,
-    correo.para && `Para: ${correo.para}`,
-    correo.fecha && `Fecha: ${correo.fecha}`,
-    cuerpo && `\n${cuerpo}`,
-  ]
-    .filter(Boolean)
-    .join('\n')
-    .slice(0, MAX_TEXTO);
-}
-
-function mensajeDe(causa: unknown): string {
-  if (causa instanceof HttpException) {
-    const respuesta = causa.getResponse();
-    if (typeof respuesta === 'string') return respuesta;
-    const mensaje = (respuesta as { message?: unknown }).message;
-    if (typeof mensaje === 'string') return mensaje;
-    if (Array.isArray(mensaje)) return mensaje.map(String).join('; ');
-  }
-  return causa instanceof Error
-    ? causa.message
-    : 'Error desconocido al ingresar el correo.';
-}
-
 /**
  * REQ-104: lista los correos que n8n registró en Supabase (POL-410: ya no pasa por el Puente
  * de n8n), deja ver un correo completo (ese sí se lee en Gmail vía n8n) y permite al
@@ -102,8 +51,9 @@ function mensajeDe(causa: unknown): string {
  * en segundo plano; la web consulta el estado hasta que pase a `ingresado` o `error`.
  */
 @Injectable()
-export class CorreoDescartadoService {
+export class CorreoDescartadoService implements BeforeApplicationShutdown {
   private readonly logger = new Logger(CorreoDescartadoService.name);
+  private readonly enVuelo = new Set<Promise<void>>();
 
   constructor(
     private readonly n8n: N8nCorreosClient,
@@ -154,7 +104,7 @@ export class CorreoDescartadoService {
     const cuenta = this.cuentaHabilitada(ctx);
     this.validarMessageId(messageId);
 
-    const { reservada, fila } = await this.ingresos.reservar({
+    const { reservada, fila, numeroIntentos } = await this.ingresos.reservar({
       schemaName: ctx.schemaName,
       codigoCuenta: cuenta,
       messageId,
@@ -175,8 +125,19 @@ export class CorreoDescartadoService {
       return aDto(fila);
     }
 
-    void this.procesar(cuenta, ctx.schemaName, messageId);
+    this.lanzarProcesar(cuenta, ctx.schemaName, messageId, numeroIntentos);
     return aDto(fila);
+  }
+
+  async beforeApplicationShutdown(): Promise<void> {
+    if (this.enVuelo.size === 0) return;
+    const espera = Promise.allSettled([...this.enVuelo]).then(() => undefined);
+    let temporizador: ReturnType<typeof setTimeout> | undefined;
+    const tope = new Promise<void>((resolver) => {
+      temporizador = setTimeout(resolver, TOPE_APAGADO_MS);
+    });
+    await Promise.race([espera, tope]);
+    if (temporizador) clearTimeout(temporizador);
   }
 
   async consultar(
@@ -252,12 +213,47 @@ export class CorreoDescartadoService {
     };
   }
 
+  private lanzarProcesar(
+    cuenta: string,
+    schemaName: string | null,
+    messageId: string,
+    numeroIntentos: number,
+  ): void {
+    const trabajo: Promise<void> = this.procesar(
+      cuenta,
+      schemaName,
+      messageId,
+      numeroIntentos,
+    ).finally(() => {
+      this.enVuelo.delete(trabajo);
+    });
+    this.enVuelo.add(trabajo);
+  }
+
   private async procesar(
     cuenta: string,
     schemaName: string | null,
     messageId: string,
+    numeroIntentos: number,
   ): Promise<void> {
     try {
+      if (numeroIntentos > 1) {
+        const ovs = await this.ingresos.buscarOvsPorNumeroCorreo(
+          schemaName,
+          cuenta,
+          messageId,
+        );
+        if (ovs[0]) {
+          await this.ingresos.marcarIngresado({
+            schemaName,
+            codigoCuenta: cuenta,
+            messageId,
+            idOrdenVenta: ovs[0].idOrdenVenta,
+            codigoOrdenVenta: ovs.map((ov) => ov.codigo).join(', '),
+          });
+          return;
+        }
+      }
       const correo = await this.n8n.obtener(messageId);
       const files = correo.adjuntos.slice(0, MAX_ADJUNTOS).map(aArchivo);
       const textoPedido = armarTexto(correo);
@@ -270,13 +266,17 @@ export class CorreoDescartadoService {
         codigoCuenta: cuenta,
         texto: textoPedido,
         files,
+        numeroCorreo: messageId,
       });
+      const codigos = ov.ordenes?.length
+        ? ov.ordenes.map((orden) => orden.codigo).join(', ')
+        : ov.codigo;
       await this.ingresos.marcarIngresado({
         schemaName,
         codigoCuenta: cuenta,
         messageId,
-        idOrdenVenta: ov.idOrdenVenta,
-        codigoOrdenVenta: ov.codigo,
+        idOrdenVenta: ov.ordenes?.[0]?.idOrdenVenta ?? ov.idOrdenVenta,
+        codigoOrdenVenta: codigos,
       });
     } catch (causa) {
       this.logger.warn(

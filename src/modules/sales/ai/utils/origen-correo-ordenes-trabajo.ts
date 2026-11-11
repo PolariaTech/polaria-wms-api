@@ -1,3 +1,4 @@
+import { completarAlmacenDelPedido } from './completar-almacen-del-pedido';
 import {
   baseGroupKeyOrigenCorreo,
   contiguousOtIdsForRenglones,
@@ -7,6 +8,7 @@ import {
  * Agrupa renglones de origen_correo en órdenes de trabajo (hijas) de una OV.
  *
  * Clave base = Numero pedido + Almacen (+ Numero almacen).
+ * REQ-291: completa almacén vacío desde la primera fila del mismo pedido.
  * REQ-238: además respeta bloques contiguos en el orden del documento.
  */
 
@@ -103,9 +105,10 @@ export function groupOrigenCorreoToOrdenesTrabajo(
 ): OrdenTrabajoHija[] {
   if (!renglones || renglones.length === 0) return [];
 
-  const otIds = contiguousOtIdsForRenglones(renglones);
+  const renglonesConAlmacen = completarAlmacenDelPedido(renglones);
+  const otIds = contiguousOtIdsForRenglones(renglonesConAlmacen);
   const buckets = new Map<string, OrigenCorreoRenglon[]>();
-  renglones.forEach((row, index) => {
+  renglonesConAlmacen.forEach((row, index) => {
     const key = otIds[index] ?? groupKeyOrigenCorreo(row);
     const list = buckets.get(key);
     if (list) list.push(row);

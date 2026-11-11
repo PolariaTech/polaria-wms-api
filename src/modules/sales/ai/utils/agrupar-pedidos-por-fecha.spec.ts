@@ -101,6 +101,28 @@ describe('agruparPedidosPorFechaEntrega (REQ-197)', () => {
     ]);
   });
 
+  it('no repite los renglones que dos documentos de la misma OC traen iguales (REQ-288)', () => {
+    const renglon = { Producto: 'Cebolla morada', Cantidad: 20, Unidad: 'KG' };
+    const cuerpo = pedido({
+      fechaEntrega: '2026-11-07',
+      ordenCompraHotel: 'OC-1',
+      origenCorreo: [renglon],
+    });
+    const pdf = pedido({
+      fechaEntrega: '2026-11-07',
+      ordenCompraHotel: 'OC-1',
+      origenCorreo: [renglon, { Producto: 'Pimiento rojo', Cantidad: 20 }],
+    });
+
+    const grupos = agruparPedidosPorFechaEntrega([cuerpo, pdf]);
+
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]?.origenCorreo.map((r) => r.Producto)).toEqual([
+      'Cebolla morada',
+      'Pimiento rojo',
+    ]);
+  });
+
   it('no parte un pedido que no trae fecha ni OC', () => {
     const uno = pedido({ origenCorreo: [{ Producto: 'a' }] });
     const dos = pedido({ origenCorreo: [{ Producto: 'b' }] });

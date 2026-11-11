@@ -3,6 +3,7 @@ import { convert as htmlToText } from "html-to-text";
 import { simpleParser } from "mailparser";
 import { extractText, getDocumentProxy } from "unpdf";
 import * as XLSX from "xlsx";
+import { leerLibroConHojasVisibles } from './utils/nombres-hojas-visibles';
 import mammoth from "mammoth";
 import {
   formatMailAddress,
@@ -55,11 +56,10 @@ async function extractFromPdf(buffer: Buffer): Promise<string> {
   return text.trim();
 }
 
-function extractFromExcel(buffer: Buffer): string {
-  const workbook = XLSX.read(buffer, { type: "buffer" });
+export function extractFromExcel(buffer: Buffer): string {
+  const workbook = leerLibroConHojasVisibles(buffer);
   return workbook.SheetNames.map((name) => {
-    const sheet = workbook.Sheets[name];
-    const csv = XLSX.utils.sheet_to_csv(sheet);
+    const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
     return `# Hoja: ${name}\n${csv}`;
   }).join("\n\n");
 }
