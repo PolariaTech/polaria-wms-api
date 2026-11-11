@@ -5,11 +5,25 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../core/database/prisma.service';
 import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
-import type { ModoCorreos } from '../dto/correos-query.dto';
 import type { EstadoIngresoCorreo } from '../dto/ingreso-correo-response.dto';
+import {
+  armarFiltroEntradas,
+  COLUMNAS_ENTRADA,
+  type CorreoEntradaFila,
+  type FiltroCorreosEntrada,
+  type ListaCorreosEntrada,
+} from './correo-entrada.consultas';
+import {
+  ERROR_INTENTO_VENCIDO,
+  MENSAJE_INGRESO_VENCIDO,
+  selloNumeroCorreo,
+  sqlCerrarUltimoIntento,
+  sqlIntentoAppendUpdate,
+  sqlIntentoInicialInsert,
+} from './correo-ingreso.consultas';
 
 /** Minutos tras los que un ingreso `procesando` se considera abandonado y se puede reintentar. */
-export const MINUTOS_INGRESO_ABANDONADO = 10;
+export const MINUTOS_INGRESO_ABANDONADO = 7;
 
 export interface CorreoIngresoFila {
   idCorreoIngreso: string;
@@ -24,101 +38,20 @@ export interface ReservaCorreo {
   /** `true` si esta llamada reservó el correo y debe procesarlo. */
   reservada: boolean;
   fila: CorreoIngresoFila;
+  /** Largo de `intentos` tras ganar la reserva; 1 = primer intento. */
+  numeroIntentos: number;
 }
 
-/** Una fila de `correo_pedido_entrada`, con los nombres del contrato `CorreoFilaDto`. */
-export interface CorreoEntradaFila {
-  recibidoEn: string | null;
-  de: string | null;
-  para: string | null;
-  asunto: string | null;
-  messageId: string;
-  hilo: string | null;
-  adjunto: string | null;
-  nuevoPedido: boolean | null;
-  motivo: string | null;
-  /** Qué hizo el workflow con el correo: recibido, ingresado, duplicado, error o no_es_pedido. */
-  resultado: string | null;
-  /** Qué tan seguro estaba el clasificador: alta, media o baja. */
-  confianza: string | null;
-  tipo: string | null;
-  /** OV en que se convirtió el correo; varias separadas por coma si salieron más de una. */
-  codigoOrdenVenta: string | null;
-  idRegistro: string;
-  registradoEn: string;
-  actualizadoEn: string;
+export interface OvPorNumeroCorreo {
+  idOrdenVenta: string;
+  codigo: string;
 }
 
-export interface FiltroCorreosEntrada {
-  modo: ModoCorreos;
-  pagina: number;
-  tamano: number;
-  desde?: string;
-  hasta?: string;
-  remitente?: string;
-  asunto?: string;
-}
-
-export interface ListaCorreosEntrada {
-  total: number;
-  filas: CorreoEntradaFila[];
-}
-
-/** Las fechas salen en ISO 8601 UTC, como las entregaba el Puente de n8n. */
-const iso = (columna: string) =>
-  `to_char(${columna} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
-
-const COLUMNAS_ENTRADA = `
-  ${iso('recibido_en')} AS "recibidoEn",
-  de AS "de",
-  para AS "para",
-  asunto AS "asunto",
-  message_id AS "messageId",
-  hilo AS "hilo",
-  adjunto AS "adjunto",
-  nuevo_pedido AS "nuevoPedido",
-  motivo AS "motivo",
-  resultado AS "resultado",
-  confianza AS "confianza",
-  tipo AS "tipo",
-  codigo_orden_venta AS "codigoOrdenVenta",
-  id_correo_entrada::text AS "idRegistro",
-  ${iso('created_at')} AS "registradoEn",
-  ${iso('updated_at')} AS "actualizadoEn"`;
-
-/** El texto del usuario se busca tal cual: `%`, `_` y `\` pierden su valor de comodín. */
-const contiene = (texto: string) =>
-  `%${texto.replace(/[\\%_]/g, (caracter) => `\\${caracter}`)}%`;
-
-/**
- * El WHERE de la lista de correos y sus parámetros (`$1` es siempre la cuenta). Cada valor
- * del usuario viaja como parámetro; nunca se mezcla en el texto del SQL.
- */
-function armarFiltroEntradas(
-  codigoCuenta: string,
-  filtro: FiltroCorreosEntrada,
-): { donde: string; params: unknown[] } {
-  const params: unknown[] = [codigoCuenta];
-  const condiciones = ['codigo_cuenta = $1'];
-  const agregar = (condicion: (marcador: string) => string, valor: unknown) => {
-    params.push(valor);
-    condiciones.push(condicion(`$${params.length}`));
-  };
-  if (filtro.modo === 'descartados') condiciones.push('nuevo_pedido = false');
-  if (filtro.desde) {
-    agregar((p) => `recibido_en >= ${p}::timestamptz`, filtro.desde);
-  }
-  if (filtro.hasta) {
-    agregar((p) => `recibido_en <= ${p}::timestamptz`, filtro.hasta);
-  }
-  if (filtro.remitente) {
-    agregar((p) => `de ILIKE ${p} ESCAPE '\\'`, contiene(filtro.remitente));
-  }
-  if (filtro.asunto) {
-    agregar((p) => `asunto ILIKE ${p} ESCAPE '\\'`, contiene(filtro.asunto));
-  }
-  return { donde: condiciones.join(' AND '), params };
-}
+export type {
+  CorreoEntradaFila,
+  FiltroCorreosEntrada,
+  ListaCorreosEntrada,
+} from './correo-entrada.consultas';
 
 const COLUMNAS = `
   id_correo_ingreso AS "idCorreoIngreso",
@@ -151,7 +84,7 @@ export class CorreoIngresoRepository {
 
   /**
    * Reserva el correo en estado `procesando`. Solo gana quien inserta la fila, o quien
-   * la recupera de un `error` o de un `procesando` abandonado (más de 10 minutos).
+   * la recupera de un `error` o de un `procesando` abandonado (más de 7 minutos).
    */
   async reservar(input: {
     schemaName: string | null | undefined;
@@ -161,23 +94,34 @@ export class CorreoIngresoRepository {
     ingresadoPor: string;
   }): Promise<ReservaCorreo> {
     const tabla = this.tabla(input.schemaName);
-    const ganadas = await this.prisma.$queryRawUnsafe<CorreoIngresoFila[]>(
+    const ganadas = await this.prisma.$queryRawUnsafe<
+      Array<CorreoIngresoFila & { numeroIntentos?: number | bigint }>
+    >(
       `INSERT INTO ${tabla} AS c
-         (codigo_cuenta, message_id, hilo, estado, origen, ingresado_por)
-       VALUES ($1, $2, $3, 'procesando', 'manual', $4)
+         (codigo_cuenta, message_id, hilo, estado, origen, ingresado_por, intentos)
+       VALUES ($1, $2, $3, 'procesando', 'manual', $4, ${sqlIntentoInicialInsert()})
        ON CONFLICT (codigo_cuenta, message_id) DO UPDATE
          SET estado = 'procesando', error = NULL,
-             ingresado_por = EXCLUDED.ingresado_por, updated_at = now()
+             ingresado_por = EXCLUDED.ingresado_por, updated_at = now(),
+             intentos = ${sqlIntentoAppendUpdate()}
          WHERE c.estado = 'error'
             OR (c.estado = 'procesando'
                 AND c.updated_at < now() - interval '${MINUTOS_INGRESO_ABANDONADO} minutes')
-       RETURNING ${COLUMNAS}`,
+       RETURNING ${COLUMNAS}, jsonb_array_length(intentos) AS "numeroIntentos"`,
       input.codigoCuenta,
       input.messageId,
       input.hilo,
       input.ingresadoPor,
     );
-    if (ganadas[0]) return { reservada: true, fila: ganadas[0] };
+    const ganada = ganadas[0];
+    if (ganada) {
+      const { numeroIntentos, ...fila } = ganada;
+      return {
+        reservada: true,
+        fila,
+        numeroIntentos: Number(numeroIntentos ?? 1),
+      };
+    }
 
     const existente = await this.buscar(
       input.schemaName,
@@ -187,7 +131,7 @@ export class CorreoIngresoRepository {
     if (!existente) {
       throw new Error('El correo no quedó reservado ni existe en el registro.');
     }
-    return { reservada: false, fila: existente };
+    return { reservada: false, fila: existente, numeroIntentos: 0 };
   }
 
   async marcarIngresado(input: {
@@ -200,7 +144,8 @@ export class CorreoIngresoRepository {
     await this.prisma.$executeRawUnsafe(
       `UPDATE ${this.tabla(input.schemaName)}
           SET estado = 'ingresado', id_orden_venta = $3::uuid,
-              codigo_orden_venta = $4, error = NULL, updated_at = now()
+              codigo_orden_venta = $4, error = NULL, updated_at = now(),
+              intentos = ${sqlCerrarUltimoIntento('ingresado', 'NULL')}
         WHERE codigo_cuenta = $1 AND message_id = $2`,
       input.codigoCuenta,
       input.messageId,
@@ -217,7 +162,8 @@ export class CorreoIngresoRepository {
   }): Promise<void> {
     await this.prisma.$executeRawUnsafe(
       `UPDATE ${this.tabla(input.schemaName)}
-          SET estado = 'error', error = $3, updated_at = now()
+          SET estado = 'error', error = $3, updated_at = now(),
+              intentos = ${sqlCerrarUltimoIntento('error', '$3')}
         WHERE codigo_cuenta = $1 AND message_id = $2`,
       input.codigoCuenta,
       input.messageId,
@@ -230,6 +176,7 @@ export class CorreoIngresoRepository {
     codigoCuenta: string,
     messageId: string,
   ): Promise<CorreoIngresoFila | null> {
+    await this.expirarVencidos(schemaName, codigoCuenta, [messageId]);
     const filas = await this.prisma.$queryRawUnsafe<CorreoIngresoFila[]>(
       `SELECT ${COLUMNAS} FROM ${this.tabla(schemaName)}
         WHERE codigo_cuenta = $1 AND message_id = $2`,
@@ -237,6 +184,51 @@ export class CorreoIngresoRepository {
       messageId,
     );
     return filas[0] ?? null;
+  }
+
+  /**
+   * Un `procesando` con más de 7 min se guarda como `error` al leer (sin barrido).
+   * Si `intentos` está vacío (filas anteriores a POL-417) no se hace jsonb_set.
+   */
+  async expirarVencidos(
+    schemaName: string | null | undefined,
+    codigoCuenta: string,
+    messageIds: string[],
+  ): Promise<void> {
+    if (messageIds.length === 0) return;
+    await this.prisma.$queryRawUnsafe(
+      `UPDATE ${this.tabla(schemaName)}
+          SET estado = 'error',
+              error = $3,
+              updated_at = now(),
+              intentos = ${sqlCerrarUltimoIntento('vencido', '$4')}
+        WHERE codigo_cuenta = $1
+          AND message_id = ANY($2::text[])
+          AND estado = 'procesando'
+          AND updated_at < now() - interval '${MINUTOS_INGRESO_ABANDONADO} minutes'`,
+      codigoCuenta,
+      messageIds,
+      MENSAJE_INGRESO_VENCIDO,
+      ERROR_INTENTO_VENCIDO,
+    );
+  }
+
+  /** OV ya selladas con el message_id; aislada para corregir nombres de columna. */
+  async buscarOvsPorNumeroCorreo(
+    schemaName: string | null | undefined,
+    codigoCuenta: string,
+    messageId: string,
+  ): Promise<OvPorNumeroCorreo[]> {
+    const schema = this.schemaLocator.assertSafeSchemaIdent(
+      schemaName ?? 'public',
+    );
+    return this.prisma.$queryRawUnsafe<OvPorNumeroCorreo[]>(
+      `SELECT id_orden_venta AS "idOrdenVenta", codigo
+         FROM "${schema}".orden_venta
+        WHERE codigo_cuenta = $1 AND origen_correo @> $2::jsonb`,
+      codigoCuenta,
+      selloNumeroCorreo(messageId),
+    );
   }
 
   /**
@@ -298,6 +290,7 @@ export class CorreoIngresoRepository {
     messageIds: string[],
   ): Promise<CorreoIngresoFila[]> {
     if (messageIds.length === 0) return [];
+    await this.expirarVencidos(schemaName, codigoCuenta, messageIds);
     return this.prisma.$queryRawUnsafe<CorreoIngresoFila[]>(
       `SELECT ${COLUMNAS} FROM ${this.tabla(schemaName)}
         WHERE codigo_cuenta = $1 AND message_id = ANY($2::text[])`,
