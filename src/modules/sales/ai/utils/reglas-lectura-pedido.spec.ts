@@ -28,8 +28,17 @@ describe('REGLAS_LECTURA_PEDIDO (REQ-288 / REQ-290)', () => {
     }
   });
 
-  it('REQ-299: codigoProductoCliente es solo el código del renglón, no un SKU del catálogo', () => {
-    expect(texto).toContain('codigoProductoCliente');
-    expect(texto).toContain('REQ-299');
+  it('REQ-299: codigoProductoCliente es solo el código escrito en ese renglón', () => {
+    const regla = REGLAS_LECTURA_PEDIDO.find((linea) =>
+      linea.startsWith('- Código del cliente (REQ-299)'),
+    );
+    expect(regla).toBeDefined();
+    expect(regla).toMatch(
+      /"codigoProductoCliente" es SOLO el código escrito en ESE renglón/,
+    );
+    expect(regla).toMatch(
+      /Nunca copies ahí un SKU del catálogo ni los SKU de las reglas/,
+    );
+    expect(regla).toMatch(/Si el renglón no trae código → null/);
   });
 });
