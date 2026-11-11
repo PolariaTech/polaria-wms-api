@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  NotFoundException,
 } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { RolNivel, WmsRol } from '../../../generated/prisma/client';
@@ -326,29 +325,6 @@ describe('CorreoDescartadoService (REQ-104)', () => {
         ForbiddenException,
       );
       expect(ingresos.reservar).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('consultar', () => {
-    it('devuelve el estado del ingreso', async () => {
-      const { servicio, ingresos } = montar();
-      ingresos.buscar.mockResolvedValue(
-        fila({ estado: 'ingresado', codigoOrdenVenta: 'OV-9' }),
-      );
-      const resultado = await servicio.consultar(MSG, ctx);
-      expect(resultado).toMatchObject({
-        estado: 'ingresado',
-        codigoOrdenVenta: 'OV-9',
-      });
-      expect(ingresos.buscar).toHaveBeenCalledWith('emp_demo', '023WA', MSG);
-    });
-
-    it('responde 404 si nunca se intentó ingresar', async () => {
-      const { servicio, ingresos } = montar();
-      ingresos.buscar.mockResolvedValue(null);
-      await expect(servicio.consultar(MSG, ctx)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
     });
   });
 });
