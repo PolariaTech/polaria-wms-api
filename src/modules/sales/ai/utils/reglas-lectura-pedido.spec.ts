@@ -27,4 +27,9 @@ describe('REGLAS_LECTURA_PEDIDO (REQ-288 / REQ-290)', () => {
       expect(regla.startsWith('- ')).toBe(true);
     }
   });
+
+  it('REQ-299: codigoProductoCliente es solo el código del renglón, no un SKU del catálogo', () => {
+    expect(texto).toContain('codigoProductoCliente');
+    expect(texto).toContain('REQ-299');
+  });
 });
