@@ -1,4 +1,5 @@
 import type { PedidoExtraido } from '../openai-pedido.client';
+import { quitarRenglonesRepetidosEntreDocumentos } from './dedupe-renglones';
 
 /**
  * Une lecturas de varios documentos (o de varios bloques de un documento): los campos de
@@ -72,5 +73,7 @@ export function agruparPedidosPorFechaEntrega(
     lista.push(pedido);
     grupos.set(clave, lista);
   }
-  return [...grupos.values()].map((grupo) => fusionarPedidos(grupo));
+  return [...grupos.values()].map((grupo) =>
+    fusionarPedidos(quitarRenglonesRepetidosEntreDocumentos(grupo).pedidos),
+  );
 }

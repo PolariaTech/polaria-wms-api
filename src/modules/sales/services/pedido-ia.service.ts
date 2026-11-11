@@ -46,6 +46,7 @@ import {
   fusionarPedidos,
 } from '../ai/utils/agrupar-pedidos-por-fecha';
 import { insertarOrdenIngestada } from '../ai/utils/insertar-orden-ingesta';
+import { descartarDocumentosRepetidos } from '../ai/utils/dedupe-documentos';
 import {
   groupOrigenCorreoToOrdenesTrabajo,
   type OrigenCorreoRenglon,
@@ -187,24 +188,15 @@ export function separarContextoYDocumentos(
     else textos.push(archivo);
   }
 
-  const sueltos = new Set(
-    textos
-      .filter(
-        (archivoTexto) => !archivoTexto.nombre.includes(SEPARADOR_ADJUNTO_EML),
-      )
-      .map((archivoTexto) => nombreBaseAdjunto(archivoTexto.nombre)),
-  );
-
-  const duplicados: string[] = [];
-  const documentos: DocumentoParaLeer[] = [];
-  for (const texto of textos) {
-    const incrustado = texto.nombre.includes(SEPARADOR_ADJUNTO_EML);
-    if (incrustado && sueltos.has(nombreBaseAdjunto(texto.nombre))) {
-      duplicados.push(texto.nombre);
-      continue;
-    }
-    documentos.push({ nombre: texto.nombre, archivos: [texto], esTexto: true });
-  }
+  const { unicos, duplicados } = descartarDocumentosRepetidos(textos, {
+    separadorEml: SEPARADOR_ADJUNTO_EML,
+    nombreBase: nombreBaseAdjunto,
+  });
+  const documentos: DocumentoParaLeer[] = unicos.map((texto) => ({
+    nombre: texto.nombre,
+    archivos: [texto],
+    esTexto: true,
+  }));
 
   if (imagenes.length > 0) {
     if (documentos.length > 0) {

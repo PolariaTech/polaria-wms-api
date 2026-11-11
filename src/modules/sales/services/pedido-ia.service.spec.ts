@@ -476,7 +476,7 @@ describe('PedidoIaService.leerArchivosParaCuenta — casos REQ-187', () => {
     modeloPerfecto();
     extractFilesMock.mockResolvedValue([
       archivoPdf(doc081!),
-      { ...archivoPdf(doc081!), nombre: 'COPIA_AGUACATES_4502987081.pdf' },
+      { ...archivoPdf(doc081!), nombre: 'COPIA_4502987081.pdf', contenido: `${textoPdf(doc081!)}\nReimpreso` },
     ]);
 
     const r = await crearServicio().leerArchivosParaCuenta({
