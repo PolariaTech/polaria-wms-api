@@ -56,10 +56,15 @@ export function cleanCorreoBodyForNotas(raw: string): string {
 
   const forwardMatch = FORWARD_HEADER_END.exec(text);
   if (forwardMatch?.index != null) {
-    text = text.slice(forwardMatch.index + forwardMatch[0].length).trim();
+    // REQ-258: lo escrito por quien reenvía va antes del forward y se conserva.
+    const notaDelVendedor = text.slice(0, forwardMatch.index).trim();
+    const reenviado = stripEmailHeadersBlock(
+      text.slice(forwardMatch.index + forwardMatch[0].length).trim(),
+    );
+    text = [notaDelVendedor, reenviado].filter(Boolean).join("\n\n");
+  } else {
+    text = stripEmailHeadersBlock(text);
   }
-
-  text = stripEmailHeadersBlock(text);
 
   for (const marker of LEGAL_CUT_MARKERS) {
     const match = marker.exec(text);
