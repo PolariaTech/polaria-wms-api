@@ -1,3 +1,5 @@
+import { completarAlmacenDelPedido } from './completar-almacen-del-pedido';
+
 /**
  * Agrupa renglones de origen_correo en órdenes de trabajo (hijas) de una OV.
  *
@@ -107,7 +109,7 @@ export function groupOrigenCorreoToOrdenesTrabajo(
   if (!renglones || renglones.length === 0) return [];
 
   const buckets = new Map<string, OrigenCorreoRenglon[]>();
-  for (const row of renglones) {
+  for (const row of completarAlmacenDelPedido(renglones)) {
     const key = groupKeyOrigenCorreo(row);
     const list = buckets.get(key);
     if (list) list.push(row);

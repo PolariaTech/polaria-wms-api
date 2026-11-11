@@ -23,9 +23,9 @@ import { sumarImportes } from '../ai/utils/checksum-total-documento';
 import {
   groupOrigenCorreoToOrdenesTrabajo,
   parseOrigenCorreoJson,
-  type OrigenCorreoRenglon,
 } from '../ai/utils/origen-correo-ordenes-trabajo';
 import { stampOrigenCorreoMeta } from '../ai/utils/stamp-origen-correo-meta';
+import { contar, diferenciaRenglones } from '../ai/utils/relectura-diferencias';
 import {
   interpretarInstruccionChat,
   interpretarInstruccionConReglas,
@@ -40,6 +40,14 @@ import type {
   PropuestaCorreccionCorreoResponseDto,
 } from '../dto/propuesta-correccion-correo.dto';
 import { PedidoIaService, type AdvertenciaLectura } from './pedido-ia.service';
+import {
+  documentosIgnorados,
+  filtrarArchivosIgnorados,
+} from './relectura-archivos';
+import {
+  reconciliarRelectura,
+  sumarCostos,
+} from './relectura-reconciliacion';
 
 const ESTADO_POR_CONFIRMAR = 'por_confirmar';
 
@@ -76,43 +84,6 @@ interface FilaOrdenVenta {
   estado: string;
   origenCorreo: unknown;
   origenArchivos: string | null;
-}
-
-function claveRenglon(renglon: OrigenCorreoRenglon): string {
-  const norm = (campo: string | number | null | undefined) =>
-    String(campo ?? '')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, ' ');
-  return [
-    norm(renglon['Numero pedido']),
-    norm(renglon.Almacen),
-    norm(renglon.Producto),
-    norm(renglon.Cantidad),
-  ].join('|');
-}
-
-function contar(
-  renglones: readonly OrigenCorreoRenglon[],
-): Map<string, number> {
-  const conteo = new Map<string, number>();
-  for (const renglon of renglones) {
-    const clave = claveRenglon(renglon);
-    conteo.set(clave, (conteo.get(clave) ?? 0) + 1);
-  }
-  return conteo;
-}
-
-/** Cuántos renglones de `conteoOrigen` no están en `conteoReferencia` (multiconjuntos). */
-function diferencia(
-  conteoOrigen: ReadonlyMap<string, number>,
-  conteoReferencia: ReadonlyMap<string, number>,
-): number {
-  let total = 0;
-  for (const [clave, cantidad] of conteoOrigen) {
-    total += Math.max(0, cantidad - (conteoReferencia.get(clave) ?? 0));
-  }
-  return total;
 }
 
 /**
@@ -174,13 +145,21 @@ export class OrdenCorreoRelecturaService {
       });
     }
 
+    // POL-414: «ignora el archivo X» se resuelve por nombre y sin IA, antes de leer.
+    const { aLeer: archivosALeer, ignorados } = filtrarArchivosIgnorados(
+      body.instruccion,
+      descarga.archivos,
+      advertencias,
+    );
+
     let lectura: Awaited<ReturnType<PedidoIaService['leerArchivosParaCuenta']>>;
     try {
       lectura = await this.pedidoIa.leerArchivosParaCuenta({
         codigoCuenta: orden.codigoCuenta,
         ctx,
         texto: '',
-        archivos: descarga.archivos,
+        archivos: archivosALeer,
+        ignorar: ignorados,
       });
     } catch (error) {
       if (error instanceof HttpException) throw error;
@@ -243,13 +222,23 @@ export class OrdenCorreoRelecturaService {
     const antesRenglones = parseOrigenCorreoJson(orden.origenCorreo);
     const primero = antesRenglones[0];
     // Conserva el sello del correo original (número y horario de ingestión).
-    const despuesRenglones = stampOrigenCorreoMeta(
-      lectura.pedido.origenCorreo,
+    const leidosRenglones = stampOrigenCorreoMeta(lectura.pedido.origenCorreo, {
+      numeroCorreo: primero?.['Numero correo'],
+      horario: primero?.Horario,
+    });
+    // POL-414: con una instrucción acotada, un paso de IA decide diferencia por diferencia.
+    const reconciliacion = await reconciliarRelectura(
       {
-        numeroCorreo: primero?.['Numero correo'],
-        horario: primero?.Horario,
+        instruccion: body.instruccion,
+        antes: antesRenglones,
+        leidos: leidosRenglones,
+        archivosIgnorados: ignorados,
+        documentos: lectura.documentos,
+        advertencias,
       },
+      this.logger,
     );
+    const despuesRenglones = reconciliacion.renglones;
 
     const otsAntes = groupOrigenCorreoToOrdenesTrabajo(antesRenglones);
     const otsDespues = groupOrigenCorreoToOrdenesTrabajo(despuesRenglones);
@@ -282,8 +271,8 @@ export class OrdenCorreoRelecturaService {
       renglonesDespues: despuesRenglones.length,
       importeAntes: sumarImportes(antesRenglones),
       importeDespues: sumarImportes(despuesRenglones),
-      tokensTotal: lectura.tokensTotal,
-      costoUSD: lectura.costoUSD,
+      tokensTotal: lectura.tokensTotal + reconciliacion.tokensTotal,
+      costoUSD: sumarCostos(lectura.costoUSD, reconciliacion.costoUSD),
       longitudInstruccion: body.instruccion?.length ?? 0,
     });
 
@@ -299,7 +288,10 @@ export class OrdenCorreoRelecturaService {
       requestId: body.requestId,
       propuestaId: randomUUID(),
       baseHash,
-      documentos: lectura.documentos.map((documento) => ({ ...documento })),
+      documentos: [
+        ...lectura.documentos.map((documento) => ({ ...documento })),
+        ...documentosIgnorados(ignorados),
+      ],
       ots: otsDespues.map((ot) => ({
         id: ot.id,
         etiqueta: ot.label,
@@ -319,10 +311,13 @@ export class OrdenCorreoRelecturaService {
       diff: {
         otNuevas: [...idsDespues].filter((id) => !idsAntes.has(id)),
         otEliminadas: [...idsAntes].filter((id) => !idsDespues.has(id)),
-        renglonesAgregados: diferencia(conteoDespues, conteoAntes),
-        renglonesQuitados: diferencia(conteoAntes, conteoDespues),
+        renglonesAgregados: diferenciaRenglones(conteoDespues, conteoAntes),
+        renglonesQuitados: diferenciaRenglones(conteoAntes, conteoDespues),
       },
       advertencias,
+      ...(reconciliacion.motivos.length > 0
+        ? { motivos: reconciliacion.motivos }
+        : {}),
       ...(expectativas ? { expectativas } : {}),
     };
   }
