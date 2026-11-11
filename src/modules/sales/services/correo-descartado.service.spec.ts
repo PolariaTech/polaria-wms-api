@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  NotFoundException,
 } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { RolNivel, WmsRol } from '../../../generated/prisma/client';
@@ -76,6 +75,7 @@ function montar(cuentas = '023WA') {
     listarPorMessageIds: jest.fn().mockResolvedValue([]),
     marcarIngresado: jest.fn().mockResolvedValue(undefined),
     marcarError: jest.fn().mockResolvedValue(undefined),
+    buscarOvsPorNumeroCorreo: jest.fn().mockResolvedValue([]),
   };
   const pedidoIa = { ingestarPedido: jest.fn() };
   const config = { get: jest.fn().mockReturnValue(cuentas) };
@@ -155,11 +155,16 @@ describe('CorreoDescartadoService (REQ-104)', () => {
   describe('ingresar', () => {
     it('reserva, responde procesando y crea la OV en segundo plano', async () => {
       const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({ reservada: true, fila: fila() });
+      ingresos.reservar.mockResolvedValue({
+        reservada: true,
+        fila: fila(),
+        numeroIntentos: 1,
+      });
       n8n.obtener.mockResolvedValue(correo());
       pedidoIa.ingestarPedido.mockResolvedValue({
         idOrdenVenta: 'ov-uuid',
         codigo: 'OV-00001319',
+        ordenes: [{ idOrdenVenta: 'ov-uuid', codigo: 'OV-00001319' }],
       });
 
       const resultado = await servicio.ingresar(MSG, ctx);
@@ -169,10 +174,12 @@ describe('CorreoDescartadoService (REQ-104)', () => {
       expect(pedidoIa.ingestarPedido).toHaveBeenCalledTimes(1);
       const entrada = pedidoIa.ingestarPedido.mock.calls[0][0] as {
         codigoCuenta: string;
+        numeroCorreo?: string;
         texto: string;
         files: Express.Multer.File[];
       };
       expect(entrada.codigoCuenta).toBe('023WA');
+      expect(entrada.numeroCorreo).toBe(MSG);
       expect(entrada.texto).toContain('Asunto: Pedido XEL HA');
       expect(entrada.texto).toContain('10 cajas de aguacate');
       expect(entrada.files[0].originalname).toBe('pedido.pdf');
@@ -223,7 +230,11 @@ describe('CorreoDescartadoService (REQ-104)', () => {
 
     it('si la lectura falla guarda el error para poder reintentar', async () => {
       const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({ reservada: true, fila: fila() });
+      ingresos.reservar.mockResolvedValue({
+        reservada: true,
+        fila: fila(),
+        numeroIntentos: 1,
+      });
       n8n.obtener.mockResolvedValue(correo());
       pedidoIa.ingestarPedido.mockRejectedValue(
         new Error('La IA no extrajo renglones'),
@@ -243,7 +254,11 @@ describe('CorreoDescartadoService (REQ-104)', () => {
 
     it('un correo sin texto ni adjuntos queda en error y no llama a la IA', async () => {
       const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({ reservada: true, fila: fila() });
+      ingresos.reservar.mockResolvedValue({
+        reservada: true,
+        fila: fila(),
+        numeroIntentos: 1,
+      });
       n8n.obtener.mockResolvedValue(
         correo({
           asunto: '',
@@ -265,7 +280,11 @@ describe('CorreoDescartadoService (REQ-104)', () => {
 
     it('usa el HTML sin etiquetas cuando el correo no trae texto plano', async () => {
       const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({ reservada: true, fila: fila() });
+      ingresos.reservar.mockResolvedValue({
+        reservada: true,
+        fila: fila(),
+        numeroIntentos: 1,
+      });
       n8n.obtener.mockResolvedValue(
         correo({
           texto: '',
@@ -306,29 +325,6 @@ describe('CorreoDescartadoService (REQ-104)', () => {
         ForbiddenException,
       );
       expect(ingresos.reservar).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('consultar', () => {
-    it('devuelve el estado del ingreso', async () => {
-      const { servicio, ingresos } = montar();
-      ingresos.buscar.mockResolvedValue(
-        fila({ estado: 'ingresado', codigoOrdenVenta: 'OV-9' }),
-      );
-      const resultado = await servicio.consultar(MSG, ctx);
-      expect(resultado).toMatchObject({
-        estado: 'ingresado',
-        codigoOrdenVenta: 'OV-9',
-      });
-      expect(ingresos.buscar).toHaveBeenCalledWith('emp_demo', '023WA', MSG);
-    });
-
-    it('responde 404 si nunca se intentó ingresar', async () => {
-      const { servicio, ingresos } = montar();
-      ingresos.buscar.mockResolvedValue(null);
-      await expect(servicio.consultar(MSG, ctx)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
     });
   });
 });

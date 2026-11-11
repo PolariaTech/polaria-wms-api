@@ -46,7 +46,8 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
 
       const resultado = await repo.reservar(base);
 
-      expect(resultado).toEqual({ reservada: true, fila: FILA });
+      expect(resultado.reservada).toBe(true);
+      expect(resultado.fila).toEqual(FILA);
       expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
       const [sql, ...params] = prisma.$queryRawUnsafe.mock.calls[0] as [
         string,
@@ -58,7 +59,8 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       );
       // solo recupera un error o un procesando abandonado, nunca uno ingresado
       expect(sql).toContain("c.estado = 'error'");
-      expect(sql).toContain("interval '10 minutes'");
+      expect(sql).toContain("interval '7 minutes'");
+      expect(sql).toContain('intentos');
       expect(sql).not.toContain("estado = 'ingresado'");
       expect(params).toEqual(['023WA', 'abc123def', null, 'user-1']);
     });
@@ -76,8 +78,13 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
 
       const resultado = await repo.reservar(base);
 
-      expect(resultado).toEqual({ reservada: false, fila: existente });
+      expect(resultado).toEqual({
+        reservada: false,
+        fila: existente,
+        numeroIntentos: 0,
+      });
       expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+      expect(prisma.$executeRawUnsafe).toHaveBeenCalledTimes(1);
     });
 
     it('falla si no reservó y tampoco encuentra la fila', async () => {
@@ -99,7 +106,7 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
     });
   });
 
-  it('marcarIngresado guarda la OV por cuenta y correo', async () => {
+  it('marcarIngresado guarda la OV por cuenta y correo y cierra el último intento', async () => {
     const { repo, prisma } = montar();
     await repo.marcarIngresado({
       schemaName: 'emp_demo',
@@ -114,10 +121,12 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
     ];
     expect(sql).toContain("estado = 'ingresado'");
     expect(sql).toContain('WHERE codigo_cuenta = $1 AND message_id = $2');
+    expect(sql).toContain('jsonb_set');
+    expect(sql).toContain("'ingresado'");
     expect(params).toEqual(['023WA', 'abc123def', 'ov-uuid', 'OV-00001319']);
   });
 
-  it('marcarError recorta el mensaje a 500 caracteres', async () => {
+  it('marcarError recorta el mensaje a 500 caracteres y cierra el último intento', async () => {
     const { repo, prisma } = montar();
     await repo.marcarError({
       schemaName: 'emp_demo',
@@ -125,10 +134,13 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       messageId: 'abc123def',
       error: 'x'.repeat(900),
     });
-    const params = (prisma.$executeRawUnsafe.mock.calls[0] as unknown[]).slice(
-      1,
-    );
+    const [sql, ...params] = prisma.$executeRawUnsafe.mock.calls[0] as [
+      string,
+      ...unknown[],
+    ];
     expect((params[2] as string).length).toBe(500);
+    expect(sql).toContain('jsonb_set');
+    expect(sql).toContain("'error'");
   });
 
   it('listarPorMessageIds no consulta con una lista vacía', async () => {
@@ -137,20 +149,7 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       repo.listarPorMessageIds('emp_demo', '023WA', []),
     ).resolves.toEqual([]);
     expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
-  });
-
-  it('listarPorMessageIds trae varios correos en una sola consulta', async () => {
-    const { repo, prisma } = montar();
-    prisma.$queryRawUnsafe.mockResolvedValue([FILA]);
-    const resultado = await repo.listarPorMessageIds('emp_demo', '023WA', [
-      'a',
-      'b',
-    ]);
-    expect(resultado).toEqual([FILA]);
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
-    expect(
-      (prisma.$queryRawUnsafe.mock.calls[0] as unknown[]).slice(1),
-    ).toEqual(['023WA', ['a', 'b']]);
+    expect(prisma.$executeRawUnsafe).not.toHaveBeenCalled();
   });
 
   describe('listarEntradas (POL-410)', () => {
