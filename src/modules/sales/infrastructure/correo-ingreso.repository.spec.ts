@@ -74,7 +74,6 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       };
       prisma.$queryRawUnsafe
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([existente]);
 
       const resultado = await repo.reservar(base);
@@ -84,7 +83,8 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
         fila: existente,
         numeroIntentos: 0,
       });
-      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(3);
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+      expect(prisma.$executeRawUnsafe).toHaveBeenCalledTimes(1);
     });
 
     it('falla si no reservó y tampoco encuentra la fila', async () => {
@@ -149,6 +149,7 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       repo.listarPorMessageIds('emp_demo', '023WA', []),
     ).resolves.toEqual([]);
     expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(prisma.$executeRawUnsafe).not.toHaveBeenCalled();
   });
 
   it('listarPorMessageIds vence los procesando viejos y trae varios correos en una consulta', async () => {
@@ -158,23 +159,23 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       estado: 'error' as const,
       error: 'El ingreso no terminó. Toca Reintentar.',
     };
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([vencido]);
+    prisma.$queryRawUnsafe.mockResolvedValueOnce([vencido]);
     const resultado = await repo.listarPorMessageIds('emp_demo', '023WA', [
       'a',
       'b',
     ]);
     expect(resultado).toEqual([vencido]);
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
-    const sqlExpirar = prisma.$queryRawUnsafe.mock.calls[0][0] as string;
+    expect(prisma.$executeRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    const sqlExpirar = prisma.$executeRawUnsafe.mock.calls[0][0] as string;
     expect(sqlExpirar).toMatch(/UPDATE .*correo_pedido_ingreso/s);
     expect(sqlExpirar).toContain("estado = 'error'");
     expect(sqlExpirar).toContain("interval '7 minutes'");
     expect(sqlExpirar).toContain("estado = 'procesando'");
     expect(sqlExpirar).toContain('codigo_cuenta = $1');
+    expect(sqlExpirar).toContain('$4::text');
     expect(
-      (prisma.$queryRawUnsafe.mock.calls[0] as unknown[]).slice(1),
+      (prisma.$executeRawUnsafe.mock.calls[0] as unknown[]).slice(1),
     ).toEqual([
       '023WA',
       ['a', 'b'],
@@ -182,7 +183,7 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       'El ingreso no terminó',
     ]);
     expect(
-      (prisma.$queryRawUnsafe.mock.calls[1] as unknown[]).slice(1),
+      (prisma.$queryRawUnsafe.mock.calls[0] as unknown[]).slice(1),
     ).toEqual(['023WA', ['a', 'b']]);
   });
 
@@ -193,24 +194,21 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
       estado: 'error' as const,
       error: 'El ingreso no terminó. Toca Reintentar.',
     };
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([vencido]);
+    prisma.$queryRawUnsafe.mockResolvedValueOnce([vencido]);
 
     const resultado = await repo.buscar('emp_demo', '023WA', 'abc123def');
 
     expect(resultado).toEqual(vencido);
-    const sqlExpirar = prisma.$queryRawUnsafe.mock.calls[0][0] as string;
+    const sqlExpirar = prisma.$executeRawUnsafe.mock.calls[0][0] as string;
     expect(sqlExpirar).toContain("interval '7 minutes'");
     expect(sqlExpirar).toContain("'vencido'");
     expect(sqlExpirar).toContain('jsonb_set');
+    expect(sqlExpirar).toContain('$4::text');
   });
 
   it('un procesando de menos de 7 min se sigue leyendo como procesando', async () => {
     const { repo, prisma } = montar();
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([FILA]);
+    prisma.$queryRawUnsafe.mockResolvedValueOnce([FILA]);
 
     const resultado = await repo.listarPorMessageIds('emp_demo', '023WA', [
       'abc123def',
@@ -218,7 +216,7 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
 
     expect(resultado[0].estado).toBe('procesando');
     expect(resultado[0].error).toBeNull();
-    const sqlExpirar = prisma.$queryRawUnsafe.mock.calls[0][0] as string;
+    const sqlExpirar = prisma.$executeRawUnsafe.mock.calls[0][0] as string;
     expect(sqlExpirar).toContain("updated_at < now() - interval '7 minutes'");
   });
 
@@ -248,6 +246,95 @@ describe('CorreoIngresoRepository (REQ-104)', () => {
     expect(sql).toContain('origen_correo @>');
     expect(params[0]).toBe('023WA');
     expect(params[1]).toEqual([{ 'Numero correo': 'abc123def' }]);
+  });
+
+  /**
+   * $n dentro de jsonb_build_object sin ::tipo, y sin otra aparición fuera
+   * (Postgres no infiere el tipo: 42P18).
+   */
+  function parametrosJsonbSinTipo(sql: string): string[] {
+    const rangos: Array<[number, number]> = [];
+    let pos = 0;
+    while (pos < sql.length) {
+      const inicio = sql.indexOf('jsonb_build_object', pos);
+      if (inicio < 0) break;
+      const abre = sql.indexOf('(', inicio);
+      if (abre < 0) break;
+      let profundidad = 0;
+      let fin = abre;
+      for (let i = abre; i < sql.length; i += 1) {
+        if (sql[i] === '(') profundidad += 1;
+        else if (sql[i] === ')') {
+          profundidad -= 1;
+          if (profundidad === 0) {
+            fin = i;
+            break;
+          }
+        }
+      }
+      rangos.push([abre, fin]);
+      pos = fin + 1;
+    }
+    const enJsonb = (indice: number) =>
+      rangos.some(([desde, hasta]) => indice >= desde && indice <= hasta);
+    const porNumero = new Map<
+      string,
+      { fuera: boolean; dentroSinCast: boolean }
+    >();
+    for (const hallazgo of sql.matchAll(/\$(\d+)(::[A-Za-z_]\w*)?/g)) {
+      const numero = hallazgo[1];
+      const indice = hallazgo.index ?? 0;
+      const actual = porNumero.get(numero) ?? {
+        fuera: false,
+        dentroSinCast: false,
+      };
+      if (enJsonb(indice)) {
+        if (!hallazgo[2]) actual.dentroSinCast = true;
+      } else {
+        actual.fuera = true;
+      }
+      porNumero.set(numero, actual);
+    }
+    return [...porNumero.entries()]
+      .filter(([, uso]) => uso.dentroSinCast && !uso.fuera)
+      .map(([numero]) => `$${numero}`);
+  }
+
+  it('expirarVencidos tipa $4 como text dentro de jsonb_build_object', async () => {
+    const { repo, prisma } = montar();
+    prisma.$queryRawUnsafe.mockResolvedValue([]);
+    await repo.listarPorMessageIds('emp_demo', '023WA', ['abc123def']);
+    const sql = prisma.$executeRawUnsafe.mock.calls[0][0] as string;
+    expect(sql).toContain('$4::text');
+    expect(parametrosJsonbSinTipo(sql)).toEqual([]);
+  });
+
+  it('ningún SQL con jsonb_build_object deja un $n sin tipo ni aparición previa', async () => {
+    const { repo, prisma } = montar();
+    prisma.$queryRawUnsafe.mockResolvedValue([FILA]);
+    await repo.listarPorMessageIds('emp_demo', '023WA', ['abc123def']);
+    await repo.marcarError({
+      schemaName: 'emp_demo',
+      codigoCuenta: '023WA',
+      messageId: 'abc123def',
+      error: 'fallo',
+    });
+    await repo.marcarIngresado({
+      schemaName: 'emp_demo',
+      codigoCuenta: '023WA',
+      messageId: 'abc123def',
+      idOrdenVenta: 'ov-uuid',
+      codigoOrdenVenta: 'OV-1',
+    });
+    const sqls = [
+      prisma.$executeRawUnsafe.mock.calls[0][0] as string,
+      prisma.$executeRawUnsafe.mock.calls[1][0] as string,
+      prisma.$executeRawUnsafe.mock.calls[2][0] as string,
+    ];
+    for (const sql of sqls) {
+      expect(sql).toContain('jsonb_build_object');
+      expect(parametrosJsonbSinTipo(sql)).toEqual([]);
+    }
   });
 
   describe('listarEntradas (POL-410)', () => {

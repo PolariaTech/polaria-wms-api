@@ -196,12 +196,12 @@ export class CorreoIngresoRepository {
     messageIds: string[],
   ): Promise<void> {
     if (messageIds.length === 0) return;
-    await this.prisma.$queryRawUnsafe(
+    await this.prisma.$executeRawUnsafe(
       `UPDATE ${this.tabla(schemaName)}
           SET estado = 'error',
               error = $3,
               updated_at = now(),
-              intentos = ${sqlCerrarUltimoIntento('vencido', '$4')}
+              intentos = ${sqlCerrarUltimoIntento('vencido', '$4::text')}
         WHERE codigo_cuenta = $1
           AND message_id = ANY($2::text[])
           AND estado = 'procesando'

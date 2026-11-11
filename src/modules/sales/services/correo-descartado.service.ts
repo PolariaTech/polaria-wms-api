@@ -132,10 +132,12 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
   async beforeApplicationShutdown(): Promise<void> {
     if (this.enVuelo.size === 0) return;
     const espera = Promise.allSettled([...this.enVuelo]).then(() => undefined);
+    let temporizador: ReturnType<typeof setTimeout> | undefined;
     const tope = new Promise<void>((resolver) => {
-      setTimeout(resolver, TOPE_APAGADO_MS);
+      temporizador = setTimeout(resolver, TOPE_APAGADO_MS);
     });
     await Promise.race([espera, tope]);
+    if (temporizador) clearTimeout(temporizador);
   }
 
   async consultar(
