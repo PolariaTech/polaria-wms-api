@@ -52,7 +52,11 @@ export interface PedidoExtraido {
    * Renglones crudos estilo origen_correo (para agrupar hijas / persistir jsonb).
    * Se arma en el servidor a partir de las líneas extraídas.
    */
-  origenCorreo: import("./utils/origen-correo-ordenes-trabajo").OrigenCorreoRenglon[];
+  origenCorreo: Array<
+    import("./utils/origen-correo-ordenes-trabajo").OrigenCorreoRenglon & {
+      Especificacion?: string;
+    }
+  >;
   advertencia: string | null;
   archivosNoLegibles: string[];
   /**

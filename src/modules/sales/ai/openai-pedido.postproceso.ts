@@ -8,6 +8,7 @@ import { enrichAlmacenConCodigoDesdeTexto, enrichLineasAlmacenConCodigoDesdeText
 import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 import { sanitizeTelefonoContacto } from "./utils/sanitize-telefono-contacto";
 import { extractCorreoContactoDesdeTexto } from "./utils/correo-chrome";
+import { armarOrigenCorreoDesdeLineas } from "./utils/origen-correo-renglones";
 import type {
   LineaExtraida,
   PedidoExtraido,
@@ -150,40 +151,21 @@ export function postprocesarPedido(params: {
   const ventanaDesdeCabecera = horarioDesde || "";
   const ventanaHastaCabecera = horarioHasta || "";
   const notasCabecera = parsed.observaciones?.trim() || "";
-  const origenCorreo = lineas.map((l, index) => ({
+  const origenCorreo = armarOrigenCorreoDesdeLineas(lineas, {
     // ISO primero: al reabrir OV, parseFechaOrigen no debe romper MM/DD BirchStreet.
-    Fecha: fechaEntrega || fechaLabel || "",
-    Unidad: l.unidad === "KGM" ? "KGS" : l.unidad || "",
-    Almacen: l.almacen || parsed.centroConsumo || "",
-    Horario: "",
-    Cantidad: l.cantidad ?? 0,
-    Producto: l.textoOriginal || l.productoCatalogo || "",
-    Precio:
-      l.precioUnitario != null &&
-      Number.isFinite(l.precioUnitario) &&
-      l.precioUnitario > 0
-        ? l.precioUnitario
-        : "",
-    "Numero correo": "",
-    "Numero pedido": l.numeroPedido || ordenCompraHotelNormalizado || "",
-    "Nombre cliente": nombreClienteCabecera,
-    "Numero almacen": l.numeroAlmacen || "",
-    "Codigo producto": l.codigoProductoCliente || "",
-    "Referencia pedido": l.referenciaPedido || "",
-    "Responsable externo": l.responsableExterno || contactoCabecera || "",
-    "Responsable interno": "",
-    "Referencia del cliente": "",
-    "Ventana desde": ventanaDesdeCabecera,
-    "Ventana hasta": ventanaHastaCabecera,
-    Destino: direccionCabecera,
-    "Direccion entrega": direccionCabecera,
-    Anden: andenCabecera,
-    "Telefono contacto": telefonoCabecera,
-    "Correo contacto": correoCabecera,
-    Prioridad: "",
-    "Notas generales": notasCabecera,
-    _lineaIndex: index,
-  }));
+    fecha: fechaEntrega || fechaLabel || "",
+    centroConsumo: parsed.centroConsumo || "",
+    ordenCompra: ordenCompraHotelNormalizado || "",
+    nombreCliente: nombreClienteCabecera,
+    contacto: contactoCabecera,
+    ventanaDesde: ventanaDesdeCabecera,
+    ventanaHasta: ventanaHastaCabecera,
+    direccion: direccionCabecera,
+    anden: andenCabecera,
+    telefono: telefonoCabecera,
+    correo: correoCabecera,
+    notas: notasCabecera,
+  });
 
   const nombreCliente = parsed.nombreCliente?.trim() || null;
   const centroDesdeLineas =

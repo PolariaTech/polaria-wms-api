@@ -1,3 +1,9 @@
+import {
+  correoDelBloqueEnviadoPor,
+  esCorreoProveedor,
+  quitarBloqueProveedor,
+} from './correo-contacto-comprador';
+
 /**
  * Cabeceras de correo (De / Para / Asunto) para origen_texto.
  */
@@ -112,7 +118,10 @@ export function isCorreoRemitenteGenerico(
 ): boolean {
   const value = (email ?? '').trim();
   if (!value) return false;
-  return CORREO_REMITENTE_GENERICO_RE.some((re) => re.test(value));
+  return (
+    CORREO_REMITENTE_GENERICO_RE.some((re) => re.test(value)) ||
+    esCorreoProveedor(value)
+  );
 }
 
 export function extractEmailAddressFromHeaderValue(
@@ -143,7 +152,14 @@ export function extractCorreoContactoDesdeTexto(
     (chrome.to?.match(EMAIL_RE) ?? []).map((e) => e.toLowerCase()),
   );
 
+  // REQ-310: el «Email:» del bloque «Supplier:» es del proveedor; el del comprador va en «Sent From:».
+  const textoComprador = quitarBloqueProveedor(text);
+
   const pickBodyEmail = (): string | null => {
+    const delComprador = correoDelBloqueEnviadoPor(text);
+    if (delComprador && !toEmails.has(delComprador.toLowerCase())) {
+      return delComprador;
+    }
     const mailto = text.match(/mailto:([^\s"'<>]+)/i);
     if (mailto?.[1]) {
       try {
@@ -164,14 +180,14 @@ export function extractCorreoContactoDesdeTexto(
       }
     }
 
-    const labeled = text.match(
+    const labeled = textoComprador.match(
       /(?:e-?mail|correo(?:\s+electr[oó]nico)?|contacto)\s*[:=]\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
     );
     if (labeled?.[1] && !isCorreoRemitenteGenerico(labeled[1])) {
       return labeled[1];
     }
 
-    const all = text.match(EMAIL_RE) ?? [];
+    const all = textoComprador.match(EMAIL_RE) ?? [];
     for (const email of all) {
       const lower = email.toLowerCase();
       if (toEmails.has(lower)) continue;
@@ -185,5 +201,5 @@ export function extractCorreoContactoDesdeTexto(
   if (fromEmail && !fromEsGenerico) return fromEmail;
   const fromBody = pickBodyEmail();
   if (fromBody) return fromBody;
-  return fromEmail;
+  return fromEmail && !esCorreoProveedor(fromEmail) ? fromEmail : null;
 }

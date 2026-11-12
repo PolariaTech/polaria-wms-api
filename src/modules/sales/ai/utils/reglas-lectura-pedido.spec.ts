@@ -28,6 +28,27 @@ describe('REGLAS_LECTURA_PEDIDO (REQ-288 / REQ-290)', () => {
     }
   });
 
+  it('REQ-309: textoOriginal es la descripción completa, no el nombre corto de la columna de código', () => {
+    const regla = REGLAS_LECTURA_PEDIDO.find((linea) =>
+      linea.startsWith('- Código y descripción (REQ-309)'),
+    );
+    expect(regla).toBeDefined();
+    expect(regla).toMatch(/"textoOriginal" es la descripción COMPLETA del renglón/);
+    expect(regla).toMatch(/nunca solo el nombre corto de la columna de código/);
+    expect(regla).toMatch(/va en "codigoProductoCliente"/);
+  });
+
+  it('REQ-287: lo que no es nombre del producto va completo en especificacion', () => {
+    const regla = REGLAS_LECTURA_PEDIDO.find((linea) =>
+      linea.startsWith('- Especificación completa (REQ-287)'),
+    );
+    expect(regla).toBeDefined();
+    for (const palabra of ['sin penacho', 'limpio', 'sin cáscara', 'en bote', 'fresco']) {
+      expect(regla).toContain(palabra);
+    }
+    expect(regla).toMatch(/aunque ya esté dentro de "textoOriginal"/);
+  });
+
   it('REQ-299: codigoProductoCliente es solo el código escrito en ese renglón', () => {
     const regla = REGLAS_LECTURA_PEDIDO.find((linea) =>
       linea.startsWith('- Código del cliente (REQ-299)'),
