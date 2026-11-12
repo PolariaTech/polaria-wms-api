@@ -28,7 +28,7 @@ export function esCorreoProveedor(email: string | null | undefined): boolean {
 function finDeBloque(lineas: readonly string[], inicio: number): number {
   const tope = Math.min(lineas.length, inicio + 1 + MAX_LINEAS_BLOQUE);
   for (let i = inicio + 1; i < tope; i += 1) {
-    if (ENCABEZADO_BLOQUE_RE.test(lineas[i]!)) return i;
+    if (ENCABEZADO_BLOQUE_RE.test(lineas[i])) return i;
   }
   return tope;
 }
@@ -39,11 +39,11 @@ export function quitarBloqueProveedor(texto: string): string {
   const salida: string[] = [];
   let i = 0;
   while (i < lineas.length) {
-    if (INICIO_PROVEEDOR_RE.test(lineas[i]!)) {
+    if (INICIO_PROVEEDOR_RE.test(lineas[i])) {
       i = finDeBloque(lineas, i);
       continue;
     }
-    salida.push(lineas[i]!);
+    salida.push(lineas[i]);
     i += 1;
   }
   return salida.join('\n');
@@ -53,7 +53,7 @@ export function quitarBloqueProveedor(texto: string): string {
 export function correoDelBloqueEnviadoPor(texto: string): string | null {
   const lineas = texto.split('\n');
   for (let i = 0; i < lineas.length; i += 1) {
-    if (!INICIO_ENVIADO_POR_RE.test(lineas[i]!)) continue;
+    if (!INICIO_ENVIADO_POR_RE.test(lineas[i])) continue;
     const fin = finDeBloque(lineas, i);
     const bloque = lineas.slice(i, fin).join('\n');
     const email = (bloque.match(EMAIL_RE) ?? []).find(

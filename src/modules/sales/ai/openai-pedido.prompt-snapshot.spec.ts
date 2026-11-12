@@ -154,7 +154,7 @@ describe('openai-pedido prompt snapshot (fase 0)', () => {
     const peticion = peticionEnviada();
     const sistema = peticion.messages.find((m) => m.role === 'system');
     const usuario = peticion.messages.find((m) => m.role === 'user');
-    compararSnap('extraer.system.txt', String(sistema?.content ?? ''));
+    compararSnap('extraer.system.txt', textoUsuario(sistema?.content));
     compararSnap('pdf.user.txt', textoUsuario(usuario?.content));
     compararSnap(
       'extraer.meta.json',
@@ -181,7 +181,7 @@ describe('openai-pedido prompt snapshot (fase 0)', () => {
     const peticion = peticionEnviada();
     const sistema = peticion.messages.find((m) => m.role === 'system');
     const usuario = peticion.messages.find((m) => m.role === 'user');
-    compararSnap('extraer.system.txt', String(sistema?.content ?? ''));
+    compararSnap('extraer.system.txt', textoUsuario(sistema?.content));
     compararSnap('correo.user.txt', textoUsuario(usuario?.content));
     compararSnap(
       'extraer.meta.json',
@@ -229,7 +229,7 @@ describe('openai-pedido prompt snapshot (fase 0)', () => {
     const peticion = peticionEnviada();
     const sistema = peticion.messages.find((m) => m.role === 'system');
     const usuario = peticion.messages.find((m) => m.role === 'user');
-    compararSnap('chat.system.txt', String(sistema?.content ?? ''));
+    compararSnap('chat.system.txt', textoUsuario(sistema?.content));
     compararSnap('chat.user.txt', textoUsuario(usuario?.content));
     compararSnap(
       'chat.meta.json',
