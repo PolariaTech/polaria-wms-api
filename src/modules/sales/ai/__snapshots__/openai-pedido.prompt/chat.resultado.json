@@ -1,0 +1,14 @@
+{
+  "intencion": "reorganizar",
+  "motivo": "El usuario pide reorganizar las OT existentes.",
+  "totalOt": 3,
+  "importeTotal": null,
+  "uso": {
+    "tokensEntrada": 80,
+    "tokensEntradaCacheados": 0,
+    "tokensEntradaCacheEscritura": 0,
+    "tokensSalida": 20,
+    "tokensTotal": 100,
+    "costoUSD": null
+  }
+}

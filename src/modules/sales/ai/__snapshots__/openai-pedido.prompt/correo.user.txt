@@ -1,0 +1,12 @@
+Mensaje del pedido (tal cual lo pegó el vendedor):
+"""
+De: <compras@ejemplo.com>
+Para: <ventas@ejemplo.com>
+Asunto: Orden de compra CUNQR0000001
+
+PO NUMBER : CUNQR0000001 Status: Fax/email/csv accepted
+Hotel Ejemplo Cancún
+Delivery date: 11/20/2026
+Email: compras@ejemplo.com
+Item: Tomate saladet bola por kilo 10 kg
+"""
