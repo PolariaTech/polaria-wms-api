@@ -14,6 +14,7 @@
 - `src/modules/sales/ai/utils/reglas-lectura-pedido.spec.ts`
 - `src/modules/sales/dto/pedido-ia-response.dto.ts`
 - `src/modules/sales/ai/utils/correo-chrome.ts` — autorizada por el usuario el 2026-11-12
+- `src/modules/sales/ai/utils/correo-chrome.spec.ts` — autorizada por el usuario el 2026-11-12
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
