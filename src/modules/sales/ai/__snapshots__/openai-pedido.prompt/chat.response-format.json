@@ -1,0 +1,41 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "interpretacion_chat_ot",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intencion",
+        "motivo",
+        "totalOt",
+        "importeTotal"
+      ],
+      "properties": {
+        "intencion": {
+          "type": "string",
+          "enum": [
+            "reorganizar",
+            "releer_documentos"
+          ]
+        },
+        "motivo": {
+          "type": "string"
+        },
+        "totalOt": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "importeTotal": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

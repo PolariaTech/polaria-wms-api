@@ -1,0 +1,1 @@
+{"instruccion":"Reorganiza en 3 OT el pedido del Hotel Ejemplo","estado":{"otActuales":2,"renglonesActuales":8,"importeActual":1500,"pedidosDistintos":1,"tieneArchivosOriginales":true}}

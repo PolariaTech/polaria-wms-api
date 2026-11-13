@@ -1,0 +1,15 @@
+Mensaje del pedido (tal cual lo pegó el vendedor):
+"""
+(sin texto)
+"""
+
+Contenido extraído de archivos adjuntos:
+--- Pedido.pdf ---
+COTIZACIÓN / PEDIDO
+Cliente: Hotel Ejemplo Cancún
+Dirección: Calle Falsa 123, Cancún
+Entrega: 15 de noviembre de 2026
+Hora de entrega 8:00 am
+PO NUMBER: OC-EJEMPLO-001
+Producto Cantidad Precio
+Tomate saladet bola por kilo 10 25.50

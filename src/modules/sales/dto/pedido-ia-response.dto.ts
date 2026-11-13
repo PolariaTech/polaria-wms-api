@@ -103,7 +103,8 @@ export class PedidoExtraidoResponseDto {
   @ApiProperty({
     type: 'array',
     items: { type: 'object', additionalProperties: true },
-    description: 'Renglones origen_correo para agrupar órdenes de trabajo',
+    description:
+      'Renglones origen_correo para agrupar órdenes de trabajo (con Especificacion si el modelo la leyó)',
   })
   origenCorreo!: unknown[];
 
