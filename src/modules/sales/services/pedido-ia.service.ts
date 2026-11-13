@@ -84,21 +84,9 @@ const MAX_BLOQUES_EN_PARALELO = 5;
  */
 const UMBRAL_LECTURA_POR_BLOQUES = 6000;
 
-export type CodigoAdvertenciaLectura =
-  | 'OC_DISCREPA'
-  | 'OC_REPETIDA'
-  | 'OC_MENSUAL_IGNORADA'
-  | 'SIN_TOTAL_DOCUMENTO'
-  | 'TOTAL_NO_CUADRA'
-  | 'DOCUMENTO_NO_LEGIBLE'
-  | 'ADJUNTO_DUPLICADO'
-  | 'ADJUNTO_RECHAZADO'
-  | 'ADJUNTOS_EXCEDEN_TOPE'
-  | 'EXPECTATIVA_OT_DISTINTA'
-  | 'EXPECTATIVA_IMPORTE_DISTINTO'
-  | 'ARCHIVO_IGNORADO'
-  | 'ALCANCE_INTERPRETADO'
-  | 'RECONCILIACION_NO_DISPONIBLE';
+import type { CodigoAdvertenciaLectura } from '../ai/utils/codigos-advertencia-lectura';
+
+export type { CodigoAdvertenciaLectura };
 
 export interface AdvertenciaLectura {
   codigo: CodigoAdvertenciaLectura;
