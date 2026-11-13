@@ -9,8 +9,7 @@ import {
   doc208,
   ID_OV,
   lectura943,
-  orden,
-  respuestaOrden,
+  queryConOrden,
   origenIncompleto,
 } from './orden-correo-relectura.fixtures';
 
@@ -35,7 +34,7 @@ describe('OrdenCorreoRelecturaService — instrucción del operador (POL-414)', 
   let pedidoIa: { leerArchivosParaCuenta: jest.Mock };
 
   beforeEach(() => {
-    prisma = { $queryRawUnsafe: jest.fn().mockImplementation(respuestaOrden([orden()])) };
+    prisma = { $queryRawUnsafe: queryConOrden() };
     pedidoIa = { leerArchivosParaCuenta: jest.fn().mockResolvedValue(lectura943()) };
     descargarMock.mockReset().mockResolvedValue({
       archivos: [{ originalname: 'x.pdf', mimetype: 'application/pdf', buffer: Buffer.from('x') }],
@@ -155,9 +154,9 @@ describe('OrdenCorreoRelecturaService — instrucción del operador (POL-414)', 
 
   it('quitar un repetido sigue siendo posible y queda visible con su motivo (CA3)', async () => {
     const repetido = { ...origenIncompleto[0]! };
-    prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([
-      orden({ origenCorreo: [...origenIncompleto, repetido] }),
-    ]));
+    prisma.$queryRawUnsafe = queryConOrden({
+      origenCorreo: [...origenIncompleto, repetido],
+    });
     decide(true, (_indice, tipo) => (tipo === 'quitar' ? 'aplicar' : 'descartar'));
 
     const r = await service.proponer(ID_OV, conInstruccion('Quita los productos repetidos'), ctx);

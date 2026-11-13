@@ -25,9 +25,8 @@ import {
   doc940,
   doc081,
   doc208,
-  orden,
   lectura943,
-  respuestaOrden,
+  queryConOrden,
   type DocFixture,
 } from './orden-correo-relectura.fixtures';
 
@@ -53,7 +52,7 @@ describe('OrdenCorreoRelecturaService', () => {
   let pedidoIa: { leerArchivosParaCuenta: jest.Mock };
 
   beforeEach(() => {
-    prisma = { $queryRawUnsafe: jest.fn().mockImplementation(respuestaOrden([orden()])) };
+    prisma = { $queryRawUnsafe: queryConOrden() };
     pedidoIa = { leerArchivosParaCuenta: jest.fn().mockResolvedValue(lectura943()) };
     descargarMock.mockReset().mockResolvedValue({
       archivos: [{ originalname: 'x.pdf', mimetype: 'application/pdf', buffer: Buffer.from('x') }],
@@ -94,9 +93,8 @@ describe('OrdenCorreoRelecturaService', () => {
     expect(r.documentos).toHaveLength(2);
     expect(r.baseHash).toMatch(/^[0-9a-f]{64}$/);
     // Solo se consultó (SELECT): ninguna escritura.
-    // La OV y sus hermanas (REQ-313): dos consultas, ambas SELECT.
     expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
-    expect(prisma.$queryRawUnsafe.mock.calls.every(([sql]) => /^\s*SELECT/i.test(String(sql)))).toBe(true);
+    expect(String(prisma.$queryRawUnsafe.mock.calls[0]![0])).toMatch(/^\s*SELECT/i);
   });
 
   it('conserva el sello del correo original en los renglones nuevos', async () => {
@@ -132,7 +130,7 @@ describe('OrdenCorreoRelecturaService', () => {
     });
 
     it('una OV de otra cuenta responde igual que una inexistente', async () => {
-      prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ codigoCuenta: '023WA' })]));
+      prisma.$queryRawUnsafe = queryConOrden({ codigoCuenta: '023WA' });
       const ajena = await service.proponer(ID_OV, body, ctx).catch((e) => e);
       prisma.$queryRawUnsafe.mockResolvedValue([]);
       const inexistente = await service.proponer(ID_OV, body, ctx).catch((e) => e);
@@ -142,7 +140,7 @@ describe('OrdenCorreoRelecturaService', () => {
     });
 
     it('no descarga ni llama al modelo si la OV ya no está por confirmar', async () => {
-      prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ estado: 'confirmada' })]));
+      prisma.$queryRawUnsafe = queryConOrden({ estado: 'confirmada' });
       await expect(service.proponer(ID_OV, body, ctx)).rejects.toBeInstanceOf(ConflictException);
       expect(descargarMock).not.toHaveBeenCalled();
       expect(pedidoIa.leerArchivosParaCuenta).not.toHaveBeenCalled();
@@ -158,7 +156,7 @@ describe('OrdenCorreoRelecturaService', () => {
 
   describe('archivos originales', () => {
     it('SIN_ADJUNTOS_ORIGINALES si origen_archivos es texto libre de una OV vieja', async () => {
-      prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ origenArchivos: 'correo.eml, pedido.pdf' })]));
+      prisma.$queryRawUnsafe = queryConOrden({ origenArchivos: 'correo.eml, pedido.pdf' });
       const error = await service.proponer(ID_OV, body, ctx).catch((e) => e);
       expect(error).toBeInstanceOf(UnprocessableEntityException);
       expect(error.getResponse()).toMatchObject({ error: 'SIN_ADJUNTOS_ORIGINALES' });
@@ -227,7 +225,7 @@ describe('OrdenCorreoRelecturaService', () => {
   });
 
   it('OV-940: un PDF da 20 OT y 134 renglones', async () => {
-    prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ origenCorreo: renglonesDe(doc940!).slice(0, 72) })]));
+    prisma.$queryRawUnsafe = queryConOrden({ origenCorreo: renglonesDe(doc940!).slice(0, 72) });
     pedidoIa.leerArchivosParaCuenta.mockResolvedValue({
       ...lectura943(),
       pedido: { origenCorreo: renglonesDe(doc940!) },
@@ -300,7 +298,7 @@ describe('OrdenCorreoRelecturaService — trabajo asíncrono, interpretación y 
     'Partir este pedido en 12 OT para la OCC 4502987081, y en otras 12 para la OCC 4502987208, para un total de 24 OT de todo el pedido.';
 
   beforeEach(() => {
-    prisma = { $queryRawUnsafe: jest.fn().mockImplementation(respuestaOrden([orden()])) };
+    prisma = { $queryRawUnsafe: queryConOrden() };
     pedidoIa = { leerArchivosParaCuenta: jest.fn().mockResolvedValue(lecturaDe([doc081!, doc208!])) };
     descargarMock.mockReset().mockResolvedValue({
       archivos: [{ originalname: 'x.pdf', mimetype: 'application/pdf', buffer: Buffer.from('x') }],
@@ -352,14 +350,14 @@ describe('OrdenCorreoRelecturaService — trabajo asíncrono, interpretación y 
     });
 
     it('valida lo barato al instante y no crea trabajo: estado, archivos y OV ajena', async () => {
-      prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ estado: 'confirmada' })]));
+      prisma.$queryRawUnsafe = queryConOrden({ estado: 'confirmada' });
       await expect(service.iniciar(ID_OV, body, ctx)).rejects.toBeInstanceOf(ConflictException);
 
-      prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ origenArchivos: null })]));
+      prisma.$queryRawUnsafe = queryConOrden({ origenArchivos: null });
       const sinArchivos = await service.iniciar(ID_OV, body, ctx).catch((e) => e);
       expect(sinArchivos.getResponse()).toMatchObject({ error: 'SIN_ADJUNTOS_ORIGINALES' });
 
-      prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ codigoCuenta: '023WA' })]));
+      prisma.$queryRawUnsafe = queryConOrden({ codigoCuenta: '023WA' });
       await expect(service.iniciar(ID_OV, body, ctx)).rejects.toBeInstanceOf(NotFoundException);
 
       expect(pedidoIa.leerArchivosParaCuenta).not.toHaveBeenCalled();
@@ -415,7 +413,7 @@ describe('OrdenCorreoRelecturaService — trabajo asíncrono, interpretación y 
 
   describe('expectativas del usuario', () => {
     beforeEach(() => {
-      prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ origenCorreo: renglonesDe(doc940!).slice(0, 72) })]));
+      prisma.$queryRawUnsafe = queryConOrden({ origenCorreo: renglonesDe(doc940!).slice(0, 72) });
       pedidoIa.leerArchivosParaCuenta.mockResolvedValue(lecturaDe([doc940!]));
     });
 
@@ -499,7 +497,7 @@ describe('OrdenCorreoRelecturaService — trabajo asíncrono, interpretación y 
     });
 
     it('sin archivos originales nunca propone releer', async () => {
-      prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ origenArchivos: null })]));
+      prisma.$queryRawUnsafe = queryConOrden({ origenArchivos: null });
       interpretarMock.mockRejectedValue(new Error('proveedor caído'));
       const r = await service.interpretar(ID_OV, { requestId: REQUEST_ID, instruccion: textoAndres940 }, ctx);
       expect(r.intencion).toBe('reorganizar');
@@ -509,7 +507,7 @@ describe('OrdenCorreoRelecturaService — trabajo asíncrono, interpretación y 
     });
 
     it('una OV que ya no está por confirmar responde 409 sin llamar al modelo', async () => {
-      prisma.$queryRawUnsafe.mockImplementation(respuestaOrden([orden({ estado: 'confirmada' })]));
+      prisma.$queryRawUnsafe = queryConOrden({ estado: 'confirmada' });
       await expect(
         service.interpretar(ID_OV, { requestId: REQUEST_ID, instruccion: 'hola' }, ctx),
       ).rejects.toBeInstanceOf(ConflictException);

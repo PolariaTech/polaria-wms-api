@@ -86,6 +86,13 @@ export function respuestaOrden(filas: unknown[], hermanas: unknown[] = []) {
     Promise.resolve(/id_orden_venta <> /.test(sql) ? hermanas : filas);
 }
 
+/** `$queryRawUnsafe` simulado con una OV (parcial sobre `orden()`) y sin hermanas. */
+export function queryConOrden(
+  parcial: Record<string, unknown> = {},
+): jest.Mock {
+  return jest.fn().mockImplementation(respuestaOrden([orden(parcial)]));
+}
+
 export function lectura943(cuadra: boolean | null = true, advertencias: unknown[] = []) {
   return {
     pedido: { origenCorreo: [...renglonesDe(doc081!), ...renglonesDe(doc208!)] },
