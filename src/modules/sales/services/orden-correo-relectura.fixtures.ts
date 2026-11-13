@@ -80,6 +80,12 @@ export function orden(parcial: Record<string, unknown> = {}) {
   };
 }
 
+/** Respuesta de `$queryRawUnsafe`: `filas` para la OV y, sin hermanas, [] para su consulta (REQ-313). */
+export function respuestaOrden(filas: unknown[], hermanas: unknown[] = []) {
+  return (sql: string): Promise<unknown[]> =>
+    Promise.resolve(/id_orden_venta <> /.test(sql) ? hermanas : filas);
+}
+
 export function lectura943(cuadra: boolean | null = true, advertencias: unknown[] = []) {
   return {
     pedido: { origenCorreo: [...renglonesDe(doc081!), ...renglonesDe(doc208!)] },
