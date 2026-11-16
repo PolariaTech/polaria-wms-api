@@ -5,7 +5,6 @@ import {
   ForbiddenException,
   HttpException,
   Injectable,
-  InternalServerErrorException,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
@@ -40,6 +39,17 @@ import type {
   PropuestaCorreccionCorreoResponseDto,
 } from '../dto/propuesta-correccion-correo.dto';
 import { PedidoIaService, type AdvertenciaLectura } from './pedido-ia.service';
+import {
+  cargarHermanasRelectura,
+  cargarOrden,
+  noEncontrada,
+  type FilaOrdenVenta,
+} from './orden-correo-relectura.consulta';
+import {
+  evaluarHermanas,
+  filtrarLeidosDeHermanas,
+  MENSAJES_BLOQUEO_HERMANAS,
+} from '../ai/utils/relectura-hermanas';
 import {
   documentosIgnorados,
   filtrarArchivosIgnorados,
@@ -76,16 +86,6 @@ interface Trabajo {
   creado: number;
 }
 
-interface FilaOrdenVenta {
-  idOrdenVenta: string;
-  codigoCuenta: string;
-  /** `orden_venta.id_bodega` es NOT NULL. */
-  idBodega: string;
-  estado: string;
-  origenCorreo: unknown;
-  origenArchivos: string | null;
-}
-
 /**
  * Propone (sin escribir nada) las OT de una OV `por_confirmar` releyendo sus archivos
  * ORIGINALES (.eml y PDF) con el mismo núcleo que `leer-pedido` (REQ-187). Es la red de
@@ -118,6 +118,26 @@ export class OrdenCorreoRelecturaService {
         message:
           'Esta orden no conserva los archivos originales del correo, así que no se puede releer.',
         error: 'SIN_ADJUNTOS_ORIGINALES',
+      });
+    }
+
+    // REQ-313: si el correo se partió en varias OV, no se mezclan las OC de las hermanas.
+    const antesRenglones = parseOrigenCorreoJson(orden.origenCorreo);
+    const hermanas = await cargarHermanasRelectura(
+      this.prisma,
+      this.schemaDe(ctx),
+      this.logger,
+      { ...orden, requestId: body.requestId },
+    );
+    const alcance = evaluarHermanas({
+      ordenCompra: orden.ordenCompraHotel,
+      antes: antesRenglones,
+      hermanas,
+    });
+    if (alcance.tipo === 'bloqueo') {
+      throw new ConflictException({
+        message: MENSAJES_BLOQUEO_HERMANAS[alcance.codigo],
+        error: alcance.codigo,
       });
     }
 
@@ -219,13 +239,26 @@ export class OrdenCorreoRelecturaService {
       });
     }
 
-    const antesRenglones = parseOrigenCorreoJson(orden.origenCorreo);
     const primero = antesRenglones[0];
     // Conserva el sello del correo original (número y horario de ingestión).
-    const leidosRenglones = stampOrigenCorreoMeta(lectura.pedido.origenCorreo, {
+    let leidosRenglones = stampOrigenCorreoMeta(lectura.pedido.origenCorreo, {
       numeroCorreo: primero?.['Numero correo'],
       horario: primero?.Horario,
     });
+    if (alcance.tipo === 'filtrar') {
+      const { renglones, omitidosPorOv } = filtrarLeidosDeHermanas(
+        leidosRenglones,
+        alcance.ocsAjenas,
+      );
+      // Si no queda nada de esta OV, se conservan los renglones actuales.
+      leidosRenglones = renglones.length > 0 ? renglones : antesRenglones;
+      for (const [ov, { oc, cantidad }] of omitidosPorOv) {
+        advertencias.push({
+          codigo: 'OC_DE_OTRA_OV',
+          detalle: `Se dejaron fuera ${cantidad} productos de la OC ${oc}: son de la ${ov}, del mismo correo.`,
+        });
+      }
+    }
     // POL-414: con una instrucción acotada, un paso de IA decide diferencia por diferencia.
     const reconciliacion = await reconciliarRelectura(
       {
@@ -534,7 +567,13 @@ export class OrdenCorreoRelecturaService {
     requestId: string,
     ctx: TenantContext,
   ): Promise<FilaOrdenVenta> {
-    const orden = await this.cargarOrden(idOrdenVenta, ctx, requestId);
+    const orden = await cargarOrden(
+      this.prisma,
+      this.schemaDe(ctx),
+      this.logger,
+      idOrdenVenta,
+      requestId,
+    );
 
     // Una OV de otra cuenta responde igual que una inexistente.
     try {
@@ -543,7 +582,7 @@ export class OrdenCorreoRelecturaService {
         idBodega: orden.idBodega,
       });
     } catch (error) {
-      if (error instanceof ForbiddenException) throw this.noEncontrada();
+      if (error instanceof ForbiddenException) throw noEncontrada();
       throw error;
     }
 
@@ -565,51 +604,10 @@ export class OrdenCorreoRelecturaService {
     }
   }
 
-  /** La OV se carga por id dentro del schema del tenant del JWT. */
-  private async cargarOrden(
-    idOrdenVenta: string,
-    ctx: TenantContext,
-    requestId: string,
-  ): Promise<FilaOrdenVenta> {
-    const schema = this.tenantLocator.assertSafeSchemaIdent(
+  private schemaDe(ctx: TenantContext): string {
+    return this.tenantLocator.assertSafeSchemaIdent(
       ctx.schemaName?.trim() || 'public',
     );
-    let filas: FilaOrdenVenta[];
-    try {
-      filas = await this.prisma.$queryRawUnsafe<FilaOrdenVenta[]>(
-        `SELECT id_orden_venta AS "idOrdenVenta",
-                codigo_cuenta AS "codigoCuenta",
-                id_bodega AS "idBodega",
-                estado::text AS estado,
-                origen_correo AS "origenCorreo",
-                origen_archivos AS "origenArchivos"
-         FROM ${schema}.orden_venta
-         WHERE id_orden_venta = $1::uuid
-         LIMIT 1`,
-        idOrdenVenta,
-      );
-    } catch {
-      // Solo metadatos: el error crudo de la base de datos no se registra ni se devuelve.
-      this.logger.error(
-        JSON.stringify({
-          evento: 'correccion_correo_ot',
-          resultado: 'error_bd',
-          idOrdenVenta,
-          requestId,
-        }),
-      );
-      throw new InternalServerErrorException({
-        message: 'No se pudo consultar la orden de venta. Intenta de nuevo.',
-        error: 'BASE_DATOS',
-      });
-    }
-    const orden = filas[0];
-    if (!orden) throw this.noEncontrada();
-    return orden;
-  }
-
-  private noEncontrada(): NotFoundException {
-    return new NotFoundException('No se encontró la orden de venta');
   }
 
   /** Solo metadatos: nunca texto de los archivos, la instrucción ni la respuesta del modelo. */

@@ -127,6 +127,17 @@ La salida del modelo es solo una propuesta. Se acepta únicamente si: cada rengl
 - **Sin timeout ni tope de tokens** por decisión del producto. Límites de caracteres, turnos, tasa y máximo de OT nuevas: pendientes (R13 de POL-390), se definen tras las pruebas. Mientras tanto hay techos técnicos provisionales (`TECHOS_PROVISIONALES_REAGRUPACION`) solo contra entradas desbordadas.
 - Rate limit: aplica el throttler global; no hay uno específico todavía.
 
+## Releer el correo en una OV de un correo partido (REQ-313)
+
+`POST /ventas/ordenes/:id/ordenes-trabajo/propuesta-correccion-correo` (y su variante asíncrona con `jobId`). Un correo con varias OC se parte en varias OV que guardan los mismos archivos originales (`origen_archivos`). Antes de bajar los archivos se buscan las OV hermanas de la misma cuenta (mismos archivos, sin la propia ni las canceladas) y, si hay, la propuesta deja fuera las filas leídas de la OC de las hermanas. Una OV sin hermanas se relee como siempre (puede ampliarse a varias OC).
+
+| HTTP | `error` | Caso |
+|------|---------|------|
+| 409 | `HERMANAS_SIN_OC` | La OV tiene hermanas y ninguna OC propia: no se puede saber qué es suyo. No se bajan archivos ni se lee |
+| 409 | `HERMANAS_MISMA_OC` | Todas las hermanas comparten la OC de la OV (división por día): releer mezclaría sus productos. No se bajan archivos ni se lee |
+
+Advertencia nueva en `advertencias[]`: `OC_DE_OTRA_OV`, con un `detalle` en lenguaje claro («Se dejaron fuera N productos de la OC X: son de la OV-nnnn, del mismo correo.»). Si tras quitar las filas ajenas no queda ninguna, la propuesta conserva los renglones actuales de la OV.
+
 ## Correos de pedidos de n8n e ingreso manual (REQ-104)
 
 Lista los correos que el workflow de n8n registra en la tabla `correo_pedido_entrada` de Supabase (POL-410; antes era un data table de n8n) y deja al operador ingresar como OV los que el workflow descartó (no pasaron sus filtros). Requiere JWT y rol `operador_cuenta` o `administrador_cuenta`. Solo para las cuentas de `N8N_CORREOS_CUENTAS`; otra cuenta recibe 403 `CORREOS_NO_DISPONIBLES`.
