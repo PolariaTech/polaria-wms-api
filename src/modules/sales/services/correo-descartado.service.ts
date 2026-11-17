@@ -247,12 +247,12 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
       const correo = await this.gmail.obtener(messageId);
       const files: Express.Multer.File[] = [];
       for (let i = 0; i < Math.min(correo.adjuntos.length, MAX_ADJUNTOS); i++) {
-        const a = await this.gmail.descargarAdjunto(messageId, i);
+        const adjunto = await this.gmail.descargarAdjunto(messageId, i);
         files.push(
           aArchivo({
-            nombre: a.nombre,
-            mimeType: a.mimeType,
-            base64: a.buffer.toString('base64'),
+            nombre: adjunto.nombre,
+            mimeType: adjunto.mimeType,
+            base64: adjunto.buffer.toString('base64'),
           }),
         );
       }
