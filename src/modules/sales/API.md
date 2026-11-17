@@ -148,17 +148,18 @@ Lista los correos que el workflow de n8n registra en la tabla `correo_pedido_ent
 | `GET /ventas/correos/:messageId` | Un correo de la lista: la misma fila que trae `GET /ventas/correos`, con su `ingreso` (REQ-318, para la vista del correo completo). 404 `CORREO_NO_ENCONTRADO` si el correo no está en `correo_pedido_entrada` de la cuenta. Si la base no responde, 503 `CORREOS_LECTURA_FALLIDA`, igual que la lista. Límite: 60 por minuto. |
 | `POST /ventas/correos/:messageId/ingresar` | Reserva el correo y responde **202**; la OV `por_confirmar` se crea en segundo plano con el mismo núcleo que `ingestar-pedido`. Límite: 10 por minuto. |
 | `GET /ventas/correos/:messageId/ingreso` | Estado del ingreso: `procesando`, `ingresado` (con `codigoOrdenVenta`) o `error` (con el motivo). Es el sondeo: salta los dos límites globales. |
-| `GET /ventas/correos/:messageId/contenido` | El correo completo para mostrarlo: cuerpo en texto y en HTML (tal cual llegó, no es seguro) y nombre, tipo y tamaño de cada adjunto, sin sus bytes. Se lee en Gmail vía n8n y se guarda 5 minutos en memoria (máximo 5 correos). Límite: 30 por minuto. |
-| `GET /ventas/correos/:messageId/adjuntos/:indice` | Baja un adjunto (`indice` sale de `contenido().adjuntos`). Siempre como `attachment`, con `nosniff` y sin caché. 404 `ADJUNTO_NO_ENCONTRADO` si no hay uno en esa posición. Límite: 30 por minuto. |
+| `GET /ventas/correos/:messageId/contenido` | El correo completo para mostrarlo: cuerpo en texto y en HTML (tal cual llegó, no es seguro) y nombre, tipo y tamaño de cada adjunto, sin sus bytes. Se lee en Gmail (`users.messages.get`, format=full) y se guarda 5 minutos en memoria (máximo 5 correos; solo metadatos y cuerpo, no los PDF). Límite: 30 por minuto. |
+| `GET /ventas/correos/:messageId/adjuntos/:indice` | Baja un adjunto (`indice` sale de `contenido().adjuntos`) con `users.messages.attachments.get`. Siempre como `attachment`, con `nosniff` y sin caché. 404 `ADJUNTO_NO_ENCONTRADO` si no hay uno en esa posición. Límite: 30 por minuto. |
 
 ### Sin duplicados
 
 La tabla `correo_pedido_ingreso` (migración 114) tiene llave única (`codigo_cuenta`, `message_id`). El segundo clic mientras procesa devuelve el estado actual (no crea otra OV); si ya está ingresado responde **409** `CORREO_YA_INGRESADO` (el código de la OV va en el mensaje y se consulta con `GET …/ingreso`). Un ingreso en `error`, o en `procesando` por más de 10 minutos, se puede reintentar.
 
-### Puente con n8n
+### Lectura en Gmail (REQ-317)
 
-El api no habla con Gmail: llama a un webhook de un workflow puente de n8n, con el header `X-Api-Key` (`N8N_CORREOS_API_KEY`). El listado ya no pasa por el puente: se lee de la tabla `correo_pedido_entrada`.
+El listado sigue en SQL (`correo_pedido_entrada`); n8n sigue vigilando el buzón, clasificando y escribiendo esa tabla. La lectura del cuerpo y de cada archivo ya no pasa por el webhook `wms-correos-obtener`: el api habla con Gmail al buzón compartido (`GMAIL_CORREOS_USER`) con OAuth (`GMAIL_CORREOS_CLIENT_ID`, `GMAIL_CORREOS_CLIENT_SECRET`, `GMAIL_CORREOS_REFRESH_TOKEN`).
 
-- `POST {N8N_CORREOS_URL}/wms-correos-obtener`. Recibe `{ messageId }` y responde `{ asunto, de, para, fecha, texto, html, adjuntos: [{ nombre, mimeType, base64 }] }`.
+- `users.messages.get` (`format=full`): cabeceras, HTML/texto y lista de adjuntos (nombre, mime, tamaño, `attachmentId`). No baja los PDF.
+- `users.messages.attachments.get`: los bytes de un adjunto, al verlo o al ingresar.
 
-Errores del puente (solo al abrir un correo): 503 `CORREOS_NO_CONFIGURADOS`, 502 `N8N_NO_RESPONDE`, `N8N_ERROR` o `N8N_RESPUESTA_INVALIDA`.
+Errores de lectura (solo al abrir un correo o un adjunto): 503 `CORREOS_NO_CONFIGURADOS`, 502 `GMAIL_NO_RESPONDE`, `GMAIL_ERROR` o `GMAIL_RESPUESTA_INVALIDA`.

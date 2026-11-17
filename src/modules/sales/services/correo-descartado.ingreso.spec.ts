@@ -6,10 +6,8 @@ import type {
   CorreoIngresoFila,
   CorreoIngresoRepository,
 } from '../infrastructure/correo-ingreso.repository';
-import type {
-  CorreoN8nCompleto,
-  N8nCorreosClient,
-} from '../infrastructure/n8n-correos.client';
+import type { GmailCorreosClient } from '../infrastructure/gmail-correos.client';
+import type { CorreoGmailLeido } from '../infrastructure/gmail-correos.parse';
 import { CorreoDescartadoService } from './correo-descartado.service';
 import type { PedidoIaService } from './pedido-ia.service';
 
@@ -37,8 +35,8 @@ const fila = (parcial: Partial<CorreoIngresoFila> = {}): CorreoIngresoFila => ({
 });
 
 const correo = (
-  parcial: Partial<CorreoN8nCompleto> = {},
-): CorreoN8nCompleto => ({
+  parcial: Partial<CorreoGmailLeido> = {},
+): CorreoGmailLeido => ({
   asunto: 'Pedido XEL HA',
   de: 'compras@hotel.com',
   para: 'ventas@aguacates.com',
@@ -49,7 +47,9 @@ const correo = (
     {
       nombre: 'pedido.pdf',
       mimeType: 'application/pdf',
-      base64: Buffer.from('PDF').toString('base64'),
+      tamano: 3,
+      attachmentId: 'att-1',
+      datos: null,
     },
   ],
   ...parcial,
@@ -59,7 +59,14 @@ const esperarSegundoPlano = () =>
   new Promise<void>((resolver) => setImmediate(resolver));
 
 function montar(cuentas = '023WA') {
-  const n8n = { obtener: jest.fn() };
+  const gmail = {
+    obtener: jest.fn(),
+    descargarAdjunto: jest.fn().mockResolvedValue({
+      nombre: 'pedido.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('PDF'),
+    }),
+  };
   const ingresos = {
     reservar: jest.fn(),
     buscar: jest.fn(),
@@ -72,23 +79,23 @@ function montar(cuentas = '023WA') {
   const pedidoIa = { ingestarPedido: jest.fn() };
   const config = { get: jest.fn().mockReturnValue(cuentas) };
   const servicio = new CorreoDescartadoService(
-    n8n as unknown as N8nCorreosClient,
+    gmail as unknown as GmailCorreosClient,
     ingresos as unknown as CorreoIngresoRepository,
     pedidoIa as unknown as PedidoIaService,
     config as unknown as ConfigService,
   );
-  return { servicio, n8n, ingresos, pedidoIa };
+  return { servicio, gmail, ingresos, pedidoIa };
 }
 
 describe('CorreoDescartadoService ingreso (POL-415)', () => {
   it('en el primer intento no busca una OV ya creada', async () => {
-    const { servicio, n8n, ingresos, pedidoIa } = montar();
+    const { servicio, gmail, ingresos, pedidoIa } = montar();
     ingresos.reservar.mockResolvedValue({
       reservada: true,
       fila: fila(),
       numeroIntentos: 1,
     });
-    n8n.obtener.mockResolvedValue(correo());
+    gmail.obtener.mockResolvedValue(correo());
     pedidoIa.ingestarPedido.mockResolvedValue({
       idOrdenVenta: 'ov-uuid',
       codigo: 'OV-1',
@@ -102,7 +109,7 @@ describe('CorreoDescartadoService ingreso (POL-415)', () => {
   });
 
   it('si es un reintento y ya hay OV con el sello, no duplica el pedido', async () => {
-    const { servicio, n8n, ingresos, pedidoIa } = montar();
+    const { servicio, gmail, ingresos, pedidoIa } = montar();
     ingresos.reservar.mockResolvedValue({
       reservada: true,
       fila: fila(),
@@ -121,7 +128,7 @@ describe('CorreoDescartadoService ingreso (POL-415)', () => {
       '023WA',
       MSG,
     );
-    expect(n8n.obtener).not.toHaveBeenCalled();
+    expect(gmail.obtener).not.toHaveBeenCalled();
     expect(pedidoIa.ingestarPedido).not.toHaveBeenCalled();
     expect(ingresos.marcarIngresado).toHaveBeenCalledWith({
       schemaName: 'emp_demo',
@@ -135,13 +142,13 @@ describe('CorreoDescartadoService ingreso (POL-415)', () => {
   describe('apagado', () => {
     it('espera los procesar en vuelo con tope de 25 s', async () => {
       jest.useFakeTimers();
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
+      const { servicio, gmail, ingresos, pedidoIa } = montar();
       ingresos.reservar.mockResolvedValue({
         reservada: true,
         fila: fila(),
         numeroIntentos: 1,
       });
-      n8n.obtener.mockResolvedValue(correo());
+      gmail.obtener.mockResolvedValue(correo());
       pedidoIa.ingestarPedido.mockReturnValue(new Promise(() => undefined));
 
       await servicio.ingresar(MSG, ctx);

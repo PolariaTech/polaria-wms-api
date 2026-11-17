@@ -8,7 +8,7 @@ import { OrdenVentaController } from './controllers/orden-venta.controller';
 import { PedidoIaController } from './controllers/pedido-ia.controller';
 import { PedidoIaApiKeyGuard } from './guards/pedido-ia-api-key.guard';
 import { CorreoIngresoRepository } from './infrastructure/correo-ingreso.repository';
-import { N8nCorreosClient } from './infrastructure/n8n-correos.client';
+import { GmailCorreosClient } from './infrastructure/gmail-correos.client';
 import { OrdenVentaRepository } from './infrastructure/orden-venta.repository';
 import { CorreoDescartadoService } from './services/correo-descartado.service';
 import { OrdenCorreoRelecturaService } from './services/orden-correo-relectura.service';
@@ -29,7 +29,7 @@ import { PedidoIaService } from './services/pedido-ia.service';
   providers: [
     CorreoDescartadoService,
     CorreoIngresoRepository,
-    N8nCorreosClient,
+    GmailCorreosClient,
     OrdenVentaService,
     OrdenVentaRepository,
     PedidoIaService,

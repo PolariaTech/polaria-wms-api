@@ -11,10 +11,8 @@ import type {
   CorreoIngresoFila,
   CorreoIngresoRepository,
 } from '../infrastructure/correo-ingreso.repository';
-import type {
-  CorreoN8nCompleto,
-  N8nCorreosClient,
-} from '../infrastructure/n8n-correos.client';
+import type { GmailCorreosClient } from '../infrastructure/gmail-correos.client';
+import type { CorreoGmailLeido } from '../infrastructure/gmail-correos.parse';
 import { CorreoDescartadoService } from './correo-descartado.service';
 import type { PedidoIaService } from './pedido-ia.service';
 
@@ -44,8 +42,8 @@ const fila = (parcial: Partial<CorreoIngresoFila> = {}): CorreoIngresoFila => ({
 });
 
 const correo = (
-  parcial: Partial<CorreoN8nCompleto> = {},
-): CorreoN8nCompleto => ({
+  parcial: Partial<CorreoGmailLeido> = {},
+): CorreoGmailLeido => ({
   asunto: 'Pedido XEL HA',
   de: 'compras@hotel.com',
   para: 'ventas@aguacates.com',
@@ -56,7 +54,9 @@ const correo = (
     {
       nombre: 'pedido.pdf',
       mimeType: 'application/pdf',
-      base64: Buffer.from('PDF').toString('base64'),
+      tamano: 3,
+      attachmentId: 'att-1',
+      datos: null,
     },
   ],
   ...parcial,
@@ -67,7 +67,14 @@ const esperarSegundoPlano = () =>
   new Promise<void>((resolver) => setImmediate(resolver));
 
 function montar(cuentas = '023WA') {
-  const n8n = { obtener: jest.fn() };
+  const gmail = {
+    obtener: jest.fn(),
+    descargarAdjunto: jest.fn().mockResolvedValue({
+      nombre: 'pedido.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('PDF'),
+    }),
+  };
   const ingresos = {
     reservar: jest.fn(),
     buscar: jest.fn(),
@@ -80,18 +87,18 @@ function montar(cuentas = '023WA') {
   const pedidoIa = { ingestarPedido: jest.fn() };
   const config = { get: jest.fn().mockReturnValue(cuentas) };
   const servicio = new CorreoDescartadoService(
-    n8n as unknown as N8nCorreosClient,
+    gmail as unknown as GmailCorreosClient,
     ingresos as unknown as CorreoIngresoRepository,
     pedidoIa as unknown as PedidoIaService,
     config as unknown as ConfigService,
   );
-  return { servicio, n8n, ingresos, pedidoIa };
+  return { servicio, gmail, ingresos, pedidoIa };
 }
 
 describe('CorreoDescartadoService (REQ-104)', () => {
   describe('listar', () => {
     it('cruza cada correo con su estado de ingreso en el WMS', async () => {
-      const { servicio, n8n, ingresos } = montar();
+      const { servicio, gmail, ingresos } = montar();
       ingresos.listarEntradas.mockResolvedValue({
         total: 2,
         filas: [
@@ -115,13 +122,13 @@ describe('CorreoDescartadoService (REQ-104)', () => {
 
       const resultado = await servicio.listar(query, ctx);
 
-      // lee de Supabase, de la cuenta del usuario, y no llama al Puente de n8n (CA3)
+      // lee de Supabase, de la cuenta del usuario, y no llama al Puente de gmail (CA3)
       expect(ingresos.listarEntradas).toHaveBeenCalledWith(
         'emp_demo',
         '023WA',
         query,
       );
-      expect(n8n.obtener).not.toHaveBeenCalled();
+      expect(gmail.obtener).not.toHaveBeenCalled();
       expect(ingresos.listarPorMessageIds).toHaveBeenCalledWith(
         'emp_demo',
         '023WA',
@@ -154,13 +161,13 @@ describe('CorreoDescartadoService (REQ-104)', () => {
 
   describe('ingresar', () => {
     it('reserva, responde procesando y crea la OV en segundo plano', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
+      const { servicio, gmail, ingresos, pedidoIa } = montar();
       ingresos.reservar.mockResolvedValue({
         reservada: true,
         fila: fila(),
         numeroIntentos: 1,
       });
-      n8n.obtener.mockResolvedValue(correo());
+      gmail.obtener.mockResolvedValue(correo());
       pedidoIa.ingestarPedido.mockResolvedValue({
         idOrdenVenta: 'ov-uuid',
         codigo: 'OV-00001319',
@@ -195,7 +202,7 @@ describe('CorreoDescartadoService (REQ-104)', () => {
     });
 
     it('un correo ya ingresado responde 409 con la OV y no lo vuelve a leer', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
+      const { servicio, gmail, ingresos, pedidoIa } = montar();
       ingresos.reservar.mockResolvedValue({
         reservada: false,
         fila: fila({ estado: 'ingresado', codigoOrdenVenta: 'OV-00001318' }),
@@ -209,12 +216,12 @@ describe('CorreoDescartadoService (REQ-104)', () => {
           message: expect.stringContaining('OV-00001318') as string,
         },
       });
-      expect(n8n.obtener).not.toHaveBeenCalled();
+      expect(gmail.obtener).not.toHaveBeenCalled();
       expect(pedidoIa.ingestarPedido).not.toHaveBeenCalled();
     });
 
     it('un segundo clic mientras procesa devuelve el estado sin duplicar la OV', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
+      const { servicio, gmail, ingresos, pedidoIa } = montar();
       ingresos.reservar.mockResolvedValue({
         reservada: false,
         fila: fila({ estado: 'procesando' }),
@@ -224,18 +231,18 @@ describe('CorreoDescartadoService (REQ-104)', () => {
 
       expect(resultado.estado).toBe('procesando');
       await esperarSegundoPlano();
-      expect(n8n.obtener).not.toHaveBeenCalled();
+      expect(gmail.obtener).not.toHaveBeenCalled();
       expect(pedidoIa.ingestarPedido).not.toHaveBeenCalled();
     });
 
     it('si la lectura falla guarda el error para poder reintentar', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
+      const { servicio, gmail, ingresos, pedidoIa } = montar();
       ingresos.reservar.mockResolvedValue({
         reservada: true,
         fila: fila(),
         numeroIntentos: 1,
       });
-      n8n.obtener.mockResolvedValue(correo());
+      gmail.obtener.mockResolvedValue(correo());
       pedidoIa.ingestarPedido.mockRejectedValue(
         new Error('La IA no extrajo renglones'),
       );
@@ -253,13 +260,13 @@ describe('CorreoDescartadoService (REQ-104)', () => {
     });
 
     it('un correo sin texto ni adjuntos queda en error y no llama a la IA', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
+      const { servicio, gmail, ingresos, pedidoIa } = montar();
       ingresos.reservar.mockResolvedValue({
         reservada: true,
         fila: fila(),
         numeroIntentos: 1,
       });
-      n8n.obtener.mockResolvedValue(
+      gmail.obtener.mockResolvedValue(
         correo({
           asunto: '',
           de: '',
@@ -279,13 +286,13 @@ describe('CorreoDescartadoService (REQ-104)', () => {
     });
 
     it('usa el HTML sin etiquetas cuando el correo no trae texto plano', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
+      const { servicio, gmail, ingresos, pedidoIa } = montar();
       ingresos.reservar.mockResolvedValue({
         reservada: true,
         fila: fila(),
         numeroIntentos: 1,
       });
-      n8n.obtener.mockResolvedValue(
+      gmail.obtener.mockResolvedValue(
         correo({
           texto: '',
           html: '<p>5&nbsp;cajas</p><style>p{}</style>',

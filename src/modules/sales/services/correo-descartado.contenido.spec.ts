@@ -6,11 +6,9 @@ import {
 import type { ConfigService } from '@nestjs/config';
 import { RolNivel, WmsRol } from '../../../generated/prisma/client';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
+import type { GmailCorreosClient } from '../infrastructure/gmail-correos.client';
+import type { CorreoGmailLeido } from '../infrastructure/gmail-correos.parse';
 import type { CorreoIngresoRepository } from '../infrastructure/correo-ingreso.repository';
-import type {
-  CorreoN8nCompleto,
-  N8nCorreosClient,
-} from '../infrastructure/n8n-correos.client';
 import { CorreoDescartadoService } from './correo-descartado.service';
 import type { PedidoIaService } from './pedido-ia.service';
 
@@ -28,8 +26,8 @@ const ctx: TenantContext = {
 };
 
 const correo = (
-  parcial: Partial<CorreoN8nCompleto> = {},
-): CorreoN8nCompleto => ({
+  parcial: Partial<CorreoGmailLeido> = {},
+): CorreoGmailLeido => ({
   asunto: 'Pedido XEL HA',
   de: 'compras@hotel.com',
   para: 'ventas@aguacates.com',
@@ -40,36 +38,40 @@ const correo = (
     {
       nombre: 'pedido.pdf',
       mimeType: 'application/pdf',
-      base64: Buffer.from('PDF').toString('base64'),
+      tamano: 3,
+      attachmentId: 'att-1',
+      datos: null,
     },
   ],
   ...parcial,
 });
 
 function montar(cuentas = '023WA') {
-  const n8n = { obtener: jest.fn() };
+  const gmail = { obtener: jest.fn(), descargarAdjunto: jest.fn() };
   const config = { get: jest.fn().mockReturnValue(cuentas) };
   const servicio = new CorreoDescartadoService(
-    n8n as unknown as N8nCorreosClient,
+    gmail as unknown as GmailCorreosClient,
     {} as unknown as CorreoIngresoRepository,
     {} as unknown as PedidoIaService,
     config as unknown as ConfigService,
   );
-  return { servicio, n8n };
+  return { servicio, gmail };
 }
 
-describe('CorreoDescartadoService — contenido y adjuntos (REQ-104)', () => {
-  const adjunto = (nombre: string, bytes: string) => ({
+describe('CorreoDescartadoService — contenido y adjuntos (REQ-317)', () => {
+  const meta = (nombre: string, tamano: number) => ({
     nombre,
     mimeType: 'application/pdf',
-    base64: Buffer.from(bytes).toString('base64'),
+    tamano,
+    attachmentId: `id-${nombre}`,
+    datos: null,
   });
 
   it('devuelve el correo y los datos de cada adjunto, sin sus bytes', async () => {
-    const { servicio, n8n } = montar();
-    n8n.obtener.mockResolvedValue(
+    const { servicio, gmail } = montar();
+    gmail.obtener.mockResolvedValue(
       correo({
-        adjuntos: [adjunto('a.pdf', '12345'), adjunto('b.pdf', 'xy')],
+        adjuntos: [meta('a.pdf', 5), meta('b.pdf', 2)],
       }),
     );
 
@@ -84,29 +86,28 @@ describe('CorreoDescartadoService — contenido y adjuntos (REQ-104)', () => {
       { indice: 0, nombre: 'a.pdf', mimeType: 'application/pdf', tamano: 5 },
       { indice: 1, nombre: 'b.pdf', mimeType: 'application/pdf', tamano: 2 },
     ]);
-    expect(JSON.stringify(resultado)).not.toContain(
-      Buffer.from('12345').toString('base64'),
-    );
+    expect(gmail.descargarAdjunto).not.toHaveBeenCalled();
   });
 
   it('entrega los bytes del adjunto pedido', async () => {
-    const { servicio, n8n } = montar();
-    n8n.obtener.mockResolvedValue(
-      correo({
-        adjuntos: [adjunto('a.pdf', '12345'), adjunto('b.pdf', 'xy')],
-      }),
-    );
+    const { servicio, gmail } = montar();
+    gmail.descargarAdjunto.mockResolvedValue({
+      nombre: 'b.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('xy'),
+    });
 
     const resultado = await servicio.adjunto(MSG, 1, ctx);
 
+    expect(gmail.descargarAdjunto).toHaveBeenCalledWith(MSG, 1);
     expect(resultado.nombre).toBe('b.pdf');
     expect(resultado.mimeType).toBe('application/pdf');
     expect(resultado.buffer.toString()).toBe('xy');
   });
 
   it('responde 404 si no hay adjunto en esa posición', async () => {
-    const { servicio, n8n } = montar();
-    n8n.obtener.mockResolvedValue(correo());
+    const { servicio, gmail } = montar();
+    gmail.descargarAdjunto.mockRejectedValue(new NotFoundException());
     await expect(servicio.adjunto(MSG, 5, ctx)).rejects.toBeInstanceOf(
       NotFoundException,
     );
@@ -115,22 +116,24 @@ describe('CorreoDescartadoService — contenido y adjuntos (REQ-104)', () => {
   it.each([-1, 100, 1.5, Number.NaN])(
     'rechaza la posición %p sin leer el correo',
     async (indice) => {
-      const { servicio, n8n } = montar();
+      const { servicio, gmail } = montar();
       await expect(servicio.adjunto(MSG, indice, ctx)).rejects.toBeInstanceOf(
         BadRequestException,
       );
-      expect(n8n.obtener).not.toHaveBeenCalled();
+      expect(gmail.obtener).not.toHaveBeenCalled();
+      expect(gmail.descargarAdjunto).not.toHaveBeenCalled();
     },
   );
 
   it('no lee nada si la cuenta no está habilitada', async () => {
-    const { servicio, n8n } = montar('OTRA');
+    const { servicio, gmail } = montar('OTRA');
     await expect(servicio.contenido(MSG, ctx)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
     await expect(servicio.adjunto(MSG, 0, ctx)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
-    expect(n8n.obtener).not.toHaveBeenCalled();
+    expect(gmail.obtener).not.toHaveBeenCalled();
+    expect(gmail.descargarAdjunto).not.toHaveBeenCalled();
   });
 });
