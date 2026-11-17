@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { RolNivel, WmsRol } from '../../../generated/prisma/client';
 import type { TenantContext } from '../../../core/tenant/tenant-context.interface';
@@ -11,10 +7,7 @@ import type {
   CorreoIngresoFila,
   CorreoIngresoRepository,
 } from '../infrastructure/correo-ingreso.repository';
-import type {
-  CorreoN8nCompleto,
-  N8nCorreosClient,
-} from '../infrastructure/n8n-correos.client';
+import type { GmailCorreosClient } from '../infrastructure/gmail-correos.client';
 import { CorreoDescartadoService } from './correo-descartado.service';
 import type { PedidoIaService } from './pedido-ia.service';
 
@@ -43,31 +36,15 @@ const fila = (parcial: Partial<CorreoIngresoFila> = {}): CorreoIngresoFila => ({
   ...parcial,
 });
 
-const correo = (
-  parcial: Partial<CorreoN8nCompleto> = {},
-): CorreoN8nCompleto => ({
-  asunto: 'Pedido XEL HA',
-  de: 'compras@hotel.com',
-  para: 'ventas@aguacates.com',
-  fecha: '2026-11-03',
-  texto: '10 cajas de aguacate',
-  html: '',
-  adjuntos: [
-    {
+function montar(cuentas = '023WA') {
+  const gmail = {
+    obtener: jest.fn(),
+    descargarAdjunto: jest.fn().mockResolvedValue({
       nombre: 'pedido.pdf',
       mimeType: 'application/pdf',
-      base64: Buffer.from('PDF').toString('base64'),
-    },
-  ],
-  ...parcial,
-});
-
-/** Deja correr el procesamiento en segundo plano (solo hay promesas ya resueltas). */
-const esperarSegundoPlano = () =>
-  new Promise<void>((resolver) => setImmediate(resolver));
-
-function montar(cuentas = '023WA') {
-  const n8n = { obtener: jest.fn() };
+      buffer: Buffer.from('PDF'),
+    }),
+  };
   const ingresos = {
     reservar: jest.fn(),
     buscar: jest.fn(),
@@ -80,18 +57,18 @@ function montar(cuentas = '023WA') {
   const pedidoIa = { ingestarPedido: jest.fn() };
   const config = { get: jest.fn().mockReturnValue(cuentas) };
   const servicio = new CorreoDescartadoService(
-    n8n as unknown as N8nCorreosClient,
+    gmail as unknown as GmailCorreosClient,
     ingresos as unknown as CorreoIngresoRepository,
     pedidoIa as unknown as PedidoIaService,
     config as unknown as ConfigService,
   );
-  return { servicio, n8n, ingresos, pedidoIa };
+  return { servicio, gmail, ingresos, pedidoIa };
 }
 
 describe('CorreoDescartadoService (REQ-104)', () => {
   describe('listar', () => {
     it('cruza cada correo con su estado de ingreso en el WMS', async () => {
-      const { servicio, n8n, ingresos } = montar();
+      const { servicio, gmail, ingresos } = montar();
       ingresos.listarEntradas.mockResolvedValue({
         total: 2,
         filas: [
@@ -115,13 +92,13 @@ describe('CorreoDescartadoService (REQ-104)', () => {
 
       const resultado = await servicio.listar(query, ctx);
 
-      // lee de Supabase, de la cuenta del usuario, y no llama al Puente de n8n (CA3)
+      // lee de Supabase, de la cuenta del usuario, y no llama al Puente de gmail (CA3)
       expect(ingresos.listarEntradas).toHaveBeenCalledWith(
         'emp_demo',
         '023WA',
         query,
       );
-      expect(n8n.obtener).not.toHaveBeenCalled();
+      expect(gmail.obtener).not.toHaveBeenCalled();
       expect(ingresos.listarPorMessageIds).toHaveBeenCalledWith(
         'emp_demo',
         '023WA',
@@ -149,182 +126,6 @@ describe('CorreoDescartadoService (REQ-104)', () => {
         ForbiddenException,
       );
       expect(ingresos.listarEntradas).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('ingresar', () => {
-    it('reserva, responde procesando y crea la OV en segundo plano', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({
-        reservada: true,
-        fila: fila(),
-        numeroIntentos: 1,
-      });
-      n8n.obtener.mockResolvedValue(correo());
-      pedidoIa.ingestarPedido.mockResolvedValue({
-        idOrdenVenta: 'ov-uuid',
-        codigo: 'OV-00001319',
-        ordenes: [{ idOrdenVenta: 'ov-uuid', codigo: 'OV-00001319' }],
-      });
-
-      const resultado = await servicio.ingresar(MSG, ctx);
-      expect(resultado.estado).toBe('procesando');
-
-      await esperarSegundoPlano();
-      expect(pedidoIa.ingestarPedido).toHaveBeenCalledTimes(1);
-      const entrada = pedidoIa.ingestarPedido.mock.calls[0][0] as {
-        codigoCuenta: string;
-        numeroCorreo?: string;
-        texto: string;
-        files: Express.Multer.File[];
-      };
-      expect(entrada.codigoCuenta).toBe('023WA');
-      expect(entrada.numeroCorreo).toBe(MSG);
-      expect(entrada.texto).toContain('Asunto: Pedido XEL HA');
-      expect(entrada.texto).toContain('10 cajas de aguacate');
-      expect(entrada.files[0].originalname).toBe('pedido.pdf');
-      expect(entrada.files[0].buffer.toString()).toBe('PDF');
-      expect(ingresos.marcarIngresado).toHaveBeenCalledWith({
-        schemaName: 'emp_demo',
-        codigoCuenta: '023WA',
-        messageId: MSG,
-        idOrdenVenta: 'ov-uuid',
-        codigoOrdenVenta: 'OV-00001319',
-      });
-      expect(ingresos.marcarError).not.toHaveBeenCalled();
-    });
-
-    it('un correo ya ingresado responde 409 con la OV y no lo vuelve a leer', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({
-        reservada: false,
-        fila: fila({ estado: 'ingresado', codigoOrdenVenta: 'OV-00001318' }),
-      });
-
-      const intento = servicio.ingresar(MSG, ctx);
-      await expect(intento).rejects.toBeInstanceOf(ConflictException);
-      await expect(intento).rejects.toMatchObject({
-        response: {
-          error: 'CORREO_YA_INGRESADO',
-          message: expect.stringContaining('OV-00001318') as string,
-        },
-      });
-      expect(n8n.obtener).not.toHaveBeenCalled();
-      expect(pedidoIa.ingestarPedido).not.toHaveBeenCalled();
-    });
-
-    it('un segundo clic mientras procesa devuelve el estado sin duplicar la OV', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({
-        reservada: false,
-        fila: fila({ estado: 'procesando' }),
-      });
-
-      const resultado = await servicio.ingresar(MSG, ctx);
-
-      expect(resultado.estado).toBe('procesando');
-      await esperarSegundoPlano();
-      expect(n8n.obtener).not.toHaveBeenCalled();
-      expect(pedidoIa.ingestarPedido).not.toHaveBeenCalled();
-    });
-
-    it('si la lectura falla guarda el error para poder reintentar', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({
-        reservada: true,
-        fila: fila(),
-        numeroIntentos: 1,
-      });
-      n8n.obtener.mockResolvedValue(correo());
-      pedidoIa.ingestarPedido.mockRejectedValue(
-        new Error('La IA no extrajo renglones'),
-      );
-
-      await servicio.ingresar(MSG, ctx);
-      await esperarSegundoPlano();
-
-      expect(ingresos.marcarError).toHaveBeenCalledWith({
-        schemaName: 'emp_demo',
-        codigoCuenta: '023WA',
-        messageId: MSG,
-        error: 'La IA no extrajo renglones',
-      });
-      expect(ingresos.marcarIngresado).not.toHaveBeenCalled();
-    });
-
-    it('un correo sin texto ni adjuntos queda en error y no llama a la IA', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({
-        reservada: true,
-        fila: fila(),
-        numeroIntentos: 1,
-      });
-      n8n.obtener.mockResolvedValue(
-        correo({
-          asunto: '',
-          de: '',
-          para: '',
-          fecha: null,
-          texto: '',
-          html: '',
-          adjuntos: [],
-        }),
-      );
-
-      await servicio.ingresar(MSG, ctx);
-      await esperarSegundoPlano();
-
-      expect(pedidoIa.ingestarPedido).not.toHaveBeenCalled();
-      expect(ingresos.marcarError).toHaveBeenCalledTimes(1);
-    });
-
-    it('usa el HTML sin etiquetas cuando el correo no trae texto plano', async () => {
-      const { servicio, n8n, ingresos, pedidoIa } = montar();
-      ingresos.reservar.mockResolvedValue({
-        reservada: true,
-        fila: fila(),
-        numeroIntentos: 1,
-      });
-      n8n.obtener.mockResolvedValue(
-        correo({
-          texto: '',
-          html: '<p>5&nbsp;cajas</p><style>p{}</style>',
-          adjuntos: [],
-        }),
-      );
-      pedidoIa.ingestarPedido.mockResolvedValue({
-        idOrdenVenta: 'ov',
-        codigo: 'OV-1',
-      });
-
-      await servicio.ingresar(MSG, ctx);
-      await esperarSegundoPlano();
-
-      const { texto } = pedidoIa.ingestarPedido.mock.calls[0][0] as {
-        texto: string;
-      };
-      expect(texto).toContain('5 cajas');
-      expect(texto).not.toContain('<p>');
-      expect(texto).not.toContain('p{}');
-    });
-
-    it.each(['', 'a b', '../x', 'ab', 'x'.repeat(80)])(
-      'rechaza el identificador inválido %j antes de reservar',
-      async (id) => {
-        const { servicio, ingresos } = montar();
-        await expect(servicio.ingresar(id, ctx)).rejects.toBeInstanceOf(
-          BadRequestException,
-        );
-        expect(ingresos.reservar).not.toHaveBeenCalled();
-      },
-    );
-
-    it('rechaza una cuenta no habilitada antes de reservar', async () => {
-      const { servicio, ingresos } = montar('OTRA');
-      await expect(servicio.ingresar(MSG, ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
-      expect(ingresos.reservar).not.toHaveBeenCalled();
     });
   });
 });

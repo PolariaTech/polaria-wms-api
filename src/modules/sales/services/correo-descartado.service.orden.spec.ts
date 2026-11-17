@@ -6,7 +6,7 @@ import type {
   CorreoIngresoFila,
   CorreoIngresoRepository,
 } from '../infrastructure/correo-ingreso.repository';
-import type { N8nCorreosClient } from '../infrastructure/n8n-correos.client';
+import type { GmailCorreosClient } from '../infrastructure/gmail-correos.client';
 import { CorreoDescartadoService } from './correo-descartado.service';
 import type { PedidoIaService } from './pedido-ia.service';
 
@@ -34,19 +34,19 @@ const ingreso = (parcial: Partial<CorreoIngresoFila>): CorreoIngresoFila => ({
 });
 
 function montar() {
-  const n8n = { obtener: jest.fn() };
+  const gmail = { obtener: jest.fn(), descargarAdjunto: jest.fn() };
   const ingresos = {
     listarEntradas: jest.fn(),
     listarPorMessageIds: jest.fn().mockResolvedValue([]),
   };
   const config = { get: jest.fn().mockReturnValue('023WA') };
   const servicio = new CorreoDescartadoService(
-    n8n as unknown as N8nCorreosClient,
+    gmail as unknown as GmailCorreosClient,
     ingresos as unknown as CorreoIngresoRepository,
     {} as unknown as PedidoIaService,
     config as unknown as ConfigService,
   );
-  return { servicio, n8n, ingresos };
+  return { servicio, gmail, ingresos };
 }
 
 describe('CorreoDescartadoService: OV de cada correo (REQ-275)', () => {

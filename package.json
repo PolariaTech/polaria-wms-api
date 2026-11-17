@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "prisma:generate": "prisma generate",
-    "build": "prisma generate && node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && nest build && tsc -p tsconfig.prisma-client.json",
+    "build": "prisma generate && node -e \"require('fs').rmSync('dist',{recursive:true,force:true,maxRetries:10,retryDelay:200})\" && nest build && tsc -p tsconfig.prisma-client.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

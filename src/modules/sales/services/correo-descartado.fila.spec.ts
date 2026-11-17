@@ -12,7 +12,7 @@ import type {
   CorreoIngresoFila,
   CorreoIngresoRepository,
 } from '../infrastructure/correo-ingreso.repository';
-import type { N8nCorreosClient } from '../infrastructure/n8n-correos.client';
+import type { GmailCorreosClient } from '../infrastructure/gmail-correos.client';
 import { CorreoDescartadoService } from './correo-descartado.service';
 import type { PedidoIaService } from './pedido-ia.service';
 
@@ -51,7 +51,7 @@ const filaDescartada = {
 };
 
 function montar(cuentas = '023WA') {
-  const n8n = { obtener: jest.fn() };
+  const gmail = { obtener: jest.fn(), descargarAdjunto: jest.fn() };
   const ingresos = {
     reservar: jest.fn(),
     buscar: jest.fn(),
@@ -66,12 +66,12 @@ function montar(cuentas = '023WA') {
   const pedidoIa = { ingestarPedido: jest.fn() };
   const config = { get: jest.fn().mockReturnValue(cuentas) };
   const servicio = new CorreoDescartadoService(
-    n8n as unknown as N8nCorreosClient,
+    gmail as unknown as GmailCorreosClient,
     ingresos as unknown as CorreoIngresoRepository,
     pedidoIa as unknown as PedidoIaService,
     config as unknown as ConfigService,
   );
-  return { servicio, n8n, ingresos, pedidoIa };
+  return { servicio, gmail, ingresos, pedidoIa };
 }
 
 describe('CorreoDescartadoService.obtener (REQ-318)', () => {

@@ -17,7 +17,7 @@ import type {
 } from '../dto/correos-response.dto';
 import type { IngresoCorreoResponseDto } from '../dto/ingreso-correo-response.dto';
 import { CorreoIngresoRepository } from '../infrastructure/correo-ingreso.repository';
-import { N8nCorreosClient } from '../infrastructure/n8n-correos.client';
+import { GmailCorreosClient } from '../infrastructure/gmail-correos.client';
 import { aArchivo, armarTexto, mensajeDe } from './correo-descartado.texto';
 import { aIngresoDto, conIngreso } from './correo-fila';
 import { PedidoIaService } from './pedido-ia.service';
@@ -35,11 +35,9 @@ export interface AdjuntoDescargable {
 }
 
 /**
- * REQ-104: lista los correos que n8n registró en Supabase (POL-410: ya no pasa por el Puente
- * de n8n), deja ver un correo completo (ese sí se lee en Gmail vía n8n) y permite al
- * operador ingresar a mano como OV los que el workflow descartó. El ingreso es asíncrono (la
- * lectura con IA pasa de los 30 s del proxy de Next): reserva la fila, responde 202 y termina
- * en segundo plano; la web consulta el estado hasta que pase a `ingresado` o `error`.
+ * REQ-104 / REQ-317: lista los correos que n8n registró en Supabase, deja ver un correo
+ * completo (Gmail API al buzón compartido) y permite ingresar a mano como OV los que el
+ * workflow descartó. El ingreso es asíncrono: reserva, responde 202 y termina en segundo plano.
  */
 @Injectable()
 export class CorreoDescartadoService implements BeforeApplicationShutdown {
@@ -47,7 +45,7 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
   private readonly enVuelo = new Set<Promise<void>>();
 
   constructor(
-    private readonly n8n: N8nCorreosClient,
+    private readonly gmail: GmailCorreosClient,
     private readonly ingresos: CorreoIngresoRepository,
     private readonly pedidoIa: PedidoIaService,
     private readonly config: ConfigService,
@@ -167,7 +165,7 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
   ): Promise<CorreoContenidoResponseDto> {
     this.cuentaHabilitada(ctx);
     this.validarMessageId(messageId);
-    const correo = await this.n8n.obtener(messageId);
+    const correo = await this.gmail.obtener(messageId);
     return {
       asunto: correo.asunto,
       de: correo.de,
@@ -179,7 +177,7 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
         indice,
         nombre: adjunto.nombre,
         mimeType: adjunto.mimeType,
-        tamano: Buffer.byteLength(adjunto.base64, 'base64'),
+        tamano: adjunto.tamano,
       })),
     };
   }
@@ -202,19 +200,7 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
         message: 'La posición del adjunto no es válida.',
       });
     }
-    const correo = await this.n8n.obtener(messageId);
-    const adjunto = correo.adjuntos[indice];
-    if (!adjunto) {
-      throw new NotFoundException({
-        error: 'ADJUNTO_NO_ENCONTRADO',
-        message: 'El correo no tiene un adjunto en esa posición.',
-      });
-    }
-    return {
-      nombre: adjunto.nombre,
-      mimeType: adjunto.mimeType,
-      buffer: Buffer.from(adjunto.base64, 'base64'),
-    };
+    return this.gmail.descargarAdjunto(messageId, indice);
   }
 
   private lanzarProcesar(
@@ -258,9 +244,19 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
           return;
         }
       }
-      const correo = await this.n8n.obtener(messageId);
-      const files = correo.adjuntos.slice(0, MAX_ADJUNTOS).map(aArchivo);
-      const textoPedido = armarTexto(correo);
+      const correo = await this.gmail.obtener(messageId);
+      const files: Express.Multer.File[] = [];
+      for (let i = 0; i < Math.min(correo.adjuntos.length, MAX_ADJUNTOS); i++) {
+        const adjunto = await this.gmail.descargarAdjunto(messageId, i);
+        files.push(
+          aArchivo({
+            nombre: adjunto.nombre,
+            mimeType: adjunto.mimeType,
+            base64: adjunto.buffer.toString('base64'),
+          }),
+        );
+      }
+      const textoPedido = armarTexto({ ...correo, adjuntos: [] });
       if (!textoPedido && files.length === 0) {
         throw new BadRequestException(
           'El correo no trae texto ni adjuntos para leer.',
