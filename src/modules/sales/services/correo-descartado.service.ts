@@ -12,15 +12,14 @@ import type { TenantContext } from '../../../core/tenant/tenant-context.interfac
 import type { CorreosQueryDto } from '../dto/correos-query.dto';
 import type {
   CorreoContenidoResponseDto,
+  CorreoFilaDto,
   CorreosListaResponseDto,
 } from '../dto/correos-response.dto';
 import type { IngresoCorreoResponseDto } from '../dto/ingreso-correo-response.dto';
-import {
-  CorreoIngresoRepository,
-  type CorreoIngresoFila,
-} from '../infrastructure/correo-ingreso.repository';
+import { CorreoIngresoRepository } from '../infrastructure/correo-ingreso.repository';
 import { N8nCorreosClient } from '../infrastructure/n8n-correos.client';
 import { aArchivo, armarTexto, mensajeDe } from './correo-descartado.texto';
+import { aIngresoDto, conIngreso } from './correo-fila';
 import { PedidoIaService } from './pedido-ia.service';
 
 /** Ids de mensaje de Gmail: hexadecimales cortos; se acota por seguridad. */
@@ -34,14 +33,6 @@ export interface AdjuntoDescargable {
   mimeType: string;
   buffer: Buffer;
 }
-
-const aDto = (fila: CorreoIngresoFila): IngresoCorreoResponseDto => ({
-  messageId: fila.messageId,
-  estado: fila.estado,
-  idOrdenVenta: fila.idOrdenVenta,
-  codigoOrdenVenta: fila.codigoOrdenVenta,
-  error: fila.error,
-});
 
 /**
  * REQ-104: lista los correos que n8n registró en Supabase (POL-410: ya no pasa por el Puente
@@ -84,17 +75,30 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
       total,
       pagina: query.pagina,
       tamano: query.tamano,
-      filas: filas.map((fila) => {
-        const ingreso = porId.get(fila.messageId);
-        return {
-          ...fila,
-          codigoOrdenVenta:
-            fila.codigoOrdenVenta ??
-            (ingreso?.estado === 'ingresado' ? ingreso.codigoOrdenVenta : null),
-          ingreso: ingreso ? aDto(ingreso) : null,
-        };
-      }),
+      filas: filas.map((fila) => conIngreso(fila, porId.get(fila.messageId))),
     };
+  }
+
+  async obtener(messageId: string, ctx: TenantContext): Promise<CorreoFilaDto> {
+    const cuenta = this.cuentaHabilitada(ctx);
+    this.validarMessageId(messageId);
+    const fila = await this.ingresos.buscarEntrada(
+      ctx.schemaName,
+      cuenta,
+      messageId,
+    );
+    if (!fila) {
+      throw new NotFoundException({
+        error: 'CORREO_NO_ENCONTRADO',
+        message: 'No encontramos este correo en la lista de correos recibidos.',
+      });
+    }
+    const ingreso = await this.ingresos.ingresoDeEntrada(
+      ctx.schemaName,
+      cuenta,
+      messageId,
+    );
+    return conIngreso(fila, ingreso);
   }
 
   async ingresar(
@@ -122,11 +126,11 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
         });
       }
       // Ya lo está procesando otra llamada: no se duplica, se devuelve el estado actual.
-      return aDto(fila);
+      return aIngresoDto(fila);
     }
 
     this.lanzarProcesar(cuenta, ctx.schemaName, messageId, numeroIntentos);
-    return aDto(fila);
+    return aIngresoDto(fila);
   }
 
   async beforeApplicationShutdown(): Promise<void> {
@@ -153,7 +157,7 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
         message: 'Este correo todavía no se ha intentado ingresar.',
       });
     }
-    return aDto(fila);
+    return aIngresoDto(fila);
   }
 
   /** El correo completo para mostrarlo: cuerpo y datos de cada adjunto, sin sus bytes. */

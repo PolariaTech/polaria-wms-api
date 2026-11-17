@@ -42,6 +42,7 @@ describe('CorreoDescartadoController — rutas y límites de peticiones (REQ-104
       mimeType: 'text/plain',
       buffer: Buffer.from('hola'),
     }),
+    obtener: jest.fn().mockResolvedValue({ messageId: 'abc123def' }),
   };
 
   beforeAll(async () => {
@@ -120,6 +121,23 @@ describe('CorreoDescartadoController — rutas y límites de peticiones (REQ-104
       const respuesta = await request(app.getHttpServer()).get(ruta);
       expect(respuesta.status).toBe(400);
     }
+
+    const procesados = await request(app.getHttpServer()).get(
+      '/ventas/correos?modo=procesados',
+    );
+    expect(procesados.status).toBe(200);
+    expect(service.listar).toHaveBeenLastCalledWith(
+      expect.objectContaining({ modo: 'procesados' }),
+      undefined,
+    );
+  });
+
+  it('GET /ventas/correos/:messageId responde 200 y delega en obtener', async () => {
+    const respuesta = await request(app.getHttpServer()).get(
+      '/ventas/correos/abc123def',
+    );
+    expect(respuesta.status).toBe(200);
+    expect(service.obtener).toHaveBeenCalledWith('abc123def', undefined);
   });
 
   it('contenido devuelve el correo y delega en el servicio', async () => {

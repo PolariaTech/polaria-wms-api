@@ -21,6 +21,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -34,6 +35,7 @@ import type { TenantContext } from '../../../core/tenant/tenant-context.interfac
 import { CorreosQueryDto } from '../dto/correos-query.dto';
 import {
   CorreoContenidoResponseDto,
+  CorreoFilaDto,
   CorreosListaResponseDto,
 } from '../dto/correos-response.dto';
 import { IngresoCorreoResponseDto } from '../dto/ingreso-correo-response.dto';
@@ -76,7 +78,7 @@ export class CorreoDescartadoController {
   @ApiOperation({
     summary: 'Listar los correos de pedidos que registró n8n (REQ-104)',
     description:
-      'Pagina y filtra en n8n (nunca baja toda la tabla). `modo=descartados` trae solo los que el workflow no ingresó. Cada fila trae `ingreso` si el WMS ya la tiene como OV o la está procesando. Solo para las cuentas de `N8N_CORREOS_CUENTAS`.',
+      'Pagina y filtra en SQL (nunca baja toda la tabla). `modo=descartados` trae los que el workflow descartó y nadie ha ingresado a mano; `modo=procesados`, el resto. Cada fila trae `ingreso` si el WMS ya la tiene como OV o la está procesando. Solo para las cuentas de `N8N_CORREOS_CUENTAS`.',
   })
   @ApiOkResponse({ type: CorreosListaResponseDto })
   @ApiUnauthorizedResponse()
@@ -92,6 +94,32 @@ export class CorreoDescartadoController {
     @TenantCtx() ctx: TenantContext,
   ): Promise<CorreosListaResponseDto> {
     return this.service.listar(query, ctx);
+  }
+
+  @Get(':messageId')
+  @Roles(...ROLES_REAGRUPACION_OT)
+  @SkipThrottle({ auth: true })
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Un correo de la lista, con su estado de ingreso (REQ-318)',
+    description:
+      'La misma fila que trae `GET /ventas/correos`, para la vista del correo completo.',
+  })
+  @ApiOkResponse({ type: CorreoFilaDto })
+  @ApiUnauthorizedResponse()
+  @ApiForbiddenResponse()
+  @ApiNotFoundResponse({
+    description:
+      'El correo no está en la lista de la cuenta (`CORREO_NO_ENCONTRADO`).',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'La base de correos no respondió (`CORREOS_LECTURA_FALLIDA`).',
+  })
+  obtener(
+    @Param('messageId') messageId: string,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<CorreoFilaDto> {
+    return this.service.obtener(messageId, ctx);
   }
 
   /**
