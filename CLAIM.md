@@ -20,6 +20,8 @@
 - `.env.example`
 - `package.json`
 - `package-lock.json`
+- `src/modules/sales/services/correo-descartado.fila.spec.ts` — autorizada por el usuario el 2026-11-17
+- `src/modules/sales/services/correo-descartado.service.orden.spec.ts` — autorizada por el usuario el 2026-11-17
 
 ### Compartidos (cambio mínimo y aviso)
 - `CHANGELOG.md`
