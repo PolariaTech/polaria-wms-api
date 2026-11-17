@@ -287,6 +287,22 @@ export class CorreoIngresoRepository {
     });
   }
 
+  /** REQ-318: el ingreso de un correo para la vista del correo completo, con el mismo 503 que la lista. */
+  async ingresoDeEntrada(
+    schemaName: string | null | undefined,
+    codigoCuenta: string,
+    messageId: string,
+  ): Promise<CorreoIngresoFila | undefined> {
+    return this.conLecturaEntrada(schemaName, codigoCuenta, async () => {
+      const [ingreso] = await this.listarPorMessageIds(
+        schemaName,
+        codigoCuenta,
+        [messageId],
+      );
+      return ingreso;
+    });
+  }
+
   /** Guarda de cuenta y 503 `CORREOS_LECTURA_FALLIDA` compartidos por lista y fila. */
   private async conLecturaEntrada<T>(
     schemaName: string | null | undefined,

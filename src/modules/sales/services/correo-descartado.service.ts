@@ -93,10 +93,10 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
         message: 'No encontramos este correo en la lista de correos recibidos.',
       });
     }
-    const [ingreso] = await this.ingresos.listarPorMessageIds(
+    const ingreso = await this.ingresos.ingresoDeEntrada(
       ctx.schemaName,
       cuenta,
-      [messageId],
+      messageId,
     );
     return conIngreso(fila, ingreso);
   }

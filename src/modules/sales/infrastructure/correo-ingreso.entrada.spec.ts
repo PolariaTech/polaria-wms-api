@@ -128,4 +128,56 @@ describe('CorreoIngresoRepository entradas (REQ-314, REQ-318)', () => {
       registro.mockRestore();
     });
   });
+
+  describe('ingresoDeEntrada', () => {
+    it('devuelve el primer ingreso', async () => {
+      const primero = { messageId: 'abc123def', estado: 'ingresado' };
+      const { repo, prisma } = montar();
+      prisma.$queryRawUnsafe.mockResolvedValue([
+        primero,
+        { messageId: 'otro', estado: 'error' },
+      ]);
+
+      await expect(
+        repo.ingresoDeEntrada('emp_demo', '023WA', 'abc123def'),
+      ).resolves.toEqual(primero);
+    });
+
+    it('sin filas devuelve undefined', async () => {
+      const { repo, prisma } = montar();
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+      await expect(
+        repo.ingresoDeEntrada('emp_demo', '023WA', 'abc123def'),
+      ).resolves.toBeUndefined();
+    });
+
+    it.each([
+      ['vacío', ''],
+      ['solo espacios', '   '],
+    ])('con cuenta %s rechaza y no consulta', async (_caso, cuenta) => {
+      const { repo, prisma } = montar();
+
+      await expect(
+        repo.ingresoDeEntrada('emp_demo', cuenta, 'abc123def'),
+      ).rejects.toThrow(/cuenta/i);
+      expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    });
+
+    it('cuando prisma falla responde 503 CORREOS_LECTURA_FALLIDA', async () => {
+      const registro = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      const { repo, prisma } = montar();
+      prisma.$queryRawUnsafe.mockRejectedValue(new Error('connection refused'));
+
+      const intento = repo.ingresoDeEntrada('emp_demo', '023WA', 'abc123def');
+
+      await expect(intento).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(intento).rejects.toMatchObject({
+        response: { error: 'CORREOS_LECTURA_FALLIDA' },
+      });
+      registro.mockRestore();
+    });
+  });
 });

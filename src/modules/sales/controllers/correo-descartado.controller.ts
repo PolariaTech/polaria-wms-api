@@ -21,6 +21,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -110,6 +111,9 @@ export class CorreoDescartadoController {
   @ApiNotFoundResponse({
     description:
       'El correo no está en la lista de la cuenta (`CORREO_NO_ENCONTRADO`).',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'La base de correos no respondió (`CORREOS_LECTURA_FALLIDA`).',
   })
   obtener(
     @Param('messageId') messageId: string,

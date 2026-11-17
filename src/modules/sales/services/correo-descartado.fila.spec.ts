@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { RolNivel, WmsRol } from '../../../generated/prisma/client';
@@ -55,6 +56,7 @@ function montar(cuentas = '023WA') {
     reservar: jest.fn(),
     buscar: jest.fn(),
     buscarEntrada: jest.fn(),
+    ingresoDeEntrada: jest.fn(),
     listarEntradas: jest.fn(),
     listarPorMessageIds: jest.fn().mockResolvedValue([]),
     marcarIngresado: jest.fn().mockResolvedValue(undefined),
@@ -76,7 +78,7 @@ describe('CorreoDescartadoService.obtener (REQ-318)', () => {
   it('devuelve la fila descartada sin ingreso', async () => {
     const { servicio, ingresos } = montar();
     ingresos.buscarEntrada.mockResolvedValue(filaDescartada);
-    ingresos.listarPorMessageIds.mockResolvedValue([]);
+    ingresos.ingresoDeEntrada.mockResolvedValue(undefined);
 
     const resultado = await servicio.obtener(MSG, ctx);
 
@@ -85,24 +87,24 @@ describe('CorreoDescartadoService.obtener (REQ-318)', () => {
       ingreso: null,
       codigoOrdenVenta: null,
     });
-    expect(ingresos.listarPorMessageIds).toHaveBeenCalledWith(
+    expect(ingresos.ingresoDeEntrada).toHaveBeenCalledWith(
       'emp_demo',
       '023WA',
-      [MSG],
+      MSG,
     );
   });
 
   it('completa codigoOrdenVenta con el ingreso ingresado', async () => {
     const { servicio, ingresos } = montar();
     ingresos.buscarEntrada.mockResolvedValue(filaDescartada);
-    ingresos.listarPorMessageIds.mockResolvedValue([
+    ingresos.ingresoDeEntrada.mockResolvedValue(
       ingreso({
         estado: 'ingresado',
         codigoOrdenVenta: 'OV-00000123',
         idOrdenVenta: '7',
         error: null,
       }),
-    ]);
+    );
 
     const resultado = await servicio.obtener(MSG, ctx);
 
@@ -120,7 +122,7 @@ describe('CorreoDescartadoService.obtener (REQ-318)', () => {
     await expect(servicio.obtener(MSG, ctx)).rejects.toMatchObject({
       response: { error: 'CORREO_NO_ENCONTRADO' },
     });
-    expect(ingresos.listarPorMessageIds).not.toHaveBeenCalled();
+    expect(ingresos.ingresoDeEntrada).not.toHaveBeenCalled();
   });
 
   it('messageId inválido responde BadRequest sin consultar', async () => {
@@ -130,7 +132,7 @@ describe('CorreoDescartadoService.obtener (REQ-318)', () => {
       BadRequestException,
     );
     expect(ingresos.buscarEntrada).not.toHaveBeenCalled();
-    expect(ingresos.listarPorMessageIds).not.toHaveBeenCalled();
+    expect(ingresos.ingresoDeEntrada).not.toHaveBeenCalled();
   });
 
   it('cuenta no habilitada responde 403 CORREOS_NO_DISPONIBLES', async () => {
@@ -162,5 +164,18 @@ describe('CorreoDescartadoService.obtener (REQ-318)', () => {
       estado: 'ingresado',
       codigoOrdenVenta: 'OV-00000123',
     });
+  });
+
+  it('si ingresoDeEntrada falla con 503, obtener rechaza con esa excepción', async () => {
+    const { servicio, ingresos } = montar();
+    ingresos.buscarEntrada.mockResolvedValue(filaDescartada);
+    const fallo = new ServiceUnavailableException({
+      error: 'CORREOS_LECTURA_FALLIDA',
+      message:
+        'No se pudo leer la lista de correos. Intenta de nuevo en unos minutos.',
+    });
+    ingresos.ingresoDeEntrada.mockRejectedValue(fallo);
+
+    await expect(servicio.obtener(MSG, ctx)).rejects.toBe(fallo);
   });
 });
