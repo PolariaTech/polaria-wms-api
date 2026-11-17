@@ -59,10 +59,14 @@ export const COLUMNAS_ENTRADA = `
 const contiene = (texto: string) =>
   `%${texto.replace(/[\\%_]/g, (caracter) => `\\${caracter}`)}%`;
 
-/** El WHERE de la lista de correos. `$1` es siempre la cuenta. */
+const ingresadoAMano = (tablaIngresos: string) =>
+  `EXISTS (SELECT 1 FROM ${tablaIngresos} i WHERE i.codigo_cuenta = $1 AND i.message_id = e.message_id AND i.estado = 'ingresado')`;
+
+/** El WHERE de la lista de correos, sobre `correo_pedido_entrada` con alias `e`. `$1` es siempre la cuenta. */
 export function armarFiltroEntradas(
   codigoCuenta: string,
   filtro: FiltroCorreosEntrada,
+  tablaIngresos: string,
 ): { donde: string; params: unknown[] } {
   const params: unknown[] = [codigoCuenta];
   const condiciones = ['codigo_cuenta = $1'];
@@ -70,7 +74,14 @@ export function armarFiltroEntradas(
     params.push(valor);
     condiciones.push(condicion(`$${params.length}`));
   };
-  if (filtro.modo === 'descartados') condiciones.push('nuevo_pedido = false');
+  if (filtro.modo === 'descartados')
+    condiciones.push(
+      `nuevo_pedido = false AND NOT ${ingresadoAMano(tablaIngresos)}`,
+    );
+  if (filtro.modo === 'procesados')
+    condiciones.push(
+      `(nuevo_pedido IS DISTINCT FROM false OR ${ingresadoAMano(tablaIngresos)})`,
+    );
   if (filtro.desde) {
     agregar((p) => `recibido_en >= ${p}::timestamptz`, filtro.desde);
   }

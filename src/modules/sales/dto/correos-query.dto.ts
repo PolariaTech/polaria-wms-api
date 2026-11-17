@@ -14,7 +14,7 @@ import {
 const recortar = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
-export const MODOS_CORREOS = ['todos', 'descartados'] as const;
+export const MODOS_CORREOS = ['todos', 'descartados', 'procesados'] as const;
 export type ModoCorreos = (typeof MODOS_CORREOS)[number];
 
 export const TAMANO_PAGINA_CORREOS_MAX = 50;
@@ -28,7 +28,7 @@ export class CorreosQueryDto {
     enum: MODOS_CORREOS,
     default: 'todos',
     description:
-      '`descartados` = solo los que el workflow no ingresó (`nuevo_pedido` en falso, con `motivo`).',
+      '`descartados` = los que el workflow descartó (`nuevo_pedido` en falso) y nadie ha ingresado a mano todavía. `procesados` = los que tomó el workflow y los descartados ya ingresados a mano. `todos` = sin filtro.',
   })
   @IsOptional()
   @IsIn(MODOS_CORREOS)

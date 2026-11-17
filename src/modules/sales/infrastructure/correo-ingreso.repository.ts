@@ -241,17 +241,13 @@ export class CorreoIngresoRepository {
     codigoCuenta: string,
     filtro: FiltroCorreosEntrada,
   ): Promise<ListaCorreosEntrada> {
-    if (!codigoCuenta?.trim()) {
-      // Sin la cuenta, la consulta traería los correos de todas las cuentas del esquema.
-      throw new Error('La lista de correos exige el código de la cuenta.');
-    }
-    const schema = this.schemaLocator.assertSafeSchemaIdent(
-      schemaName ?? 'public',
-    );
-    const tabla = `"${schema}".correo_pedido_entrada`;
-    const { donde, params } = armarFiltroEntradas(codigoCuenta, filtro);
-
-    try {
+    return this.conLecturaEntrada(schemaName, codigoCuenta, async (schema) => {
+      const tabla = `"${schema}".correo_pedido_entrada e`;
+      const { donde, params } = armarFiltroEntradas(
+        codigoCuenta,
+        filtro,
+        this.tabla(schemaName),
+      );
       const [conteo, filas] = await Promise.all([
         this.prisma.$queryRawUnsafe<{ total: number }[]>(
           `SELECT count(*)::int AS total FROM ${tabla} WHERE ${donde}`,
@@ -268,6 +264,44 @@ export class CorreoIngresoRepository {
         ),
       ]);
       return { total: conteo[0]?.total ?? 0, filas };
+    });
+  }
+
+  /**
+   * REQ-318: un correo de la lista, para la vista del correo completo.
+   */
+  async buscarEntrada(
+    schemaName: string | null | undefined,
+    codigoCuenta: string,
+    messageId: string,
+  ): Promise<CorreoEntradaFila | null> {
+    return this.conLecturaEntrada(schemaName, codigoCuenta, async (schema) => {
+      const filas = await this.prisma.$queryRawUnsafe<CorreoEntradaFila[]>(
+        `SELECT ${COLUMNAS_ENTRADA} FROM "${schema}".correo_pedido_entrada
+          WHERE codigo_cuenta = $1 AND message_id = $2
+          ORDER BY recibido_en DESC NULLS LAST, created_at DESC LIMIT 1`,
+        codigoCuenta,
+        messageId,
+      );
+      return filas[0] ?? null;
+    });
+  }
+
+  /** Guarda de cuenta y 503 `CORREOS_LECTURA_FALLIDA` compartidos por lista y fila. */
+  private async conLecturaEntrada<T>(
+    schemaName: string | null | undefined,
+    codigoCuenta: string,
+    trabajo: (schema: string) => Promise<T>,
+  ): Promise<T> {
+    if (!codigoCuenta?.trim()) {
+      // Sin la cuenta, la consulta traería los correos de todas las cuentas del esquema.
+      throw new Error('La lista de correos exige el código de la cuenta.');
+    }
+    const schema = this.schemaLocator.assertSafeSchemaIdent(
+      schemaName ?? 'public',
+    );
+    try {
+      return await trabajo(schema);
     } catch (causa) {
       // El detalle de la base queda en el registro para soporte; al cliente no se le muestra.
       this.logger.error(
