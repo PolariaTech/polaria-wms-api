@@ -126,7 +126,7 @@ describe('OrdenVentaRepository.emitir', () => {
     expect(TX_EMITIR.timeout).toBeLessThan(30_000);
   });
 
-  it('registra las OT creadas y el tiempo, y deja pasar el error', async () => {
+  it('registra las líneas y el tiempo del fallo, y deja pasar el error', async () => {
     const error = new Error('Transaction API error');
     const advertir = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
@@ -139,7 +139,7 @@ describe('OrdenVentaRepository.emitir', () => {
     ).rejects.toBe(error);
 
     expect(advertir).toHaveBeenCalledWith(
-      expect.stringContaining('emitir OV-1 falló: 2 líneas, 0 OT creadas'),
+      expect.stringContaining('emitir OV-1 falló: 2 líneas,'),
     );
   });
 

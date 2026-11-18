@@ -179,7 +179,7 @@ export class OrdenVentaRepository {
       return emitida;
     } catch (error) {
       this.logger.warn(
-        `emitir ${orden.codigo} falló: ${orden.lineas.length} líneas, ${progreso.ordenesTrabajo} OT creadas, ${Date.now() - inicio} ms`,
+        `emitir ${orden.codigo} falló: ${orden.lineas.length} líneas, ${Date.now() - inicio} ms`,
       );
       throw error;
     }
