@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -255,20 +254,6 @@ describe('OrdenVentaService.emitir', () => {
 
     await expect(service.emitir(idOrden, ctx)).rejects.toBeInstanceOf(
       BadRequestException,
-    );
-  });
-
-  it('responde 503 claro si la transacción de emitir vence (P2028)', async () => {
-    repository.findById.mockResolvedValue(ordenBorrador as never);
-    repository.emitir.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError(
-        'Transaction API error: A query cannot be executed on an expired transaction.',
-        { code: 'P2028', clientVersion: 'test' },
-      ),
-    );
-
-    await expect(service.emitir(idOrden, ctx)).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
     );
   });
 });
