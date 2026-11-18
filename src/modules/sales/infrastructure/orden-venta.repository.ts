@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EstadoOrdenVenta, Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
@@ -9,6 +9,8 @@ import type {
   OrdenVentaEmitirResponse,
   StockAllocation,
 } from '../interfaces/orden-venta.interfaces';
+import { asignarFifo } from '../utils/fifo-reserva';
+import type { FilaStockFifo } from '../utils/fifo-reserva';
 
 const _ordenInclude = {
   lineas: {
@@ -92,8 +94,18 @@ type ListWhereParsed = {
   estado?: string;
 };
 
+/**
+ * Confirmar una OV crea una OT por cada reserva de stock, todo en serie dentro
+ * de una sola transacción: con pedidos grandes (25 OT) pasa los 5 s por defecto
+ * de Prisma. El tope queda por debajo del corte de 30 s del proxy /api de Next.
+ */
+type TxOpciones = { maxWait?: number; timeout?: number };
+export const TX_EMITIR: TxOpciones = { maxWait: 5_000, timeout: 20_000 };
+
 @Injectable()
 export class OrdenVentaRepository {
+  private readonly logger = new Logger(OrdenVentaRepository.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ordenTrabajoRepository: OrdenTrabajoRepository,
@@ -106,6 +118,7 @@ export class OrdenVentaRepository {
    */
   private async withTenantTx<T>(
     schemaName: string | null | undefined,
+    opciones: TxOpciones | undefined,
     fn: (tx: Prisma.TransactionClient, schema: string) => Promise<T>,
   ): Promise<T> {
     const schema = this.schemaLocator.assertSafeSchemaIdent(
@@ -122,7 +135,7 @@ export class OrdenVentaRepository {
         searchPath,
       );
       return fn(tx, schema);
-    });
+    }, opciones);
   }
 
   async findById(
@@ -156,7 +169,34 @@ export class OrdenVentaRepository {
     idUsuario: string,
     schemaName?: string | null,
   ): Promise<OrdenVentaEmitirResponse> {
-    return this.withTenantTx(schemaName, async (tx, schema) => {
+    const inicio = Date.now();
+    const progreso = { ordenesTrabajo: 0 };
+    try {
+      const emitida = await this.emitirEnTransaccion(
+        orden,
+        idUsuario,
+        schemaName,
+        progreso,
+      );
+      this.logger.log(
+        `emitir ${orden.codigo}: ${orden.lineas.length} líneas, ${progreso.ordenesTrabajo} OT, ${Date.now() - inicio} ms`,
+      );
+      return emitida;
+    } catch (error) {
+      this.logger.warn(
+        `emitir ${orden.codigo} falló: ${orden.lineas.length} líneas, ${progreso.ordenesTrabajo} OT creadas, ${Date.now() - inicio} ms`,
+      );
+      throw error;
+    }
+  }
+
+  private async emitirEnTransaccion(
+    orden: OrdenVentaWithRelations,
+    idUsuario: string,
+    schemaName: string | null | undefined,
+    progreso: { ordenesTrabajo: number },
+  ): Promise<OrdenVentaEmitirResponse> {
+    return this.withTenantTx(schemaName, TX_EMITIR, async (tx, schema) => {
       const locked = await tx.$queryRawUnsafe<Array<{ idOrdenVenta: string }>>(
         `UPDATE ${schema}.orden_venta
          SET estado = 'confirmada',
@@ -176,92 +216,34 @@ export class OrdenVentaRepository {
         (await this.resolveUbicacionDestino(tx, schema, orden, tipoFlujo)) ??
         undefined;
 
-      const allocations: StockAllocation[] = [];
+      const asignaciones = await this.reservarStock(
+        tx,
+        schema,
+        orden,
+        idUsuario,
+      );
 
-      for (const linea of orden.lineas) {
-        const pendiente = linea.cantidadPedida;
-        const chunks = await this.allocateFifo(
-          tx,
-          schema,
-          orden.codigoCuenta,
-          orden.idBodega,
-          linea.idProducto,
-          pendiente,
-        );
-        allocations.push(...chunks);
-
-        for (const chunk of chunks) {
-          await tx.$executeRawUnsafe(
-            `UPDATE ${schema}.warehouse_state
-             SET cantidad_reservada = cantidad_reservada + $2::numeric,
-                 version = version + 1,
-                 updated_at = now()
-             WHERE id_warehouse_state = $1::uuid`,
-            chunk.idWarehouseState,
-            chunk.cantidad,
-          );
-
-          await tx.$executeRawUnsafe(
-            `INSERT INTO ${schema}.movimiento_inventario (
-               codigo_cuenta,
-               id_bodega,
-               id_ubicacion_origen,
-               id_ubicacion_destino,
-               id_producto,
-               id_lote,
-               cantidad,
-               tipo_movimiento,
-               id_usuario,
-               id_referencia,
-               tipo_referencia
-             ) VALUES (
-               $1,
-               $2::uuid,
-               $3::uuid,
-               $4::uuid,
-               $5::uuid,
-               $6::uuid,
-               $7::numeric,
-               'reserva',
-               $8::uuid,
-               $9::uuid,
-               $10
-             )`,
-            orden.codigoCuenta,
-            orden.idBodega,
-            chunk.idUbicacion,
-            chunk.idUbicacion,
-            chunk.idProducto,
-            chunk.idLote,
-            chunk.cantidad,
-            idUsuario,
-            orden.idOrdenVenta,
-            TIPO_REFERENCIA_ORDEN_VENTA,
-          );
-
-          const observacionesOt = `OV ${orden.codigo}${
-            orden.comprador ? ` · ${orden.comprador.nombre}` : ''
-          }`;
-
-          await this.ordenTrabajoRepository.createInTransaction(
-            tx,
-            {
-              codigoCuenta: orden.codigoCuenta,
-              idBodega: orden.idBodega,
-              tipoFlujo,
-              idUbicacionOrigen: chunk.idUbicacion,
-              idUbicacionDestino,
-              idLote: chunk.idLote ?? undefined,
-              idProducto: linea.idProducto,
-              cantidad: chunk.cantidad,
-              idOrdenVenta: orden.idOrdenVenta,
-              observaciones: observacionesOt,
-            },
-            idUsuario,
-            { schemaName: schema },
-          );
-        }
-      }
+      const observacionesOt = `OV ${orden.codigo}${
+        orden.comprador ? ` · ${orden.comprador.nombre}` : ''
+      }`;
+      await this.ordenTrabajoRepository.createLoteInTransaction(
+        tx,
+        asignaciones.map((asignacion) => ({
+          codigoCuenta: orden.codigoCuenta,
+          idBodega: orden.idBodega,
+          tipoFlujo,
+          idUbicacionOrigen: asignacion.idUbicacion,
+          idUbicacionDestino,
+          idLote: asignacion.idLote ?? undefined,
+          idProducto: asignacion.idProducto,
+          cantidad: asignacion.cantidad,
+          idOrdenVenta: orden.idOrdenVenta,
+          observaciones: observacionesOt,
+        })),
+        idUsuario,
+        { schemaName: schema },
+      );
+      progreso.ordenesTrabajo = asignaciones.length;
 
       const updated = await this.loadOrdenVenta(tx, schema, orden.idOrdenVenta);
       if (!updated) {
@@ -322,30 +304,34 @@ export class OrdenVentaRepository {
     return rows[0]?.idUbicacion ?? null;
   }
 
-  private async allocateFifo(
+  /**
+   * Reserva el stock FIFO de todas las líneas de la OV con un número fijo de
+   * sentencias (REQ-348): una lectura, un UPDATE y un INSERT de movimientos,
+   * salgan las asignaciones que salgan. El reparto se calcula en memoria con
+   * `asignarFifo`. Los parámetros van como JSON para no depender del enlace de
+   * arreglos del adaptador.
+   */
+  private async reservarStock(
     tx: SqlClient,
     schema: string,
-    codigoCuenta: string,
-    idBodega: string,
-    idProducto: string,
-    cantidadRequerida: Prisma.Decimal,
+    orden: OrdenVentaWithRelations,
+    idUsuario: string,
   ): Promise<StockAllocation[]> {
-    const rows = await tx.$queryRawUnsafe<
-      Array<{
-        idWarehouseState: string;
-        idUbicacion: string;
-        idLote: string | null;
-        idProducto: string;
-        cantidad: Prisma.Decimal | string | number;
-        cantidadReservada: Prisma.Decimal | string | number;
-      }>
-    >(
+    const idsProducto = [
+      ...new Set(orden.lineas.map((linea) => linea.idProducto)),
+    ];
+    if (idsProducto.length === 0) {
+      return [];
+    }
+
+    const filas = await tx.$queryRawUnsafe<FilaStockFifo[]>(
       `SELECT ws.id_warehouse_state AS "idWarehouseState",
               ws.id_ubicacion AS "idUbicacion",
               ws.id_lote AS "idLote",
               ws.id_producto AS "idProducto",
               ws.cantidad,
-              ws.cantidad_reservada AS "cantidadReservada"
+              ws.cantidad_reservada AS "cantidadReservada",
+              l.fecha_vencimiento AS "fechaVencimiento"
        FROM ${schema}.warehouse_state ws
        JOIN ${schema}.ubicacion u ON u.id_ubicacion = ws.id_ubicacion
        JOIN ${schema}.tipo_ubicacion t
@@ -353,47 +339,103 @@ export class OrdenVentaRepository {
        LEFT JOIN ${schema}.lote l ON l.id_lote = ws.id_lote
        WHERE ws.codigo_cuenta = $1
          AND ws.id_bodega = $2::uuid
-         AND ws.id_producto = $3::uuid
+         AND ws.id_producto IN (
+           SELECT (jsonb_array_elements_text($3::jsonb))::uuid
+         )
          AND u.esta_activa = true
          AND t.es_almacenamiento = true
        ORDER BY l.fecha_vencimiento ASC NULLS LAST, ws.updated_at ASC`,
-      codigoCuenta,
-      idBodega,
-      idProducto,
+      orden.codigoCuenta,
+      orden.idBodega,
+      JSON.stringify(idsProducto),
     );
 
-    let restante = this.toDecimal(cantidadRequerida);
-    const allocations: StockAllocation[] = [];
-
-    for (const row of rows) {
-      const disponible = this.toDecimal(row.cantidad).sub(
-        this.toDecimal(row.cantidadReservada),
-      );
-      if (disponible.lte(0)) {
-        continue;
-      }
-
-      const tomar = disponible.lte(restante) ? disponible : restante;
-      if (tomar.lte(0)) {
-        continue;
-      }
-
-      allocations.push({
-        idWarehouseState: row.idWarehouseState,
-        idUbicacion: row.idUbicacion,
-        idLote: row.idLote,
-        idProducto: row.idProducto,
-        cantidad: tomar.toNumber(),
-      });
-
-      restante = restante.sub(tomar);
-      if (restante.lte(0)) {
-        break;
-      }
-    }
+    const asignaciones = asignarFifo(
+      filas,
+      orden.lineas.map((linea) => ({
+        idProducto: linea.idProducto,
+        cantidad: this.toDecimal(linea.cantidadPedida),
+      })),
+    );
 
     // Temporal: si falta stock, se emite igual con la reserva parcial (o sin reserva).
-    return allocations;
+    if (asignaciones.length === 0) {
+      return asignaciones;
+    }
+
+    // Una fila de stock puede salir en varias asignaciones: se suma por fila.
+    // El trigger de warehouse_state fija version = version + 1 por UPDATE, así
+    // que la versión sube una vez por fila y emisión.
+    const reservadoPorFila = new Map<string, Prisma.Decimal>();
+    for (const asignacion of asignaciones) {
+      const previo =
+        reservadoPorFila.get(asignacion.idWarehouseState) ??
+        new Prisma.Decimal(0);
+      reservadoPorFila.set(
+        asignacion.idWarehouseState,
+        previo.add(asignacion.cantidad),
+      );
+    }
+
+    await tx.$executeRawUnsafe(
+      `UPDATE ${schema}.warehouse_state ws
+       SET cantidad_reservada = ws.cantidad_reservada + r.cantidad,
+           version = ws.version + 1,
+           updated_at = now()
+       FROM jsonb_to_recordset($1::jsonb)
+         AS r(id_warehouse_state uuid, cantidad numeric)
+       WHERE ws.id_warehouse_state = r.id_warehouse_state`,
+      JSON.stringify(
+        [...reservadoPorFila].map(([idWarehouseState, cantidad]) => ({
+          id_warehouse_state: idWarehouseState,
+          cantidad: cantidad.toString(),
+        })),
+      ),
+    );
+
+    await tx.$executeRawUnsafe(
+      `INSERT INTO ${schema}.movimiento_inventario (
+         codigo_cuenta,
+         id_bodega,
+         id_ubicacion_origen,
+         id_ubicacion_destino,
+         id_producto,
+         id_lote,
+         cantidad,
+         tipo_movimiento,
+         id_usuario,
+         id_referencia,
+         tipo_referencia
+       )
+       SELECT $1::text,
+              $2::uuid,
+              m.id_ubicacion,
+              m.id_ubicacion,
+              m.id_producto,
+              m.id_lote,
+              m.cantidad,
+              'reserva'::tipo_movimiento,
+              $3::uuid,
+              $4::uuid,
+              $5::text
+       FROM jsonb_to_recordset($6::jsonb)
+         AS m(id_ubicacion uuid, id_producto uuid, id_lote uuid, cantidad numeric)`,
+      orden.codigoCuenta,
+      orden.idBodega,
+      idUsuario,
+      orden.idOrdenVenta,
+      TIPO_REFERENCIA_ORDEN_VENTA,
+      JSON.stringify(
+        asignaciones.map((asignacion) => ({
+          id_ubicacion: asignacion.idUbicacion,
+          id_producto: asignacion.idProducto,
+          id_lote: asignacion.idLote,
+          cantidad: asignacion.cantidad,
+        })),
+      ),
+    );
+
+    return asignaciones;
   }
 
   async getDisponibleProducto(
