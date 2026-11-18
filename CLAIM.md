@@ -15,6 +15,7 @@
 - `src/modules/sales/API.md`
 - `CHANGELOG.md`
 - `.github/workflows/test-ca1-ca2.yml` — autorizada por el usuario el 2026-11-18
+- `.github/workflows/README.md` — autorizada por el usuario el 2026-11-18
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
