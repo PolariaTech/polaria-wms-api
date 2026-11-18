@@ -23,11 +23,11 @@ on:
     inputs:
       ref:
         description: >-
-          Tag o commit a desplegar (por ejemplo v2.9.16). Vacío = la punta de main.
-          El workflow se lanza SIEMPRE desde main (los roles de AWS solo confían en main);
-          este campo solo elige qué código se construye y se despliega.
-        required: false
-        default: ''
+          Tag a desplegar (por ejemplo v2.9.16). Es obligatorio: AWS queda fijo en un tag y
+          solo cambia cuando alguien elige otro a mano. El workflow se lanza SIEMPRE desde
+          main (los roles de AWS solo confían en main); este campo solo elige qué código
+          se construye y se despliega.
+        required: true
         type: string
 
 # Sin permisos por defecto; cada job pide solo lo que necesita.
@@ -76,7 +76,7 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Vacío = la rama desde la que se lanzó (main). Con valor: ese tag o commit.
+          # Obligatorio (ver la entrada `ref`): el tag o commit que se construye y despliega.
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
