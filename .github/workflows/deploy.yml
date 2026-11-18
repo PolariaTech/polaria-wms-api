@@ -1,0 +1,221 @@
+name: Deploy
+
+# Despliegue MANUAL del backend a ECS Fargate (POL-357, ADR-006).
+#
+# Cómo se usa: pestaña Actions > "Deploy" > Run workflow, eligiendo la rama main.
+#   1. build:  construye la imagen linux/arm64, la prueba con scripts/docker-smoke.sh y la sube a
+#              ECR con el SHA COMPLETO del commit como etiqueta (nunca "latest"). Asume
+#              github-actions-build-role (solo ECR).
+#   2. deploy: espera la aprobación del Environment "production" (Daniel o Lucho). Con ella asume
+#              github-actions-deploy-role (solo ECS), registra una revisión nueva de la task
+#              definition con esa imagen y actualiza el servicio.
+#
+# Lo que este workflow NUNCA hace: subir ni bajar desired_count (es una acción manual aprobada por
+# la regla de costos), usar llaves de acceso (todo es OIDC) ni correr solo con cada merge
+# (decisión con Edgar, 2026-11-17: sin despliegue continuo automático).
+#
+# Requisitos fuera de este archivo (ver infra/github/polaria-wms-api/README.md en el repo de
+# infraestructura): variable del repo AWS_ACCOUNT_ID, Environment "production" con revisores y los
+# dos roles de AWS ya aplicados con Terraform.
+
+on:
+  workflow_dispatch:
+
+# Sin permisos por defecto; cada job pide solo lo que necesita.
+permissions: {}
+
+# Un despliegue a la vez, y nunca se cancela uno en curso a la mitad.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: polaria-wms-api
+  ECS_CLUSTER: polaria-wms
+  ECS_SERVICE: polaria-wms-api
+  ECS_TASK_FAMILY: polaria-wms-api
+  CONTAINER_NAME: wms-api
+
+jobs:
+  build:
+    name: Build y push a ECR
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.image.outputs.uri }}
+
+    steps:
+      # El build-role solo confía en la rama main; este paso falla antes y con un mensaje claro.
+      - name: Solo desde main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Este workflow solo se ejecuta desde la rama main (ref actual: ${GITHUB_REF})."
+          exit 1
+
+      - name: Validar la variable AWS_ACCOUNT_ID
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          if [[ ! "${AWS_ACCOUNT_ID}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::Falta la variable del repositorio AWS_ACCOUNT_ID (12 dígitos)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Credenciales de AWS (OIDC, github-actions-build-role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-build-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login a ECR
+        id: ecr
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          aws ecr get-login-password --region "${AWS_REGION}" \
+            | docker login --username AWS --password-stdin "${registry}"
+          echo "registry=${registry}" >> "${GITHUB_OUTPUT}"
+
+      - name: Calcular la imagen (etiqueta = SHA completo)
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: echo "uri=${REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+
+      # Las etiquetas de ECR son inmutables: volver a subir el mismo SHA fallaría. Si la imagen ya
+      # existe (por ejemplo, se repite un despliegue fallido), se reutiliza.
+      - name: ¿Ya existe esta imagen en ECR?
+        id: exists
+        env:
+          IMAGE: ${{ steps.image.outputs.uri }}
+        run: |
+          if docker manifest inspect "${IMAGE}" > /dev/null 2>&1; then
+            echo "La imagen ya existe en ECR; se reutiliza."
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Construir linux/arm64
+        if: steps.exists.outputs.exists != 'true'
+        env:
+          IMAGE: ${{ steps.image.outputs.uri }}
+        run: docker buildx build --platform linux/arm64 --provenance=false --load --tag "${IMAGE}" .
+
+      - name: Prueba de humo (GET /, usuario no root, tamaño)
+        if: steps.exists.outputs.exists != 'true'
+        env:
+          IMAGE: ${{ steps.image.outputs.uri }}
+        run: bash scripts/docker-smoke.sh "${IMAGE}"
+
+      - name: Subir a ECR
+        if: steps.exists.outputs.exists != 'true'
+        env:
+          IMAGE: ${{ steps.image.outputs.uri }}
+        run: docker push "${IMAGE}"
+
+  deploy:
+    name: Desplegar a ECS (producción)
+    needs: build
+    # Defensa en profundidad (IaC Review, POL-357): el trust del rol de despliegue solo mira el
+    # Environment, no la rama. La regla «Deployment branches: solo main» del Environment es la
+    # barrera principal; esta condición es la segunda, y cuesta cero.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # La aprobación de Daniel o Lucho se configura en el Environment, no aquí. El token OIDC de un
+    # job con Environment lleva sub = repo:PolariaTech/polaria-wms-api:environment:production, que
+    # es lo único que acepta github-actions-deploy-role.
+    environment:
+      name: production
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Validar la variable AWS_ACCOUNT_ID
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          if [[ ! "${AWS_ACCOUNT_ID}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::Falta la variable del repositorio AWS_ACCOUNT_ID (12 dígitos)."
+            exit 1
+          fi
+
+      - name: Credenciales de AWS (OIDC, github-actions-deploy-role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-deploy-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Registrar la revisión y actualizar el servicio
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+        run: |
+          set -euo pipefail
+
+          # desired_count antes de tocar nada: el despliegue no lo cambia (se verifica al final).
+          desired_before="$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" \
+            --query 'services[0].desiredCount' --output text)"
+          if [[ ! "${desired_before}" =~ ^[0-9]+$ ]]; then
+            echo "::error::No se encontró el servicio ${ECS_SERVICE} en el cluster ${ECS_CLUSTER}."
+            exit 1
+          fi
+
+          # Base = la última revisión ACTIVA de la familia: incluye los cambios de infraestructura
+          # que Terraform haya registrado (variables, tamaño). Solo se cambia la imagen.
+          aws ecs describe-task-definition --task-definition "${ECS_TASK_FAMILY}" \
+            --query taskDefinition --output json > current.json
+
+          jq -e --arg name "${CONTAINER_NAME}" '.containerDefinitions | any(.name == $name)' current.json > /dev/null \
+            || { echo "::error::La task definition no tiene un contenedor llamado ${CONTAINER_NAME}."; exit 1; }
+
+          jq --arg name "${CONTAINER_NAME}" --arg image "${IMAGE}" '
+            .containerDefinitions |= map(if .name == $name then .image = $image else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities,
+                  .registeredAt, .registeredBy, .deregisteredAt)
+          ' current.json > new.json
+
+          new_arn="$(aws ecs register-task-definition --cli-input-json file://new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)"
+          echo "Revisión registrada: ${new_arn}"
+
+          # Sin --desired-count: el servicio conserva el que tenía.
+          aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${ECS_SERVICE}" \
+            --task-definition "${new_arn}" --query 'service.taskDefinition' --output text
+
+          desired_after="$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" \
+            --query 'services[0].desiredCount' --output text)"
+          if [[ "${desired_after}" != "${desired_before}" ]]; then
+            echo "::error::desired_count cambió de ${desired_before} a ${desired_after}; el despliegue no debe tocarlo."
+            exit 1
+          fi
+
+          # Con desired_count = 0 no hay tareas que reemplazar: no hay nada que esperar. Con
+          # desired_count > 0 se espera a que el servicio se estabilice (el circuit breaker de ECS
+          # revierte solo si la tarea nueva no arranca) y se comprueba que el despliegue terminó.
+          if [[ "${desired_after}" -gt 0 ]]; then
+            aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"
+            rollout="$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" \
+              --query "services[0].deployments[?status=='PRIMARY'].rolloutState | [0]" --output text)"
+            if [[ "${rollout}" != "COMPLETED" ]]; then
+              echo "::error::El despliegue terminó en estado ${rollout}."
+              exit 1
+            fi
+          fi
+
+          {
+            echo "### Despliegue a producción"
+            echo ""
+            echo "- Imagen: \`${IMAGE}\`"
+            echo "- Task definition: \`${new_arn}\`"
+            echo "- desired_count: ${desired_after} (sin cambios)"
+          } >> "${GITHUB_STEP_SUMMARY}"
