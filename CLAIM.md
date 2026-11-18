@@ -14,6 +14,7 @@
 - `src/modules/operations/infrastructure/orden-trabajo.repository.ts`
 - `src/modules/sales/API.md`
 - `CHANGELOG.md`
+- `.github/workflows/test-ca1-ca2.yml` — autorizada por el usuario el 2026-11-18
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
