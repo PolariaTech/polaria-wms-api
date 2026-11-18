@@ -20,6 +20,15 @@ name: Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: >-
+          Tag a desplegar (por ejemplo v2.9.16). Es obligatorio: AWS queda fijo en un tag y
+          solo cambia cuando alguien elige otro a mano. El workflow se lanza SIEMPRE desde
+          main (los roles de AWS solo confían en main); este campo solo elige qué código
+          se construye y se despliega.
+        required: true
+        type: string
 
 # Sin permisos por defecto; cada job pide solo lo que necesita.
 permissions: {}
@@ -67,6 +76,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Obligatorio (ver la entrada `ref`): el tag o commit que se construye y despliega.
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - name: Credenciales de AWS (OIDC, github-actions-build-role)
@@ -89,7 +100,11 @@ jobs:
         id: image
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
-        run: echo "uri=${REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+        run: |
+          # El SHA del código que se construye (si se eligió un tag, el commit de ese tag),
+          # no el de la punta de main.
+          sha="$(git rev-parse HEAD)"
+          echo "uri=${REGISTRY}/${ECR_REPOSITORY}:${sha}" >> "${GITHUB_OUTPUT}"
 
       # Las etiquetas de ECR son inmutables: volver a subir el mismo SHA fallaría. Si la imagen ya
       # existe (por ejemplo, se repite un despliegue fallido), se reutiliza.
