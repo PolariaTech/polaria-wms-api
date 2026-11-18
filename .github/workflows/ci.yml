@@ -63,7 +63,7 @@ jobs:
       # INFORMATIVO por ahora (POL-434): hoy hay 14 vulnerabilidades ya existentes (8 altas, 6 moderadas)
       # y la API está congelada en debug. El paso muestra el reporte en rojo pero no bloquea el PR.
       # Cuando POL-434 quede resuelto, se borra `continue-on-error` y pasa a ser obligatorio.
-      - name: npm audit (producción, informativo: reporta severidad alta o crítica)
+      - name: npm audit (producción, informativo - reporta severidad alta o crítica)
         continue-on-error: true
         run: npm audit --omit=dev --audit-level=high
 
