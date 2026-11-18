@@ -1,5 +1,11 @@
 name: CI
 
+# POL-358 (ADR-006 §6): CI endurecido. Cambios frente a la versión anterior:
+#   A3  escaneo de la imagen con Trivy (falla con vulnerabilidades CRÍTICAS que ya tengan corrección)
+#   A4  escaneo de dependencias de producción con npm audit (falla con severidad alta o crítica)
+#   A5  todas las acciones de terceros fijadas por SHA de commit (antes por etiqueta: @v4)
+# Pendiente a propósito: A1 (lint de solo lectura), que se activa cuando POL-340 deje el lint en verde.
+
 on:
   push:
     branches: [main]
@@ -20,9 +26,11 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # Alineado a Prisma 7 (engine >=22) y evita EBADENGINE en CI.
           node-version: '22'
@@ -36,17 +44,38 @@ jobs:
 
       - run: npm run test:e2e
 
+  # A4: escaneo de dependencias. Solo las de producción (--omit=dev): las de desarrollo no viajan en la imagen.
+  dependency-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: npm audit (producción, falla con severidad alta o crítica)
+        run: npm audit --omit=dev --audit-level=high
+
   # Construye la imagen de producción (Fargate ARM64) y la arranca. No la sube a ningún registro.
   docker-image:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build linux/arm64
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/arm64
@@ -58,3 +87,13 @@ jobs:
 
       - name: Prueba de humo (GET /, usuario no root, tamaño)
         run: bash scripts/docker-smoke.sh polaria-wms-api:ci
+
+      # A3: escaneo de la imagen. ignore-unfixed: solo cuenta lo que ya tiene una versión corregida.
+      - name: Escaneo de la imagen con Trivy (falla con CRÍTICAS con corrección)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: polaria-wms-api:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table

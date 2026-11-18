@@ -1,0 +1,70 @@
+name: Test CA1 y CA2 (POL-357)
+
+# Prueba de los criterios CA1 y CA2 de POL-357. Se lanza a mano: Actions > "Test CA1 y CA2" >
+# Run workflow, eligiendo una rama que NO sea main (por ejemplo, una rama de prueba creada
+# desde main). Si se lanza desde main, CA2 no prueba nada útil. No despliega ni toca ECS/ECR.
+#
+# Cada job INTENTA asumir un rol de AWS que NO debería poder asumir. La prueba pasa si AWS
+# rechaza la petición (AccessDenied en AssumeRoleWithWebIdentity). No despliega nada,
+# no toca ECR ni ECS y no cuesta nada.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  ca1-sin-environment-no-asume-deploy-role:
+    name: CA1 - job sin Environment NO asume github-actions-deploy-role
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    steps:
+      - name: Intentar asumir el rol de despliegue (se espera rechazo)
+        id: asumir
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-deploy-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resultado esperado = rechazo
+        env:
+          RESULTADO: ${{ steps.asumir.outcome }}
+        run: |
+          if [[ "${RESULTADO}" == "failure" ]]; then
+            echo "CA1 OK: AWS rechazó la asunción del rol de despliegue sin Environment."
+          else
+            echo "::error::CA1 FALLA: el job sin Environment pudo asumir el rol de despliegue (resultado: ${RESULTADO})."
+            exit 1
+          fi
+
+  ca2-otra-rama-no-asume-build-role:
+    name: CA2 - job de otra rama NO asume github-actions-build-role
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    steps:
+      - name: Intentar asumir el rol de build desde esta rama (se espera rechazo)
+        id: asumir
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-build-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resultado esperado = rechazo
+        env:
+          RESULTADO: ${{ steps.asumir.outcome }}
+        run: |
+          if [[ "${RESULTADO}" == "failure" ]]; then
+            echo "CA2 OK: AWS rechazó la asunción del rol de build desde una rama distinta de main."
+          else
+            echo "::error::CA2 FALLA: un job de otra rama pudo asumir el rol de build (resultado: ${RESULTADO})."
+            exit 1
+          fi
