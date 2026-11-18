@@ -1,0 +1,11 @@
+# Responsables de revisión de polaria-wms-api (POL-358, B4 del ADR-006).
+# Con la regla «Require review from Code Owners» del ruleset protect-main, un PR
+# necesita la aprobación de al menos UNA de estas cuentas (el autor del PR no
+# cuenta para aprobar el suyo). Las dos están en la misma línea, así que basta
+# una de ellas.
+#
+#   @luiscantilloo             Lucho (cuenta con la que fusiona en la web)
+#   @eldani13                  Lucho (cuenta con la que empuja código desde su equipo)
+#   @DanielGalvis-PolariaTech  Daniel
+
+* @luiscantilloo @eldani13 @DanielGalvis-PolariaTech
