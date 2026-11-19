@@ -13,7 +13,8 @@ name: Fusión programada
 #   - PR hacia main, que no sea borrador;
 #   - reviewDecision = APPROVED (incluye los Code Owners si el ruleset los exige);
 #   - mergeable = MERGEABLE (sin conflictos);
-#   - TODAS las comprobaciones en SUCCESS, SKIPPED o NEUTRAL (una pendiente o fallida lo deja fuera);
+#   - al menos una comprobación, y TODAS en SUCCESS, SKIPPED o NEUTRAL (una pendiente o fallida lo deja
+#     fuera; un PR sin ninguna comprobación tampoco se fusiona);
 #   - sin la etiqueta `no-fusionar` (con ella, el PR se salta siempre).
 # Se fusionan del más antiguo al más nuevo, con commit de fusión («Merge pull request #N»), como el
 # historial actual del repo.
@@ -83,6 +84,7 @@ jobs:
               and .reviewDecision == "APPROVED"
               and .mergeable == "MERGEABLE"
               and ((.labels | map(.name) | index("no-fusionar")) | not)
+              and ((.statusCheckRollup | length) > 0)
               and (.statusCheckRollup | all((.conclusion // .state) as $c | ["SUCCESS","SKIPPED","NEUTRAL"] | index($c)))
             )) | sort_by(.createdAt) | .[].number' prs.json > candidatos.txt
 
@@ -112,7 +114,12 @@ jobs:
             if [ "${SOLO_SIMULAR}" = "true" ]; then
               echo "SIMULACIÓN: fusionaría el PR #${numero}"
               echo "- (simulación) fusionaría #${numero}" >> "${GITHUB_STEP_SUMMARY}"
-              hijos="$(gh pr list --repo "${REPO}" --state open --base "${rama}" --json number --jq '.[].number')"
+              if ! hijos="$(gh pr list --repo "${REPO}" --state open --base "${rama}" --json number --jq '.[].number')"; then
+                fallos=$((fallos + 1))
+                echo "::error::No se pudo listar los PR apilados de #${numero}."
+                echo "- NO se pudo listar los PR apilados de #${numero}" >> "${GITHUB_STEP_SUMMARY}"
+                hijos=""
+              fi
               for hijo in ${hijos}; do
                 echo "SIMULACIÓN: reapuntaría el PR apilado #${hijo} a main"
                 echo "- (simulación) reapuntaría el PR apilado #${hijo} a main" >> "${GITHUB_STEP_SUMMARY}"
@@ -122,7 +129,12 @@ jobs:
 
             # Estado fresco: tras fusionar otro PR de esta misma ejecución, este puede haber quedado
             # desactualizado (esperado con strict) o en conflicto (fallo real).
-            estado="$(gh pr view "${numero}" --repo "${REPO}" --json mergeStateStatus --jq '.mergeStateStatus')"
+            if ! estado="$(gh pr view "${numero}" --repo "${REPO}" --json mergeStateStatus --jq '.mergeStateStatus')"; then
+              fallos=$((fallos + 1))
+              echo "::error::No se pudo leer el estado del PR #${numero}. Se deja para la próxima ejecución."
+              echo "- NO se pudo leer el estado de #${numero}" >> "${GITHUB_STEP_SUMMARY}"
+              continue
+            fi
             if [ "${estado}" = "BEHIND" ]; then
               desactualizados=$((desactualizados + 1))
               echo "::notice::El PR #${numero} está desactualizado respecto a main. Hay que pulsar «Update branch»; se reintenta en la próxima ejecución."
@@ -141,7 +153,12 @@ jobs:
               echo "- fusionado #${numero}" >> "${GITHUB_STEP_SUMMARY}"
 
               # Reapuntar a main los PR apilados sobre la rama recién fusionada.
-              hijos="$(gh pr list --repo "${REPO}" --state open --base "${rama}" --json number --jq '.[].number')"
+              if ! hijos="$(gh pr list --repo "${REPO}" --state open --base "${rama}" --json number --jq '.[].number')"; then
+                fallos=$((fallos + 1))
+                echo "::error::#${numero} se fusionó, pero no se pudo listar sus PR apilados; reapúntalos a main a mano."
+                echo "- NO se pudo listar los PR apilados de #${numero}: reapuntarlos a mano" >> "${GITHUB_STEP_SUMMARY}"
+                hijos=""
+              fi
               for hijo in ${hijos}; do
                 if gh pr edit "${hijo}" --repo "${REPO}" --base main; then
                   gh pr comment "${hijo}" --repo "${REPO}" --body "La rama \`${rama}\` se fusionó a main (PR #${numero}, fusión programada), así que este PR ahora apunta a main. Pulsa «Update branch» para que sus comprobaciones corran contra main; se fusionará en la próxima ejecución si sigue aprobado y en verde." || true
