@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { EmpresaFichaFiscalDto } from './empresa-ficha-fiscal.dto';
 
-export class CreateEmpresaDto {
+export class CreateEmpresaDto extends EmpresaFichaFiscalDto {
   @ApiProperty({ example: 'ANDINO', description: 'Código PK de la empresa' })
   @IsString()
   @MinLength(1)

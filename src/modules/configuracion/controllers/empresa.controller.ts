@@ -6,11 +6,16 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -35,6 +40,11 @@ import type {
   UpdateEmpresaResult,
 } from '../interfaces/empresa.interfaces';
 import { EmpresaService } from '../services/empresa.service';
+import { LOGO_EMPRESA_MAX_BYTES } from '../infrastructure/empresa-logo';
+
+const logoInterceptor = FileInterceptor('logo', {
+  limits: { fileSize: LOGO_EMPRESA_MAX_BYTES },
+});
 
 @ApiTags(SWAGGER_TAGS.CONFIGURACION_EMPRESAS)
 @Controller('configuracion/empresas')
@@ -46,10 +56,13 @@ export class EmpresaController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(logoInterceptor)
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @ApiBody({ type: CreateEmpresaDto })
   @ApiOperation({
     summary: 'Crear empresa + provisionar schema emp_*',
     description:
-      'Inserta la empresa en public y crea el schema Postgres con todas las tablas de negocio (template_wms). Solo configurador.',
+      'Inserta la empresa en public y crea el schema Postgres con todas las tablas de negocio (template_wms). La ficha fiscal y el logo son opcionales. Solo configurador.',
   })
   @ApiCreatedResponse({ type: CreateEmpresaResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token ausente o inválido' })
@@ -57,16 +70,23 @@ export class EmpresaController {
     description: 'Solo configurador puede crear empresas',
   })
   @ApiConflictResponse({ description: 'Código de empresa ya existe' })
-  create(@Body() dto: CreateEmpresaDto): Promise<CreateEmpresaResult> {
-    return this.empresaService.create(dto);
+  create(
+    @Body() dto: CreateEmpresaDto,
+    @UploadedFile() logo?: Express.Multer.File,
+  ): Promise<CreateEmpresaResult> {
+    return this.empresaService.create(dto, logo);
   }
 
   @Patch(':codigoEmpresa')
   @HttpCode(HttpStatus.OK)
+  @UseInterceptors(logoInterceptor)
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @ApiBody({ type: UpdateEmpresaDto })
   @ApiOperation({
     summary: 'Actualizar empresa',
     description:
-      'Actualiza razón social, teléfono y/o estado (estaActiva). ' +
+      'Actualiza razón social, teléfono, estado y la ficha fiscal. ' +
+      'El logo nuevo reemplaza al anterior. Si no se envía archivo, el logo guardado se conserva. ' +
       'Solo rol configurador. El código de empresa no se modifica.',
   })
   @ApiParam({
@@ -83,7 +103,8 @@ export class EmpresaController {
   update(
     @Param('codigoEmpresa') codigoEmpresa: string,
     @Body() dto: UpdateEmpresaDto,
+    @UploadedFile() logo?: Express.Multer.File,
   ): Promise<UpdateEmpresaResult> {
-    return this.empresaService.update(codigoEmpresa, dto);
+    return this.empresaService.update(codigoEmpresa, dto, logo);
   }
 }

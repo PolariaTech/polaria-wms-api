@@ -305,6 +305,15 @@ model Empresa {
   telefono              String?               @db.VarChar(32)
   estaActiva            Boolean               @default(true) @map("esta_activa")
   schemaName            String?               @map("schema_name") @db.VarChar(63)
+  rfc                   String?
+  regimenFiscal         String?               @map("regimen_fiscal") @db.VarChar(3)
+  codigoPostalExpedicion String?              @map("codigo_postal_expedicion")
+  nombreCuentaBancaria  String?               @map("nombre_cuenta_bancaria")
+  banco                 String?
+  clabe                 String?
+  correoCobranza        String?               @map("correo_cobranza")
+  serieFactura          String?               @map("serie_factura")
+  logoPath              String?               @map("logo_path")
   idCreador             String?               @map("id_creador") @db.Uuid
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
