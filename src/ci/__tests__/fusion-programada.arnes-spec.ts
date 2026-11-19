@@ -31,9 +31,9 @@ const GH_SIMULADO =
     'sub="$1 $2"',
     'if [ "${sub}" = "pr list" ]; then',
     '  base=""; previo=""',
-    '  for a in "$@"; do',
-    '    if [ "${previo}" = "--base" ]; then base="${a}"; fi',
-    '    previo="${a}"',
+    '  for argumento in "$@"; do',
+    '    if [ "${previo}" = "--base" ]; then base="${argumento}"; fi',
+    '    previo="${argumento}"',
     '  done',
     '  if [ "${base}" = "main" ]; then cat "${ESCENARIO}/lista-de-prs.json"; exit 0; fi',
     '  clave="${base//\\//_}"',
@@ -41,11 +41,11 @@ const GH_SIMULADO =
     '  if [ -f "${ESCENARIO}/hijos-${clave}" ]; then cat "${ESCENARIO}/hijos-${clave}"; fi',
     '  exit 0',
     'fi',
-    'n="$3"',
+    'numero="$3"',
     'case "${sub}" in',
-    '  "pr view") if [ -f "${ESCENARIO}/ver-${n}.fallo" ]; then exit 1; fi; cat "${ESCENARIO}/estado-${n}" ;;',
-    '  "pr merge") if [ -f "${ESCENARIO}/fusionar-${n}.fallo" ]; then exit 1; fi ;;',
-    '  "pr edit") if [ -f "${ESCENARIO}/reapuntar-${n}.fallo" ]; then exit 1; fi ;;',
+    '  "pr view") if [ -f "${ESCENARIO}/ver-${numero}.fallo" ]; then exit 1; fi; cat "${ESCENARIO}/estado-${numero}" ;;',
+    '  "pr merge") if [ -f "${ESCENARIO}/fusionar-${numero}.fallo" ]; then exit 1; fi ;;',
+    '  "pr edit") if [ -f "${ESCENARIO}/reapuntar-${numero}.fallo" ]; then exit 1; fi ;;',
     '  "pr comment") ;;',
     '  *) exit 99 ;;',
     'esac',
@@ -120,7 +120,8 @@ function existe(comando: string): boolean {
 
 /**
  * Necesita `bash` y `jq`. En CI (variable CI) nunca se salta: si falta alguno, la prueba debe fallar.
- * En local, sin ellos, las pruebas se saltan.
+ * En local, sin ellos, las pruebas se saltan. En Windows hace falta Git Bash (no el bash de WSL, que es el
+ * que aparece primero en el PATH de PowerShell) y jq instalado (`winget install jqlang.jq`).
  */
 export const hayHerramientas =
   (existe('bash') && existe('jq')) || Boolean(process.env.CI);
@@ -132,6 +133,22 @@ export function limpiarEscenarios(): void {
     rmSync(carpeta, { recursive: true, force: true });
 }
 
+/**
+ * En Windows el jq nativo termina cada línea con CRLF y `read` del script recibiría "10\r". Su opción
+ * `--binary` lo evita y deja la salida igual que en Linux. En Linux (CI) no hace falta envolverlo.
+ */
+function envolverJqEnWindows(carpeta: string): void {
+  if (process.platform !== 'win32') return;
+  const real = spawnSync('bash', ['-c', 'command -v jq'], {
+    encoding: 'utf8',
+  }).stdout.trim();
+  writeFileSync(
+    `${carpeta}/bin/jq`,
+    `#!/usr/bin/env bash\nexec "${real}" --binary "$@"\n`,
+    { mode: 0o755 },
+  );
+}
+
 function prepararEscenario(escenario: Escenario): string {
   const carpeta = mkdtempSync(join(tmpdir(), 'fusion-programada-')).replace(
     /\\/g,
@@ -140,6 +157,7 @@ function prepararEscenario(escenario: Escenario): string {
   carpetas.push(carpeta);
   mkdirSync(`${carpeta}/bin`);
   writeFileSync(`${carpeta}/bin/gh`, GH_SIMULADO, { mode: 0o755 });
+  envolverJqEnWindows(carpeta);
   writeFileSync(`${carpeta}/lista-de-prs.json`, JSON.stringify(escenario.prs));
   for (const { number } of escenario.prs) {
     writeFileSync(
@@ -197,6 +215,6 @@ export function ejecutar(escenario: Escenario): Resultado {
 export const llamadasA = (resultado: Resultado, subcomando: string): string[] =>
   resultado.llamadas.filter((llamada) => llamada.startsWith(subcomando));
 
-/** Número de PR de cada llamada (`pr merge 10 --repo …` → '10'). */
+/** Número de PR de cada llamada (`pr merge 10 --repo …` → "10"). */
 export const numerosDe = (resultado: Resultado, subcomando: string): string[] =>
   llamadasA(resultado, subcomando).map((llamada) => llamada.split(' ')[2]);
