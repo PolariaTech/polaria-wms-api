@@ -54,7 +54,7 @@ export const RESPONSE_SCHEMA = {
       direccion: {
         type: ["string", "null"],
         description:
-          "Dirección de ENTREGA tal como aparece en el correo, mensaje o PDF. Busca Ship To, Deliver To, Enviar a, Entregar en, Domicilio de entrega, Dirección de envío. Copia calle, número, colonia, ciudad y CP si vienen. Si hay Bill To (facturación) y Ship To (entrega), usa Ship To. null solo si el documento no trae ninguna dirección de entrega.",
+          "Dirección de ENTREGA tal como aparece en el correo, mensaje o PDF. Busca Ship To, Deliver To, Enviar a, Entregar en, Domicilio de entrega, Dirección de envío. Copia calle, número, colonia, ciudad y CP si vienen. Si hay Bill To (facturación) y Ship To (entrega), usa Ship To. Solo dirección física: NUNCA Attn/Attention, Sent From, correos, fax ni teléfonos. null solo si el documento no trae ninguna dirección de entrega.",
       },
       anden: {
         type: ["string", "null"],
