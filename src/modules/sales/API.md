@@ -38,6 +38,8 @@ Compatible con `OrdenVentaOperadorRow` del front.
 3. `movimiento_inventario` tipo `reserva` con `tipo_referencia = orden_venta`
 4. Una `orden_trabajo` + `tarea_cola` por cada asignación de slot (despacho `a_salida` o traslado `bodega_a_bodega`)
 
+Todo se hace por lotes (REQ-348): la lectura de stock, el reparto FIFO en memoria y los INSERT/UPDATE son un número fijo de sentencias (unas 12), vengan las asignaciones que vengan. La transacción admite hasta 20 s.
+
 ## Transiciones automáticas de estado (OV)
 
 | Evento | Transición |
@@ -60,6 +62,7 @@ Compatible con `OrdenVentaOperadorRow` del front (`idOrdenVenta`, `venta`, `cuen
 | 404 | OV no encontrada o fuera del tenant |
 | 409 | No está en borrador, sin líneas o stock insuficiente |
 | 400 | Cliente/comprador/producto inactivo |
+| 503 | La transacción venció (más de 20 s, REQ-348): se revierte completa y se puede volver a confirmar |
 
 ### Migración requerida
 
