@@ -16,12 +16,28 @@ name: Fusión programada
 #   - TODAS las comprobaciones en SUCCESS, SKIPPED o NEUTRAL (una pendiente o fallida lo deja fuera);
 #   - sin la etiqueta `no-fusionar` (con ella, el PR se salta siempre).
 # Se fusionan del más antiguo al más nuevo, con commit de fusión («Merge pull request #N»), como el
-# historial actual del repo. Si una fusión falla (por ejemplo, un conflicto tras otra fusión), se deja
-# para la próxima ejecución.
+# historial actual del repo.
+#
+# Si un PR no se puede fusionar, el robot SIGUE con el siguiente (cada PR se revisó y probó por separado)
+# y distingue dos casos:
+#   - DESACTUALIZADO (la rama quedó detrás de main, normal tras fusionar otro PR porque el ruleset
+#     exige `strict`): es esperado. No es un fallo; el desarrollador debe pulsar «Update branch» para que
+#     sus comprobaciones corran de nuevo, y se reintenta en la próxima ejecución. El robot NO actualiza
+#     la rama por su cuenta: un push hecho con el token del workflow no dispara el CI y el PR quedaría
+#     bloqueado con comprobaciones viejas.
+#   - FALLO REAL (conflicto, comentarios sin resolver, otra regla del ruleset): el workflow termina en
+#     ROJO al final, para que GitHub avise por correo. Los demás PR ya se habrán procesado.
+#
+# PR apilados (cuya base es la rama de otro PR, no main): no se fusionan aquí. Cuando el robot fusiona
+# a un PR padre, REAPUNTA a main los PR hijos (la fusión se hace con commit de fusión, así que el
+# reapuntado es limpio) y les deja un comentario. Esto lo hace el propio robot porque la fusión con el
+# token del workflow no dispara a `auto-rebase-stacked-prs.yml`, que es el que reapunta cuando alguien
+# fusiona a mano. El hijo reapuntado queda desactualizado frente a main: hay que pulsar «Update branch».
 #
 # Límites conocidos: GitHub puede retrasar unos minutos un workflow programado; los PR fusionados con el
 # token del workflow no disparan otros workflows de GitHub (el auto-deploy de Render sí se
-# dispara, porque lo activa el push a main); los PR apilados (cuya base no es main) no se fusionan aquí.
+# dispara, porque lo activa el push a main). Con `strict`, en la práctica se fusiona un PR por noche,
+# salvo que los demás ya estén al día con main.
 
 on:
   schedule:
@@ -58,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           gh pr list --repo "${REPO}" --base main --state open --limit 100 \
-            --json number,title,isDraft,reviewDecision,mergeable,labels,statusCheckRollup,createdAt > prs.json
+            --json number,title,isDraft,reviewDecision,mergeable,labels,statusCheckRollup,createdAt,headRefName > prs.json
 
           # Candidatos: del más antiguo al más nuevo.
           jq -r '
@@ -73,6 +89,9 @@ jobs:
           total="$(jq 'length' prs.json)"
           listos="$(wc -l < candidatos.txt | tr -d ' ')"
           fusionados=0
+          reapuntados=0
+          desactualizados=0
+          fallos=0
           {
             echo "### Fusión programada"
             echo ""
@@ -88,18 +107,68 @@ jobs:
 
           while read -r numero; do
             [ -n "${numero}" ] || continue
+            rama="$(jq -r --argjson n "${numero}" '.[] | select(.number == $n) | .headRefName' prs.json)"
+
             if [ "${SOLO_SIMULAR}" = "true" ]; then
               echo "SIMULACIÓN: fusionaría el PR #${numero}"
               echo "- (simulación) fusionaría #${numero}" >> "${GITHUB_STEP_SUMMARY}"
+              hijos="$(gh pr list --repo "${REPO}" --state open --base "${rama}" --json number --jq '.[].number')"
+              for hijo in ${hijos}; do
+                echo "SIMULACIÓN: reapuntaría el PR apilado #${hijo} a main"
+                echo "- (simulación) reapuntaría el PR apilado #${hijo} a main" >> "${GITHUB_STEP_SUMMARY}"
+              done
               continue
             fi
+
+            # Estado fresco: tras fusionar otro PR de esta misma ejecución, este puede haber quedado
+            # desactualizado (esperado con strict) o en conflicto (fallo real).
+            estado="$(gh pr view "${numero}" --repo "${REPO}" --json mergeStateStatus --jq '.mergeStateStatus')"
+            if [ "${estado}" = "BEHIND" ]; then
+              desactualizados=$((desactualizados + 1))
+              echo "::notice::El PR #${numero} está desactualizado respecto a main. Hay que pulsar «Update branch»; se reintenta en la próxima ejecución."
+              echo "- DESACTUALIZADO #${numero}: pulsar «Update branch» para que sus comprobaciones corran de nuevo" >> "${GITHUB_STEP_SUMMARY}"
+              continue
+            fi
+            if [ "${estado}" = "DIRTY" ]; then
+              fallos=$((fallos + 1))
+              echo "::error::El PR #${numero} tiene conflictos con main. Hay que resolverlos."
+              echo "- CONFLICTO #${numero}: resolver los conflictos con main" >> "${GITHUB_STEP_SUMMARY}"
+              continue
+            fi
+
             if gh pr merge "${numero}" --repo "${REPO}" --merge; then
               fusionados=$((fusionados + 1))
               echo "- fusionado #${numero}" >> "${GITHUB_STEP_SUMMARY}"
+
+              # Reapuntar a main los PR apilados sobre la rama recién fusionada.
+              hijos="$(gh pr list --repo "${REPO}" --state open --base "${rama}" --json number --jq '.[].number')"
+              for hijo in ${hijos}; do
+                if gh pr edit "${hijo}" --repo "${REPO}" --base main; then
+                  gh pr comment "${hijo}" --repo "${REPO}" --body "La rama \`${rama}\` se fusionó a main (PR #${numero}, fusión programada), así que este PR ahora apunta a main. Pulsa «Update branch» para que sus comprobaciones corran contra main; se fusionará en la próxima ejecución si sigue aprobado y en verde." || true
+                  reapuntados=$((reapuntados + 1))
+                  echo "- reapuntado a main el PR apilado #${hijo}" >> "${GITHUB_STEP_SUMMARY}"
+                else
+                  fallos=$((fallos + 1))
+                  echo "::error::No se pudo reapuntar a main el PR apilado #${hijo}."
+                  echo "- NO se pudo reapuntar el PR apilado #${hijo}" >> "${GITHUB_STEP_SUMMARY}"
+                fi
+              done
             else
-              echo "::warning::No se pudo fusionar el PR #${numero} (por ejemplo, conflicto tras otra fusión). Se deja para la próxima ejecución."
+              fallos=$((fallos + 1))
+              echo "::error::No se pudo fusionar el PR #${numero} (por ejemplo, comentarios sin resolver u otra regla del ruleset). Se deja para la próxima ejecución."
               echo "- NO se pudo fusionar #${numero}" >> "${GITHUB_STEP_SUMMARY}"
             fi
           done < candidatos.txt
 
-          echo "- Fusionados: ${fusionados}" >> "${GITHUB_STEP_SUMMARY}"
+          {
+            echo "- Fusionados: ${fusionados}"
+            echo "- PR apilados reapuntados a main: ${reapuntados}"
+            echo "- Desactualizados (esperado con strict): ${desactualizados}"
+            echo "- Fallos reales: ${fallos}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # Un fallo real termina el job en rojo para que GitHub avise; los demás PR ya se procesaron.
+          if [ "${fallos}" -gt 0 ]; then
+            echo "::error::${fallos} fallo(s) real(es) en la fusión programada; revisa el resumen."
+            exit 1
+          fi
