@@ -1,5 +1,6 @@
 import * as chrono from "chrono-node";
 import { parseFechaNumerica } from "./clasificar-adjunto-oc-mensual";
+import { quitarContactoDeDireccion } from "./quitar-contacto-direccion";
 
 export { parseFechaNumerica };
 
@@ -301,6 +302,9 @@ const SHIP_TO_LABEL_RE =
 const SHIP_TO_STOP_RE =
   /\b(?:bill\s*to|sold\s*to|ship\s*from|invoice\b|factura\b|orden\s*de\s*compra|purchase\s*order|\bpo\s*#|cantidad\b|quantity\b|qty\b|item\b|producto\b|subtotal\b|\btotal\b|and[eé]n\b|dock\b)\b/i;
 
+const SHIP_TO_META_LINE_RE =
+  /^(?:attn|attention|atenci[oó]n|sent\s*from|enviado\s*desde)\b/i;
+
 /**
  * Dirección de ENTREGA desde bloque Ship To / Deliver To / Enviar a.
  * Manda sobre Bill To (facturación) cuando ambos aparecen en el documento.
@@ -325,6 +329,7 @@ export function extractDireccionShipToDesdeTexto(
     }
     if (SHIP_TO_STOP_RE.test(trimmed)) break;
     if (/^(bill\s*to|sold\s*to)\b/i.test(trimmed)) break;
+    if (SHIP_TO_META_LINE_RE.test(trimmed)) break;
     lines.push(trimmed);
     if (lines.length >= 6) break;
   }
@@ -332,11 +337,10 @@ export function extractDireccionShipToDesdeTexto(
   if (lines.length === 0) {
     const sameLine = after.split(/\r?\n/)[0]?.trim().replace(/\s+/g, " ") ?? "";
     if (sameLine && !SHIP_TO_STOP_RE.test(sameLine) && sameLine.length >= 5) {
-      return sameLine;
+      return quitarContactoDeDireccion(sameLine) ?? sameLine;
     }
     return null;
   }
 
-  const joined = lines.join(", ").trim();
-  return joined.length >= 5 ? joined : null;
+  return quitarContactoDeDireccion(lines.join(", "));
 }

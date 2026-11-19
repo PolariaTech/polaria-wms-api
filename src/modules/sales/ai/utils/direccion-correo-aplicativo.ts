@@ -6,6 +6,7 @@
  */
 
 import { extractDireccionShipToDesdeTexto } from './extract-entrega-desde-texto';
+import { quitarContactoDeDireccion } from './quitar-contacto-direccion';
 
 const MARCA_CORREO_APLICATIVO = /^\s*PEDIDO\s+ADP-\d{6}-\d{4}-\w+/im;
 const LINEA_DIRECCION = /^[ \t]*Direcci[oó]n[ \t]*:[ \t]*(.*)$/im;
@@ -52,8 +53,9 @@ export function aplicarIdPedidoAplicativo<T extends { numeroPedido: string | nul
 export function resolveDireccionEntregaDesdeTexto(
   texto: string | null | undefined,
 ): string | null {
-  return (
+  const raw =
     extractDireccionCorreoAplicativo(texto) ??
-    extractDireccionShipToDesdeTexto(texto)
-  );
+    extractDireccionShipToDesdeTexto(texto);
+  // REQ-332: Attn / Sent From no son dirección (BirchStreet Hilton/Waldorf).
+  return quitarContactoDeDireccion(raw) ?? raw;
 }

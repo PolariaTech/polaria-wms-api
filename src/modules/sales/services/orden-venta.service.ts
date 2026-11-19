@@ -21,6 +21,10 @@ import {
   parseOrigenCorreoJson,
 } from '../ai/utils/origen-correo-ordenes-trabajo';
 import { recordOrdenVentaAudit } from '../utils/record-orden-venta-audit';
+import {
+  mensajePedidoConfirmadoBitacora,
+  resolveUsuarioNombreAudit,
+} from '../utils/resolve-usuario-nombre-audit';
 
 @Injectable()
 export class OrdenVentaService {
@@ -110,15 +114,20 @@ export class OrdenVentaService {
       } catch {
         otIds = [];
       }
+      const autorNombre = await resolveUsuarioNombreAudit(
+        this.prisma,
+        ctx.idUsuario,
+      );
       await recordOrdenVentaAudit(this.prisma, {
         schemaName: schema,
         codigoCuenta: orden.codigoCuenta,
         idOrdenVenta: orden.idOrdenVenta,
         accion: 'cambio_estado',
-        mensaje: 'Pedido enviado a bodega (emitido).',
+        mensaje: mensajePedidoConfirmadoBitacora(autorNombre),
         idUsuario: ctx.idUsuario,
         idBodega: orden.idBodega,
         idOrdenesTrabajo: otIds,
+        autorNombre,
         payloadExtra: { estadoNuevo: 'confirmada', via: 'api_emitir' },
       });
       return emitted;

@@ -9,6 +9,7 @@ import { normalizeNumeroPedidoFields } from "./utils/normalize-numero-pedido";
 import { sanitizeTelefonoContacto } from "./utils/sanitize-telefono-contacto";
 import { extractCorreoContactoDesdeTexto } from "./utils/correo-chrome";
 import { armarOrigenCorreoDesdeLineas } from "./utils/origen-correo-renglones";
+import { quitarContactoDeDireccion } from "./utils/quitar-contacto-direccion";
 import type {
   LineaExtraida,
   PedidoExtraido,
@@ -138,9 +139,12 @@ export function postprocesarPedido(params: {
       : "") || "";
   // Ship To del documento manda sobre Bill To / lo que Mateo haya puesto.
   // REQ-231: en el correo del aplicativo la línea «Dirección:» manda sobre cualquier Ship To.
+  const direccionRawMateo = parsed.direccion?.trim() || "";
   const direccionCabecera =
     resolveDireccionEntregaDesdeTexto(sourceForEntrega) ||
-    parsed.direccion?.trim() ||
+    // REQ-332: limpia Attn/Sent From si Mateo los pegó en direccion.
+    quitarContactoDeDireccion(direccionRawMateo) ||
+    direccionRawMateo ||
     "";
   const andenCabecera = parsed.anden?.trim() || "";
   const contactoCabecera = parsed.contacto?.trim() || "";
