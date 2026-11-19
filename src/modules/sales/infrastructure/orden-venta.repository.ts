@@ -1,14 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EstadoOrdenVenta, Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locator';
 import { OrdenTrabajoRepository } from '../../operations/infrastructure/orden-trabajo.repository';
 import type { FlujoOrdenTrabajo } from '../../operations/interfaces/operations.interfaces';
-import { TIPO_REFERENCIA_ORDEN_VENTA } from '../constants/orden-venta.constants';
-import type {
-  OrdenVentaEmitirResponse,
-  StockAllocation,
-} from '../interfaces/orden-venta.interfaces';
+import type { OrdenVentaEmitirResponse } from '../interfaces/orden-venta.interfaces';
+import { reservarStock } from './orden-venta-reserva';
 
 const _ordenInclude = {
   lineas: {
@@ -92,8 +89,18 @@ type ListWhereParsed = {
   estado?: string;
 };
 
+/**
+ * Confirmar una OV crea una OT por cada reserva de stock, todo en serie dentro
+ * de una sola transacción: con pedidos grandes (25 OT) pasa los 5 s por defecto
+ * de Prisma. El tope queda por debajo del corte de 30 s del proxy /api de Next.
+ */
+type TxOpciones = { maxWait?: number; timeout?: number };
+export const TX_EMITIR: TxOpciones = { maxWait: 5_000, timeout: 20_000 };
+
 @Injectable()
 export class OrdenVentaRepository {
+  private readonly logger = new Logger(OrdenVentaRepository.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ordenTrabajoRepository: OrdenTrabajoRepository,
@@ -106,6 +113,7 @@ export class OrdenVentaRepository {
    */
   private async withTenantTx<T>(
     schemaName: string | null | undefined,
+    opciones: TxOpciones | undefined,
     fn: (tx: Prisma.TransactionClient, schema: string) => Promise<T>,
   ): Promise<T> {
     const schema = this.schemaLocator.assertSafeSchemaIdent(
@@ -122,7 +130,7 @@ export class OrdenVentaRepository {
         searchPath,
       );
       return fn(tx, schema);
-    });
+    }, opciones);
   }
 
   async findById(
@@ -156,7 +164,34 @@ export class OrdenVentaRepository {
     idUsuario: string,
     schemaName?: string | null,
   ): Promise<OrdenVentaEmitirResponse> {
-    return this.withTenantTx(schemaName, async (tx, schema) => {
+    const inicio = Date.now();
+    const progreso = { ordenesTrabajo: 0 };
+    try {
+      const emitida = await this.emitirEnTransaccion(
+        orden,
+        idUsuario,
+        schemaName,
+        progreso,
+      );
+      this.logger.log(
+        `emitir ${orden.codigo}: ${orden.lineas.length} líneas, ${progreso.ordenesTrabajo} OT, ${Date.now() - inicio} ms`,
+      );
+      return emitida;
+    } catch (error) {
+      this.logger.warn(
+        `emitir ${orden.codigo} falló: ${orden.lineas.length} líneas, ${Date.now() - inicio} ms`,
+      );
+      throw error;
+    }
+  }
+
+  private async emitirEnTransaccion(
+    orden: OrdenVentaWithRelations,
+    idUsuario: string,
+    schemaName: string | null | undefined,
+    progreso: { ordenesTrabajo: number },
+  ): Promise<OrdenVentaEmitirResponse> {
+    return this.withTenantTx(schemaName, TX_EMITIR, async (tx, schema) => {
       const locked = await tx.$queryRawUnsafe<Array<{ idOrdenVenta: string }>>(
         `UPDATE ${schema}.orden_venta
          SET estado = 'confirmada',
@@ -176,92 +211,29 @@ export class OrdenVentaRepository {
         (await this.resolveUbicacionDestino(tx, schema, orden, tipoFlujo)) ??
         undefined;
 
-      const allocations: StockAllocation[] = [];
+      const asignaciones = await reservarStock(tx, schema, orden, idUsuario);
 
-      for (const linea of orden.lineas) {
-        const pendiente = linea.cantidadPedida;
-        const chunks = await this.allocateFifo(
-          tx,
-          schema,
-          orden.codigoCuenta,
-          orden.idBodega,
-          linea.idProducto,
-          pendiente,
-        );
-        allocations.push(...chunks);
-
-        for (const chunk of chunks) {
-          await tx.$executeRawUnsafe(
-            `UPDATE ${schema}.warehouse_state
-             SET cantidad_reservada = cantidad_reservada + $2::numeric,
-                 version = version + 1,
-                 updated_at = now()
-             WHERE id_warehouse_state = $1::uuid`,
-            chunk.idWarehouseState,
-            chunk.cantidad,
-          );
-
-          await tx.$executeRawUnsafe(
-            `INSERT INTO ${schema}.movimiento_inventario (
-               codigo_cuenta,
-               id_bodega,
-               id_ubicacion_origen,
-               id_ubicacion_destino,
-               id_producto,
-               id_lote,
-               cantidad,
-               tipo_movimiento,
-               id_usuario,
-               id_referencia,
-               tipo_referencia
-             ) VALUES (
-               $1,
-               $2::uuid,
-               $3::uuid,
-               $4::uuid,
-               $5::uuid,
-               $6::uuid,
-               $7::numeric,
-               'reserva',
-               $8::uuid,
-               $9::uuid,
-               $10
-             )`,
-            orden.codigoCuenta,
-            orden.idBodega,
-            chunk.idUbicacion,
-            chunk.idUbicacion,
-            chunk.idProducto,
-            chunk.idLote,
-            chunk.cantidad,
-            idUsuario,
-            orden.idOrdenVenta,
-            TIPO_REFERENCIA_ORDEN_VENTA,
-          );
-
-          const observacionesOt = `OV ${orden.codigo}${
-            orden.comprador ? ` · ${orden.comprador.nombre}` : ''
-          }`;
-
-          await this.ordenTrabajoRepository.createInTransaction(
-            tx,
-            {
-              codigoCuenta: orden.codigoCuenta,
-              idBodega: orden.idBodega,
-              tipoFlujo,
-              idUbicacionOrigen: chunk.idUbicacion,
-              idUbicacionDestino,
-              idLote: chunk.idLote ?? undefined,
-              idProducto: linea.idProducto,
-              cantidad: chunk.cantidad,
-              idOrdenVenta: orden.idOrdenVenta,
-              observaciones: observacionesOt,
-            },
-            idUsuario,
-            { schemaName: schema },
-          );
-        }
-      }
+      const observacionesOt = `OV ${orden.codigo}${
+        orden.comprador ? ` · ${orden.comprador.nombre}` : ''
+      }`;
+      await this.ordenTrabajoRepository.createLoteInTransaction(
+        tx,
+        asignaciones.map((asignacion) => ({
+          codigoCuenta: orden.codigoCuenta,
+          idBodega: orden.idBodega,
+          tipoFlujo,
+          idUbicacionOrigen: asignacion.idUbicacion,
+          idUbicacionDestino,
+          idLote: asignacion.idLote ?? undefined,
+          idProducto: asignacion.idProducto,
+          cantidad: asignacion.cantidad,
+          idOrdenVenta: orden.idOrdenVenta,
+          observaciones: observacionesOt,
+        })),
+        idUsuario,
+        { schemaName: schema },
+      );
+      progreso.ordenesTrabajo = asignaciones.length;
 
       const updated = await this.loadOrdenVenta(tx, schema, orden.idOrdenVenta);
       if (!updated) {
@@ -320,80 +292,6 @@ export class OrdenVentaRepository {
     );
 
     return rows[0]?.idUbicacion ?? null;
-  }
-
-  private async allocateFifo(
-    tx: SqlClient,
-    schema: string,
-    codigoCuenta: string,
-    idBodega: string,
-    idProducto: string,
-    cantidadRequerida: Prisma.Decimal,
-  ): Promise<StockAllocation[]> {
-    const rows = await tx.$queryRawUnsafe<
-      Array<{
-        idWarehouseState: string;
-        idUbicacion: string;
-        idLote: string | null;
-        idProducto: string;
-        cantidad: Prisma.Decimal | string | number;
-        cantidadReservada: Prisma.Decimal | string | number;
-      }>
-    >(
-      `SELECT ws.id_warehouse_state AS "idWarehouseState",
-              ws.id_ubicacion AS "idUbicacion",
-              ws.id_lote AS "idLote",
-              ws.id_producto AS "idProducto",
-              ws.cantidad,
-              ws.cantidad_reservada AS "cantidadReservada"
-       FROM ${schema}.warehouse_state ws
-       JOIN ${schema}.ubicacion u ON u.id_ubicacion = ws.id_ubicacion
-       JOIN ${schema}.tipo_ubicacion t
-         ON t.id_tipo_ubicacion = u.id_tipo_ubicacion
-       LEFT JOIN ${schema}.lote l ON l.id_lote = ws.id_lote
-       WHERE ws.codigo_cuenta = $1
-         AND ws.id_bodega = $2::uuid
-         AND ws.id_producto = $3::uuid
-         AND u.esta_activa = true
-         AND t.es_almacenamiento = true
-       ORDER BY l.fecha_vencimiento ASC NULLS LAST, ws.updated_at ASC`,
-      codigoCuenta,
-      idBodega,
-      idProducto,
-    );
-
-    let restante = this.toDecimal(cantidadRequerida);
-    const allocations: StockAllocation[] = [];
-
-    for (const row of rows) {
-      const disponible = this.toDecimal(row.cantidad).sub(
-        this.toDecimal(row.cantidadReservada),
-      );
-      if (disponible.lte(0)) {
-        continue;
-      }
-
-      const tomar = disponible.lte(restante) ? disponible : restante;
-      if (tomar.lte(0)) {
-        continue;
-      }
-
-      allocations.push({
-        idWarehouseState: row.idWarehouseState,
-        idUbicacion: row.idUbicacion,
-        idLote: row.idLote,
-        idProducto: row.idProducto,
-        cantidad: tomar.toNumber(),
-      });
-
-      restante = restante.sub(tomar);
-      if (restante.lte(0)) {
-        break;
-      }
-    }
-
-    // Temporal: si falta stock, se emite igual con la reserva parcial (o sin reserva).
-    return allocations;
   }
 
   async getDisponibleProducto(

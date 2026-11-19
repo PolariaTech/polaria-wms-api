@@ -4,8 +4,9 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { EstadoOrdenVenta } from '../../../generated/prisma/client';
+import { EstadoOrdenVenta, Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../core/database/prisma.service';
 import {
   applyTenantFilter,
@@ -195,6 +196,17 @@ export class OrdenVentaService {
   }
 
   private mapEmitirError(error: unknown): never {
+    // P2028: la transacción de Prisma venció (más de 20 s) o no arrancó a tiempo.
+    // Se revierte completa, así que confirmar de nuevo es seguro.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2028'
+    ) {
+      throw new ServiceUnavailableException(
+        'La confirmación tardó más de lo esperado. Espera un momento y vuelve a confirmar.',
+      );
+    }
+
     if (error instanceof Error) {
       if (error.message === 'OV_ESTADO_INVALIDO') {
         throw new ConflictException(

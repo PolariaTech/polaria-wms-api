@@ -14,11 +14,7 @@ import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locato
 import { assertWarehouseStateLockForMove } from '../../inventory/utils/assert-warehouse-state-lock.util';
 import { seleccionarWarehouseStateFefo } from '../../inventory/utils/fefo-warehouse-state.util';
 import { syncUbicacionEstadoSlot } from '../../inventory/utils/sync-ubicacion-estado-slot.util';
-import {
-  CONTADOR_CLAVE_ORDEN_TRABAJO,
-  TIPO_REFERENCIA_ORDEN_TRABAJO,
-  formatCodigoOrdenTrabajo,
-} from '../constants/operations.constants';
+import { TIPO_REFERENCIA_ORDEN_TRABAJO } from '../constants/operations.constants';
 import { assertCapturaDespachoOtSalida } from '../../sales/services/validar-captura-despacho.service';
 import {
   FLUJO_TIPO_OT,
@@ -42,6 +38,7 @@ import {
   parseTipoFlujo,
 } from '../utils/orden-trabajo-flujo.util';
 import { resolveCantidadAMover } from '../utils/orden-trabajo-cantidad.util';
+import { crearLoteOt, reservarFolios } from './orden-trabajo-lote';
 
 const ordenInclude = {
   lineas: { orderBy: { idLineaOrdenTrabajo: 'asc' as const } },
@@ -277,6 +274,22 @@ export class OrdenTrabajoRepository {
     }
 
     return orden;
+  }
+
+  /**
+   * Crea varias OT de una misma emisión con un número fijo de sentencias
+   * (REQ-348); ver `crearLoteOt`. Devuelve los códigos en el orden de `inputs`.
+   */
+  createLoteInTransaction(
+    tx: Prisma.TransactionClient,
+    inputs: CreateOrdenTrabajoInput[],
+    idSolicitante: string,
+    opciones: { schemaName: string },
+  ): Promise<string[]> {
+    const schema = this.schemaLocator.assertSafeSchemaIdent(
+      opciones.schemaName,
+    );
+    return crearLoteOt(tx, schema, inputs, idSolicitante);
   }
 
   async ejecutar(
@@ -598,47 +611,17 @@ export class OrdenTrabajoRepository {
     codigoCuenta: string,
     idBodega: string,
   ): Promise<string> {
-    // El folio OT es único por cuenta. Un contador nuevo de otra bodega no
-    // puede reiniciar en 1: OT-000001 ya existe y el INSERT revienta con 500.
-    await tx.$executeRawUnsafe(
-      `SELECT pg_advisory_xact_lock(hashtext($1))`,
-      `${codigoCuenta}:orden_trabajo`,
-    );
-
-    const rows = await tx.$queryRawUnsafe<Array<{ valor: bigint | string }>>(
-      `WITH max_existente AS (
-         SELECT COALESCE(MAX(
-           CASE
-             WHEN codigo ~ '^OT-[0-9]+$' THEN substring(codigo from 4)::bigint
-             ELSE 0
-           END
-         ), 0) AS n
-         FROM ${schema}.orden_trabajo
-         WHERE codigo_cuenta = $1
-       )
-       INSERT INTO ${schema}.contador (codigo_cuenta, id_bodega, clave, valor)
-       VALUES ($1, $2::uuid, $3, (SELECT n + 1 FROM max_existente))
-       ON CONFLICT (codigo_cuenta, id_bodega, clave)
-       DO UPDATE SET
-         valor = GREATEST(
-           ${schema}.contador.valor + 1,
-           (SELECT n + 1 FROM max_existente)
-         ),
-         updated_at = now()
-       RETURNING valor`,
+    const [codigo] = await reservarFolios(
+      tx,
+      schema,
       codigoCuenta,
       idBodega,
-      CONTADOR_CLAVE_ORDEN_TRABAJO,
+      1,
     );
-
-    const valor = rows[0]?.valor;
-    if (valor == null) {
+    if (!codigo) {
       throw new Error(`No se pudo obtener contador de OT en ${schema}`);
     }
-
-    return formatCodigoOrdenTrabajo(
-      typeof valor === 'bigint' ? valor : BigInt(valor),
-    );
+    return codigo;
   }
 
   toResponse(orden: OrdenWithLineas): OrdenTrabajoResponse {
