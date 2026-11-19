@@ -1,0 +1,105 @@
+name: Fusión programada
+
+# Fusiona a main, una vez al día, los PR que ya están listos (decisión de Daniel, 2026-11-19).
+# Se ejecuta todos los días a las 06:00 hora de Colombia (11:00 UTC; Colombia es UTC-5 y no cambia de
+# horario). Si no hay ningún PR listo, no hace nada.
+#
+# El DESPLIEGUE no está en este workflow: Render despliega solo con cada merge a main (auto-deploy
+# de Render). Por eso, fusionar a las 06:00 es lo que programa el despliegue a esa hora.
+# Cuando se migre a AWS, el despliegue a AWS se agrega como un paso posterior a la fusión (ver
+# README.md de esta carpeta, sección «Pasar a AWS»).
+#
+# Qué se fusiona (todas las condiciones a la vez):
+#   - PR hacia main, que no sea borrador;
+#   - reviewDecision = APPROVED (incluye los Code Owners si el ruleset los exige);
+#   - mergeable = MERGEABLE (sin conflictos);
+#   - TODAS las comprobaciones en SUCCESS, SKIPPED o NEUTRAL (una pendiente o fallida lo deja fuera);
+#   - sin la etiqueta `no-fusionar` (con ella, el PR se salta siempre).
+# Se fusionan del más antiguo al más nuevo, con commit de fusión («Merge pull request #N»), como el
+# historial actual del repo. Si una fusión falla (por ejemplo, un conflicto tras otra fusión), se deja
+# para la próxima ejecución.
+#
+# Límites conocidos: GitHub puede retrasar unos minutos un workflow programado; los PR fusionados con el
+# token del workflow no disparan otros workflows de GitHub (el auto-deploy de Render sí se
+# dispara, porque lo activa el push a main); los PR apilados (cuya base no es main) no se fusionan aquí.
+
+on:
+  schedule:
+    - cron: "0 11 * * *" # 11:00 UTC = 06:00 en Colombia (UTC-5)
+  workflow_dispatch:
+    inputs:
+      solo_simular:
+        description: "true = solo muestra qué fusionaría, sin hacerlo (valor seguro para probar)"
+        type: boolean
+        default: true
+
+# Sin permisos por defecto; el job pide solo lo que necesita.
+permissions: {}
+
+# Una ejecución a la vez; nunca se cancela una a la mitad.
+concurrency:
+  group: fusion-programada
+  cancel-in-progress: false
+
+jobs:
+  fusionar:
+    name: Fusionar los PR listos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Fusionar los PR que cumplen todas las condiciones
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SOLO_SIMULAR: ${{ inputs.solo_simular == true && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          gh pr list --repo "${REPO}" --base main --state open --limit 100 \
+            --json number,title,isDraft,reviewDecision,mergeable,labels,statusCheckRollup,createdAt > prs.json
+
+          # Candidatos: del más antiguo al más nuevo.
+          jq -r '
+            map(select(
+              .isDraft == false
+              and .reviewDecision == "APPROVED"
+              and .mergeable == "MERGEABLE"
+              and ((.labels | map(.name) | index("no-fusionar")) | not)
+              and (.statusCheckRollup | all((.conclusion // .state) as $c | ["SUCCESS","SKIPPED","NEUTRAL"] | index($c)))
+            )) | sort_by(.createdAt) | .[].number' prs.json > candidatos.txt
+
+          total="$(jq 'length' prs.json)"
+          listos="$(wc -l < candidatos.txt | tr -d ' ')"
+          fusionados=0
+          {
+            echo "### Fusión programada"
+            echo ""
+            echo "- PR abiertos hacia main: ${total}"
+            echo "- Listos para fusionar: ${listos}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if [ "${listos}" = "0" ]; then
+            echo "No hay ningún PR listo: no se hace nada."
+            echo "- Resultado: nada que fusionar" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          while read -r numero; do
+            [ -n "${numero}" ] || continue
+            if [ "${SOLO_SIMULAR}" = "true" ]; then
+              echo "SIMULACIÓN: fusionaría el PR #${numero}"
+              echo "- (simulación) fusionaría #${numero}" >> "${GITHUB_STEP_SUMMARY}"
+              continue
+            fi
+            if gh pr merge "${numero}" --repo "${REPO}" --merge; then
+              fusionados=$((fusionados + 1))
+              echo "- fusionado #${numero}" >> "${GITHUB_STEP_SUMMARY}"
+            else
+              echo "::warning::No se pudo fusionar el PR #${numero} (por ejemplo, conflicto tras otra fusión). Se deja para la próxima ejecución."
+              echo "- NO se pudo fusionar #${numero}" >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done < candidatos.txt
+
+          echo "- Fusionados: ${fusionados}" >> "${GITHUB_STEP_SUMMARY}"
