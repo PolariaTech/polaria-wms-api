@@ -15,8 +15,6 @@ function validar(body: unknown) {
 }
 
 describe('UpdateEmpresaDto', () => {
-  const actualizar = jest.fn();
-
   it('acepta una CLABE de 17 dígitos', async () => {
     await expect(validar({ clabe: '12345678901234567' })).resolves.toMatchObject({
       clabe: '12345678901234567',
@@ -61,9 +59,14 @@ describe('UpdateEmpresaDto', () => {
   });
 
   it('rechaza un correo de cobranza inválido y no escribe', async () => {
-    await expect(
-      validar({ correoCobranza: 'cobranza-aguacates' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(actualizar).not.toHaveBeenCalled();
+    const error = await validar({ correoCobranza: 'cobranza-aguacates' }).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    const respuesta = (error as BadRequestException).getResponse() as {
+      message: string[];
+    };
+    expect(respuesta.message).toContain('El correo de cobranza no es válido.');
   });
 });

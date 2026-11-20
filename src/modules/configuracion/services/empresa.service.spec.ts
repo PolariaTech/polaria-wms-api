@@ -149,6 +149,16 @@ describe('EmpresaService.update ficha fiscal', () => {
     });
   });
 
+  it('quita el logo guardado cuando logoPath llega null y no hay archivo', async () => {
+    const guardada = await service.update('Y9IHZ', { logoPath: null });
+
+    expect(subir).not.toHaveBeenCalled();
+    expect(repository.update).toHaveBeenCalledWith('Y9IHZ', {
+      logoPath: null,
+    });
+    expect(guardada.logoPath).toBeNull();
+  });
+
   it('no escribe la fila si el logo es demasiado grande', async () => {
     subir.mockResolvedValue({ ok: false, message: 'El logo supera 1 MB.' });
 

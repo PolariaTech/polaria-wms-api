@@ -40,11 +40,8 @@ import type {
   UpdateEmpresaResult,
 } from '../interfaces/empresa.interfaces';
 import { EmpresaService } from '../services/empresa.service';
-import { LOGO_EMPRESA_MAX_BYTES } from '../infrastructure/empresa-logo';
 
-const logoInterceptor = FileInterceptor('logo', {
-  limits: { fileSize: LOGO_EMPRESA_MAX_BYTES },
-});
+const logoInterceptor = FileInterceptor('logo');
 
 @ApiTags(SWAGGER_TAGS.CONFIGURACION_EMPRESAS)
 @Controller('configuracion/empresas')

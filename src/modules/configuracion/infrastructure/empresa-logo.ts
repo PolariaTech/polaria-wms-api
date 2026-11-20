@@ -59,7 +59,16 @@ export async function subirLogoEmpresa(input: {
   }
 
   if (input.logoPathAnterior && input.logoPathAnterior !== logoPath) {
-    await admin.storage.from(BUCKET).remove([input.logoPathAnterior]);
+    const { error: errorBorrado } = await admin.storage
+      .from(BUCKET)
+      .remove([input.logoPathAnterior]);
+    if (errorBorrado) {
+      return {
+        ok: false,
+        message:
+          errorBorrado.message || 'No se pudo reemplazar el logo anterior.',
+      };
+    }
   }
 
   return { ok: true, logoPath };
