@@ -5,6 +5,7 @@ import { TenantSchemaLocator } from '../../../core/database/tenant-schema.locato
 import { OrdenTrabajoRepository } from '../../operations/infrastructure/orden-trabajo.repository';
 import type { FlujoOrdenTrabajo } from '../../operations/interfaces/operations.interfaces';
 import type { OrdenVentaEmitirResponse } from '../interfaces/orden-venta.interfaces';
+import { cancelarOvSideEffects } from './orden-venta-cancelar';
 import { reservarStock } from './orden-venta-reserva';
 
 const _ordenInclude = {
@@ -157,6 +158,46 @@ export class OrdenVentaRepository {
       schemaName ?? 'public',
     );
     return this.loadOrdenes(this.prisma, schema, this.parseListWhere(where));
+  }
+
+  /** REQ-350: cancela OV confirmada/alistamiento (reserva + OT + estado). */
+  async cancelar(
+    orden: OrdenVentaWithRelations,
+    idUsuario: string,
+    schemaName?: string | null,
+  ): Promise<OrdenVentaEmitirResponse> {
+    return this.withTenantTx(schemaName, TX_EMITIR, async (tx, schema) => {
+      const locked = await tx.$queryRawUnsafe<Array<{ idOrdenVenta: string }>>(
+        `UPDATE ${schema}.orden_venta
+         SET estado = 'cancelada',
+             updated_at = now()
+         WHERE id_orden_venta = $1::uuid
+           AND estado IN ('confirmada', 'alistamiento')
+         RETURNING id_orden_venta AS "idOrdenVenta"`,
+        orden.idOrdenVenta,
+      );
+
+      if (locked.length === 0) {
+        throw new Error('OV_ESTADO_INVALIDO');
+      }
+
+      await cancelarOvSideEffects(
+        tx,
+        schema,
+        {
+          idOrdenVenta: orden.idOrdenVenta,
+          codigoCuenta: orden.codigoCuenta,
+          idBodega: orden.idBodega,
+        },
+        idUsuario,
+      );
+
+      const updated = await this.loadOrdenVenta(tx, schema, orden.idOrdenVenta);
+      if (!updated) {
+        throw new Error('OV_NOT_FOUND_AFTER_CANCEL');
+      }
+      return this.toEmitirResponse(updated);
+    });
   }
 
   async emitir(

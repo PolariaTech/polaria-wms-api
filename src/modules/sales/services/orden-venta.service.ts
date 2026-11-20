@@ -59,6 +59,60 @@ export class OrdenVentaService {
     return rows.map((row) => this.repository.toEmitirResponse(row));
   }
 
+  /** REQ-350: cancela una OV confirmada o en alistamiento. */
+  async cancelar(
+    idOrdenVenta: string,
+    ctx: TenantContext,
+  ): Promise<OrdenVentaEmitirResponse> {
+    const orden = await this.getAccessibleOrden(idOrdenVenta, ctx);
+
+    if (orden.estado === EstadoOrdenVenta.cancelada) {
+      return this.repository.toEmitirResponse(orden);
+    }
+
+    if (
+      orden.estado !== EstadoOrdenVenta.confirmada &&
+      orden.estado !== EstadoOrdenVenta.alistamiento
+    ) {
+      throw new ConflictException(
+        `No se puede cancelar una venta en estado ${orden.estado}`,
+      );
+    }
+
+    try {
+      const cancelada = await this.repository.cancelar(
+        orden,
+        ctx.idUsuario,
+        ctx.schemaName,
+      );
+      const schema = ctx.schemaName?.trim() || 'public';
+      if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema)) {
+        const autorNombre = await resolveUsuarioNombreAudit(
+          this.prisma,
+          ctx.idUsuario,
+        );
+        await recordOrdenVentaAudit(this.prisma, {
+          schemaName: schema,
+          codigoCuenta: orden.codigoCuenta,
+          idOrdenVenta: orden.idOrdenVenta,
+          accion: 'cambio_estado',
+          mensaje: `Pedido cancelado${autorNombre ? ` por ${autorNombre}` : ''}`,
+          idUsuario: ctx.idUsuario,
+          idBodega: orden.idBodega,
+          autorNombre,
+          payloadExtra: {
+            estadoAnterior: orden.estado,
+            estadoNuevo: 'cancelada',
+            via: 'api_cancelar',
+          },
+        });
+      }
+      return cancelada;
+    } catch (error) {
+      this.mapEmitirError(error);
+    }
+  }
+
   async emitir(
     idOrdenVenta: string,
     ctx: TenantContext,
@@ -219,7 +273,7 @@ export class OrdenVentaService {
     if (error instanceof Error) {
       if (error.message === 'OV_ESTADO_INVALIDO') {
         throw new ConflictException(
-          'Solo se pueden emitir ventas en por_confirmar',
+          'Estado de la orden no válido para esta operación',
         );
       }
 
