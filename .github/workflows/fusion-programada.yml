@@ -31,7 +31,7 @@ name: Fusión programada
 #      obligatorias del ruleset (esto se confirma con el primer PR real que pase por aquí);
 #   3. espera hasta ESPERA_INTENTOS x ESPERA_INTERVALO segundos a que terminen: en verde, fusiona; en
 #      rojo, es un fallo real; si no terminan a tiempo, el PR queda para la próxima ejecución.
-# Todo el trabajo de una ejecución cabe en PRESUPUESTO_SEGUNDOS; si no alcanza el tiempo para otra
+# Cada actualización solo empieza si su espera máxima del CI cabe en PRESUPUESTO_SEGUNDOS; si no alcanza el tiempo para otra
 # actualización, los PR que faltan quedan para la próxima ejecución.
 #
 # Si un PR no se puede fusionar, el robot SIGUE con el siguiente (cada PR se revisó y probó por separado)
@@ -90,7 +90,8 @@ jobs:
           # Espera del CI tras actualizar una rama: 60 x 15 s = 15 min como máximo por PR.
           ESPERA_INTENTOS: "60"
           ESPERA_INTERVALO: "15"
-          # No se empieza a actualizar otra rama si no cabe su espera máxima en este tiempo (40 min).
+          # No se empieza a actualizar otra rama si no cabe su espera máxima del CI en este tiempo (40 min).
+          # Sumada la espera del commit nuevo (hasta 2,5 min), el peor caso es de unos 42,5 min; el timeout de 60 min lo cubre.
           PRESUPUESTO_SEGUNDOS: "2400"
         run: |
           set -euo pipefail

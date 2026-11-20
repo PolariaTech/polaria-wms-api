@@ -3,7 +3,7 @@
  *
  * Extrae el bloque `run:` real del workflow y lo ejecuta con bash, con un `gh` simulado y el `jq` de
  * verdad (así también se prueba el filtro de los PR que se fusionan). Las pruebas están en
- * `../fusion-programada.workflow.spec.ts`.
+ * `../fusion-programada.workflow.spec.ts` y `../fusion-programada.desactualizados.workflow.spec.ts`.
  */
 import { spawnSync } from 'node:child_process';
 import {
