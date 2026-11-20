@@ -18,6 +18,7 @@
 - `src/modules/configuracion/infrastructure/empresa.repository.ts`
 - `src/modules/configuracion/services/empresa.service.ts`
 - `src/modules/configuracion/services/empresa.service.spec.ts`
+- `src/modules/sales/ai/openai-pedido.prompt-snapshot.spec.ts` — autorizada por el usuario el 2026-11-20
 
 ### Compartidos (cambio mínimo y aviso)
 Ninguno.
