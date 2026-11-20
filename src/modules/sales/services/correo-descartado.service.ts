@@ -224,25 +224,25 @@ export class CorreoDescartadoService implements BeforeApplicationShutdown {
     cuenta: string,
     schemaName: string | null,
     messageId: string,
-    numeroIntentos: number,
+    _numeroIntentos: number,
   ): Promise<void> {
     try {
-      if (numeroIntentos > 1) {
-        const ovs = await this.ingresos.buscarOvsPorNumeroCorreo(
+      // REQ-365: siempre (también en el 1.er intento). Si n8n/Mateo ya creó la OV
+      // con el mismo messageId, no volver a ingestar (evita OV duplicada).
+      const ovs = await this.ingresos.buscarOvsPorNumeroCorreo(
+        schemaName,
+        cuenta,
+        messageId,
+      );
+      if (ovs[0]) {
+        await this.ingresos.marcarIngresado({
           schemaName,
-          cuenta,
+          codigoCuenta: cuenta,
           messageId,
-        );
-        if (ovs[0]) {
-          await this.ingresos.marcarIngresado({
-            schemaName,
-            codigoCuenta: cuenta,
-            messageId,
-            idOrdenVenta: ovs[0].idOrdenVenta,
-            codigoOrdenVenta: ovs.map((ov) => ov.codigo).join(', '),
-          });
-          return;
-        }
+          idOrdenVenta: ovs[0].idOrdenVenta,
+          codigoOrdenVenta: ovs.map((ov) => ov.codigo).join(', '),
+        });
+        return;
       }
       const correo = await this.gmail.obtener(messageId);
       const files: Express.Multer.File[] = [];
