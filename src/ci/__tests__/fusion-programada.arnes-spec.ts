@@ -42,9 +42,22 @@ const GH_SIMULADO =
     '  exit 0',
     'fi',
     'numero="$3"',
+    'contar() { c="$(cat "${ESCENARIO}/$1.contador" 2>/dev/null || echo 0)"; echo $((c + 1)) > "${ESCENARIO}/$1.contador"; echo "${c}"; }',
     'case "${sub}" in',
-    '  "pr view") if [ -f "${ESCENARIO}/ver-${numero}.fallo" ]; then exit 1; fi; cat "${ESCENARIO}/estado-${numero}" ;;',
+    '  "pr view")',
+    '    if [ -f "${ESCENARIO}/ver-${numero}.fallo" ]; then exit 1; fi',
+    '    case "$*" in',
+    '      *headRefOid*)',
+    '        k="$(contar "oid-${numero}")"',
+    '        if [ "${k}" = "0" ] || [ -f "${ESCENARIO}/oid-${numero}.nocambia" ]; then echo \'{"headRefOid":"aaa"}\'; else echo \'{"headRefOid":"bbb"}\'; fi ;;',
+    '      *statusCheckRollup*)',
+    '        k="$(contar "comprobaciones-${numero}")"',
+    '        jq -c --argjson k "${k}" \'{statusCheckRollup: .[([$k, (length - 1)] | min)]}\' "${ESCENARIO}/comprobaciones-${numero}.json" ;;',
+    '      *) cat "${ESCENARIO}/estado-${numero}" ;;',
+    '    esac ;;',
     '  "pr merge") if [ -f "${ESCENARIO}/fusionar-${numero}.fallo" ]; then exit 1; fi ;;',
+    '  "pr update-branch") if [ -f "${ESCENARIO}/actualizar-${numero}.fallo" ]; then exit 1; fi ;;',
+    '  "workflow run") if [ -f "${ESCENARIO}/lanzar-ci.fallo" ]; then exit 1; fi ;;',
     '  "pr edit") if [ -f "${ESCENARIO}/reapuntar-${numero}.fallo" ]; then exit 1; fi ;;',
     '  "pr comment") ;;',
     '  *) exit 99 ;;',
@@ -72,7 +85,24 @@ export interface Escenario {
   /** Llamadas de gh que deben fallar (nombre del archivo marcador, sin extensión). */
   fallan?: string[];
   soloSimular?: boolean;
+  /**
+   * Resultado de las comprobaciones de un PR, una por cada vez que el robot las consulta tras actualizar
+   * su rama (la última se repite). Por defecto, verde.
+   */
+  comprobaciones?: Record<number, EstadoComprobaciones[]>;
+  /** PR cuya rama no cambia de commit tras `pr update-branch`. */
+  sinCommitNuevo?: number[];
+  /** Segundos de PRESUPUESTO_SEGUNDOS; por defecto, de sobra. */
+  presupuesto?: number;
 }
+
+export type EstadoComprobaciones = 'verde' | 'rojo' | 'pendiente';
+
+const COMPROBACION: Record<EstadoComprobaciones, object[]> = {
+  verde: [{ conclusion: 'SUCCESS' }],
+  rojo: [{ conclusion: 'FAILURE' }],
+  pendiente: [{ conclusion: null, status: 'IN_PROGRESS' }],
+};
 
 export interface Resultado {
   codigo: number | null;
@@ -171,6 +201,15 @@ function prepararEscenario(escenario: Escenario): string {
       numeros.join('\n') + '\n',
     );
   }
+  for (const { number } of escenario.prs) {
+    const secuencia = escenario.comprobaciones?.[number] ?? ['verde'];
+    writeFileSync(
+      `${carpeta}/comprobaciones-${number}.json`,
+      JSON.stringify(secuencia.map((estado) => COMPROBACION[estado])),
+    );
+  }
+  for (const numero of escenario.sinCommitNuevo ?? [])
+    writeFileSync(`${carpeta}/oid-${numero}.nocambia`, '');
   for (const marcador of escenario.fallan ?? [])
     writeFileSync(`${carpeta}/${marcador}.fallo`, '');
   writeFileSync(
@@ -199,6 +238,10 @@ export function ejecutar(escenario: Escenario): Resultado {
       ESCENARIO: carpeta,
       REPO,
       SOLO_SIMULAR: escenario.soloSimular ? 'true' : 'false',
+      // Sin esperas reales: 3 consultas del CI sin pausa.
+      ESPERA_INTENTOS: '3',
+      ESPERA_INTERVALO: '0',
+      PRESUPUESTO_SEGUNDOS: String(escenario.presupuesto ?? 100000),
       GITHUB_STEP_SUMMARY: `${carpeta}/resumen.md`,
     },
   });
