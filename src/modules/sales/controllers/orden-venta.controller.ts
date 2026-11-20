@@ -78,4 +78,24 @@ export class OrdenVentaController {
   ): Promise<OrdenVentaEmitirResponse> {
     return this.ordenService.emitir(id, ctx);
   }
+
+  @Post(':id/cancelar')
+  @Roles(...ROLES_OV_ESCRITURA)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cancelar orden de venta (confirmada / alistamiento → cancelada)',
+    description:
+      'REQ-350: libera la reserva de stock, cancela OT/tareas pendientes y marca la OV como cancelada.',
+  })
+  @ApiOkResponse({ type: OrdenVentaEmitirResponseDto })
+  @ApiUnauthorizedResponse()
+  @ApiForbiddenResponse()
+  @ApiNotFoundResponse({ description: 'No se encontró la orden de venta' })
+  @ApiConflictResponse({ description: 'Estado no cancelable' })
+  cancelar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @TenantCtx() ctx: TenantContext,
+  ): Promise<OrdenVentaEmitirResponse> {
+    return this.ordenService.cancelar(id, ctx);
+  }
 }

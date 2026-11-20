@@ -180,3 +180,137 @@ export async function reservarStock(
 
   return asignaciones;
 }
+
+type FilaReservaNet = {
+  idWarehouseState: string;
+  idUbicacion: string;
+  idProducto: string;
+  idLote: string | null;
+  cantidad: Prisma.Decimal;
+};
+
+/**
+ * REQ-350: revierte la reserva de stock de una OV (movimientos `reserva` netos
+ * menos `liberacion_reserva`), baja `cantidad_reservada` y registra liberaciones.
+ */
+export async function liberarReservaOv(
+  tx: SqlClient,
+  schema: string,
+  orden: Pick<OrdenAReservar, 'idOrdenVenta' | 'codigoCuenta' | 'idBodega'>,
+  idUsuario: string,
+): Promise<void> {
+  const filas = await tx.$queryRawUnsafe<FilaReservaNet[]>(
+    `WITH movs AS (
+       SELECT m.id_ubicacion,
+              m.id_producto,
+              m.id_lote,
+              SUM(
+                CASE
+                  WHEN m.tipo_movimiento = 'reserva'::tipo_movimiento THEN m.cantidad
+                  WHEN m.tipo_movimiento = 'liberacion_reserva'::tipo_movimiento THEN -m.cantidad
+                  ELSE 0
+                END
+              ) AS cantidad
+       FROM ${schema}.movimiento_inventario m
+       WHERE m.codigo_cuenta = $1
+         AND m.id_referencia = $2::uuid
+         AND m.tipo_referencia = $3
+         AND m.tipo_movimiento IN (
+           'reserva'::tipo_movimiento,
+           'liberacion_reserva'::tipo_movimiento
+         )
+       GROUP BY m.id_ubicacion, m.id_producto, m.id_lote
+       HAVING SUM(
+         CASE
+           WHEN m.tipo_movimiento = 'reserva'::tipo_movimiento THEN m.cantidad
+           WHEN m.tipo_movimiento = 'liberacion_reserva'::tipo_movimiento THEN -m.cantidad
+           ELSE 0
+         END
+       ) > 0
+     )
+     SELECT ws.id_warehouse_state AS "idWarehouseState",
+            movs.id_ubicacion AS "idUbicacion",
+            movs.id_producto AS "idProducto",
+            movs.id_lote AS "idLote",
+            movs.cantidad
+     FROM movs
+     JOIN ${schema}.warehouse_state ws
+       ON ws.codigo_cuenta = $1
+      AND ws.id_bodega = $4::uuid
+      AND ws.id_ubicacion = movs.id_ubicacion
+      AND ws.id_producto = movs.id_producto
+      AND ws.id_lote IS NOT DISTINCT FROM movs.id_lote`,
+    orden.codigoCuenta,
+    orden.idOrdenVenta,
+    TIPO_REFERENCIA_ORDEN_VENTA,
+    orden.idBodega,
+  );
+
+  if (filas.length === 0) return;
+
+  const asignaciones: StockAllocation[] = filas.map((fila) => ({
+    idWarehouseState: fila.idWarehouseState,
+    idUbicacion: fila.idUbicacion,
+    idProducto: fila.idProducto,
+    idLote: fila.idLote,
+    cantidad: Number(fila.cantidad),
+  }));
+
+  await tx.$executeRawUnsafe(
+    `UPDATE ${schema}.warehouse_state ws
+     SET cantidad_reservada = GREATEST(0, ws.cantidad_reservada - r.cantidad),
+         version = ws.version + 1,
+         updated_at = now()
+     FROM jsonb_to_recordset($1::jsonb)
+       AS r(id_warehouse_state uuid, cantidad numeric)
+     WHERE ws.id_warehouse_state = r.id_warehouse_state`,
+    JSON.stringify(
+      asignaciones.map((asignacion) => ({
+        id_warehouse_state: asignacion.idWarehouseState,
+        cantidad: String(asignacion.cantidad),
+      })),
+    ),
+  );
+
+  await tx.$executeRawUnsafe(
+    `INSERT INTO ${schema}.movimiento_inventario (
+       codigo_cuenta,
+       id_bodega,
+       id_ubicacion_origen,
+       id_ubicacion_destino,
+       id_producto,
+       id_lote,
+       cantidad,
+       tipo_movimiento,
+       id_usuario,
+       id_referencia,
+       tipo_referencia
+     )
+     SELECT $1::text,
+            $2::uuid,
+            m.id_ubicacion,
+            m.id_ubicacion,
+            m.id_producto,
+            m.id_lote,
+            m.cantidad,
+            'liberacion_reserva'::tipo_movimiento,
+            $3::uuid,
+            $4::uuid,
+            $5::text
+     FROM jsonb_to_recordset($6::jsonb)
+       AS m(id_ubicacion uuid, id_producto uuid, id_lote uuid, cantidad numeric)`,
+    orden.codigoCuenta,
+    orden.idBodega,
+    idUsuario,
+    orden.idOrdenVenta,
+    TIPO_REFERENCIA_ORDEN_VENTA,
+    JSON.stringify(
+      asignaciones.map((asignacion) => ({
+        id_ubicacion: asignacion.idUbicacion,
+        id_producto: asignacion.idProducto,
+        id_lote: asignacion.idLote,
+        cantidad: String(asignacion.cantidad),
+      })),
+    ),
+  );
+}

@@ -88,7 +88,36 @@ function montar(cuentas = '023WA') {
 }
 
 describe('CorreoDescartadoService ingreso (POL-415)', () => {
-  it('en el primer intento no busca una OV ya creada', async () => {
+  it('REQ-365: en el primer intento, si ya hay OV con el sello, no duplica', async () => {
+    const { servicio, gmail, ingresos, pedidoIa } = montar();
+    ingresos.reservar.mockResolvedValue({
+      reservada: true,
+      fila: fila(),
+      numeroIntentos: 1,
+    });
+    ingresos.buscarOvsPorNumeroCorreo.mockResolvedValue([
+      { idOrdenVenta: 'ov-n8n', codigo: 'OV-N8N' },
+    ]);
+
+    await servicio.ingresar(MSG, ctx);
+    await esperarSegundoPlano();
+
+    expect(ingresos.buscarOvsPorNumeroCorreo).toHaveBeenCalledWith(
+      'emp_demo',
+      '023WA',
+      MSG,
+    );
+    expect(pedidoIa.ingestarPedido).not.toHaveBeenCalled();
+    expect(gmail.obtener).not.toHaveBeenCalled();
+    expect(ingresos.marcarIngresado).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idOrdenVenta: 'ov-n8n',
+        codigoOrdenVenta: 'OV-N8N',
+      }),
+    );
+  });
+
+  it('REQ-365: en el primer intento sin OV previa sí ingesta', async () => {
     const { servicio, gmail, ingresos, pedidoIa } = montar();
     ingresos.reservar.mockResolvedValue({
       reservada: true,
@@ -105,7 +134,8 @@ describe('CorreoDescartadoService ingreso (POL-415)', () => {
     await servicio.ingresar(MSG, ctx);
     await esperarSegundoPlano();
 
-    expect(ingresos.buscarOvsPorNumeroCorreo).not.toHaveBeenCalled();
+    expect(ingresos.buscarOvsPorNumeroCorreo).toHaveBeenCalled();
+    expect(pedidoIa.ingestarPedido).toHaveBeenCalled();
   });
 
   it('si es un reintento y ya hay OV con el sello, no duplica el pedido', async () => {
