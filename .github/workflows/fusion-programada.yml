@@ -11,34 +11,46 @@ name: Fusión programada
 #
 # Qué se fusiona (todas las condiciones a la vez):
 #   - PR hacia main, que no sea borrador;
-#   - reviewDecision = APPROVED (incluye los Code Owners si el ruleset los exige);
 #   - mergeable = MERGEABLE (sin conflictos);
 #   - al menos una comprobación, y TODAS en SUCCESS, SKIPPED o NEUTRAL (una pendiente o fallida lo deja
 #     fuera; un PR sin ninguna comprobación tampoco se fusiona);
-#   - sin la etiqueta `no-fusionar` (con ella, el PR se salta siempre).
+#   - sin la etiqueta `no-fusionar` (con ella, el PR se salta siempre: es el freno manual).
+# Desde 2026-11-20 NO se exige aprobación de revisión (decisión de Daniel: en la etapa de desarrollo
+# estorba más de lo que ayuda). El ruleset de main debe tener 0 aprobaciones requeridas; si no, GitHub
+# rechazaría la fusión del robot. Si más adelante se vuelve a exigir, se agrega aquí la condición
+# `.reviewDecision == "APPROVED"` y se restablece el ruleset.
 # Se fusionan del más antiguo al más nuevo, con commit de fusión («Merge pull request #N»), como el
-# historial actual del repo.
+# historial actual del repo. Los PR que quedan fuera aparecen en el resumen con su motivo.
+#
+# PR DESACTUALIZADO (la rama quedó detrás de main; normal tras fusionar otro PR porque el ruleset exige
+# `strict`): el robot lo ACTUALIZA él mismo y lo fusiona si el CI sale en verde:
+#   1. `gh pr update-branch` (mete main dentro de la rama; es asíncrono, por eso espera a ver el commit nuevo);
+#   2. lanza `ci.yml` a mano sobre la rama (`workflow_dispatch`). Un push hecho con el token del workflow
+#      NO dispara el evento `pull_request`, y sin esto el PR quedaría bloqueado con comprobaciones viejas;
+#      las comprobaciones de la ejecución manual quedan asociadas al commit nuevo y cuentan como las
+#      obligatorias del ruleset (esto se confirma con el primer PR real que pase por aquí);
+#   3. espera hasta ESPERA_INTENTOS x ESPERA_INTERVALO segundos a que terminen: en verde, fusiona; en
+#      rojo, es un fallo real; si no terminan a tiempo, el PR queda para la próxima ejecución.
+# Cada actualización solo empieza si su espera máxima del CI cabe en PRESUPUESTO_SEGUNDOS; si no alcanza el tiempo para otra
+# actualización, los PR que faltan quedan para la próxima ejecución.
 #
 # Si un PR no se puede fusionar, el robot SIGUE con el siguiente (cada PR se revisó y probó por separado)
-# y distingue dos casos:
-#   - DESACTUALIZADO (la rama quedó detrás de main, normal tras fusionar otro PR porque el ruleset
-#     exige `strict`): es esperado. No es un fallo; el desarrollador debe pulsar «Update branch» para que
-#     sus comprobaciones corran de nuevo, y se reintenta en la próxima ejecución. El robot NO actualiza
-#     la rama por su cuenta: un push hecho con el token del workflow no dispara el CI y el PR quedaría
-#     bloqueado con comprobaciones viejas.
-#   - FALLO REAL (conflicto, comentarios sin resolver, otra regla del ruleset): el workflow termina en
-#     ROJO al final, para que GitHub avise por correo. Los demás PR ya se habrán procesado.
+# y distingue:
+#   - EN ESPERA (el CI no terminó a tiempo o no alcanzó el tiempo): no es un fallo; se reintenta mañana.
+#   - FALLO REAL (conflicto, CI en rojo tras actualizar, comentarios sin resolver, otra regla del
+#     ruleset): el workflow termina en ROJO al final, para que GitHub avise por correo. Los demás PR ya
+#     se habrán procesado.
 #
 # PR apilados (cuya base es la rama de otro PR, no main): no se fusionan aquí. Cuando el robot fusiona
 # a un PR padre, REAPUNTA a main los PR hijos (la fusión se hace con commit de fusión, así que el
 # reapuntado es limpio) y les deja un comentario. Esto lo hace el propio robot porque la fusión con el
 # token del workflow no dispara a `auto-rebase-stacked-prs.yml`, que es el que reapunta cuando alguien
-# fusiona a mano. El hijo reapuntado queda desactualizado frente a main: hay que pulsar «Update branch».
+# fusiona a mano. El hijo reapuntado queda desactualizado frente a main: el robot lo actualiza en la
+# próxima ejecución, como a cualquier otro.
 #
 # Límites conocidos: GitHub puede retrasar unos minutos un workflow programado; los PR fusionados con el
 # token del workflow no disparan otros workflows de GitHub (el auto-deploy de Render sí se
-# dispara, porque lo activa el push a main). Con `strict`, en la práctica se fusiona un PR por noche,
-# salvo que los demás ya estén al día con main.
+# dispara, porque lo activa el push a main).
 
 on:
   schedule:
@@ -62,43 +74,58 @@ jobs:
   fusionar:
     name: Fusionar los PR listos
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 60
     permissions:
-      contents: write
-      pull-requests: write
+      contents: write # fusionar y actualizar la rama del PR
+      pull-requests: write # fusionar, reapuntar y comentar
+      actions: write # lanzar ci.yml a mano sobre la rama actualizada
+      checks: read # leer el resultado de las comprobaciones
+      statuses: read
     steps:
       - name: Fusionar los PR que cumplen todas las condiciones
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SOLO_SIMULAR: ${{ inputs.solo_simular == true && 'true' || 'false' }}
+          # Espera del CI tras actualizar una rama: 60 x 15 s = 15 min como máximo por PR.
+          ESPERA_INTENTOS: "60"
+          ESPERA_INTERVALO: "15"
+          # No se empieza a actualizar otra rama si no cabe su espera máxima del CI en este tiempo (40 min).
+          # Sumada la espera del commit nuevo (hasta 2,5 min), el peor caso es de unos 42,5 min; el timeout de 60 min lo cubre.
+          PRESUPUESTO_SEGUNDOS: "2400"
         run: |
           set -euo pipefail
           gh pr list --repo "${REPO}" --base main --state open --limit 100 \
-            --json number,title,isDraft,reviewDecision,mergeable,labels,statusCheckRollup,createdAt,headRefName > prs.json
+            --json number,title,isDraft,mergeable,labels,statusCheckRollup,createdAt,headRefName > prs.json
+
+          # Evalúa cada PR y anota por qué NO está listo (lista vacía = listo).
+          jq '
+            def ok: (.conclusion // .state) | IN("SUCCESS","SKIPPED","NEUTRAL");
+            map(. + {motivos: [
+              (if .isDraft then "es borrador" else empty end),
+              (if .mergeable != "MERGEABLE" then "no se puede fusionar (\(.mergeable))" else empty end),
+              (if (.labels | map(.name) | index("no-fusionar")) then "tiene la etiqueta no-fusionar" else empty end),
+              (if (.statusCheckRollup | length) == 0 then "no tiene comprobaciones"
+               elif (.statusCheckRollup | all(ok)) then empty
+               else "tiene comprobaciones pendientes o en rojo" end)
+            ]})' prs.json > evaluados.json
 
           # Candidatos: del más antiguo al más nuevo.
-          jq -r '
-            map(select(
-              .isDraft == false
-              and .reviewDecision == "APPROVED"
-              and .mergeable == "MERGEABLE"
-              and ((.labels | map(.name) | index("no-fusionar")) | not)
-              and ((.statusCheckRollup | length) > 0)
-              and (.statusCheckRollup | all((.conclusion // .state) as $c | ["SUCCESS","SKIPPED","NEUTRAL"] | index($c)))
-            )) | sort_by(.createdAt) | .[].number' prs.json > candidatos.txt
+          jq -r 'map(select(.motivos | length == 0)) | sort_by(.createdAt) | .[].number' evaluados.json > candidatos.txt
 
           total="$(jq 'length' prs.json)"
           listos="$(wc -l < candidatos.txt | tr -d ' ')"
           fusionados=0
+          actualizados=0
           reapuntados=0
-          desactualizados=0
+          en_espera=0
           fallos=0
           {
             echo "### Fusión programada"
             echo ""
             echo "- PR abiertos hacia main: ${total}"
             echo "- Listos para fusionar: ${listos}"
+            jq -r '.[] | select(.motivos | length > 0) | "- omitido #\(.number): \(.motivos | join(", "))"' evaluados.json
           } >> "${GITHUB_STEP_SUMMARY}"
 
           if [ "${listos}" = "0" ]; then
@@ -107,6 +134,45 @@ jobs:
             exit 0
           fi
 
+          # Verde, rojo o pendiente, según las comprobaciones actuales del PR.
+          estado_comprobaciones() {
+            gh pr view "$1" --repo "${REPO}" --json statusCheckRollup | jq -r '
+              def listo: (.conclusion // .state) | IN("SUCCESS","SKIPPED","NEUTRAL");
+              def rojo: (.conclusion // .state) | IN("FAILURE","CANCELLED","TIMED_OUT","ERROR","ACTION_REQUIRED","STARTUP_FAILURE");
+              .statusCheckRollup as $c
+              | if ($c | length) == 0 then "pendiente"
+                elif ($c | any(rojo)) then "rojo"
+                elif ($c | all(listo)) then "verde"
+                else "pendiente" end'
+          }
+
+          # Actualiza la rama del PR con main, lanza el CI a mano y espera su resultado.
+          # Deja en RESULTADO: verde, rojo, pendiente (no terminó a tiempo) o error.
+          actualizar_y_esperar() {
+            local numero="$1" rama="$2" antes despues intento resultado
+            RESULTADO="error"
+            antes="$(gh pr view "${numero}" --repo "${REPO}" --json headRefOid | jq -r '.headRefOid')" || return 0
+            gh pr update-branch "${numero}" --repo "${REPO}" || return 0
+            # La actualización es asíncrona: se espera a ver el commit nuevo antes de lanzar el CI.
+            despues="${antes}"
+            for ((intento = 1; intento <= 10; intento++)); do
+              sleep "${ESPERA_INTERVALO}"
+              despues="$(gh pr view "${numero}" --repo "${REPO}" --json headRefOid | jq -r '.headRefOid')" || return 0
+              if [ "${despues}" != "${antes}" ]; then break; fi
+            done
+            if [ "${despues}" = "${antes}" ]; then return 0; fi
+            gh workflow run ci.yml --repo "${REPO}" --ref "${rama}" || return 0
+            for ((intento = 1; intento <= ESPERA_INTENTOS; intento++)); do
+              sleep "${ESPERA_INTERVALO}"
+              resultado="$(estado_comprobaciones "${numero}")" || return 0
+              if [ "${resultado}" != "pendiente" ]; then
+                RESULTADO="${resultado}"
+                return 0
+              fi
+            done
+            RESULTADO="pendiente"
+          }
+
           while read -r numero; do
             [ -n "${numero}" ] || continue
             rama="$(jq -r --argjson n "${numero}" '.[] | select(.number == $n) | .headRefName' prs.json)"
@@ -114,6 +180,10 @@ jobs:
             if [ "${SOLO_SIMULAR}" = "true" ]; then
               echo "SIMULACIÓN: fusionaría el PR #${numero}"
               echo "- (simulación) fusionaría #${numero}" >> "${GITHUB_STEP_SUMMARY}"
+              if [ "$(gh pr view "${numero}" --repo "${REPO}" --json mergeStateStatus --jq '.mergeStateStatus' || true)" = "BEHIND" ]; then
+                echo "SIMULACIÓN: antes actualizaría la rama del PR #${numero} con main y esperaría su CI"
+                echo "- (simulación) actualizaría la rama de #${numero} y esperaría su CI" >> "${GITHUB_STEP_SUMMARY}"
+              fi
               if ! hijos="$(gh pr list --repo "${REPO}" --state open --base "${rama}" --json number --jq '.[].number')"; then
                 fallos=$((fallos + 1))
                 echo "::error::No se pudo listar los PR apilados de #${numero}."
@@ -135,17 +205,44 @@ jobs:
               echo "- NO se pudo leer el estado de #${numero}" >> "${GITHUB_STEP_SUMMARY}"
               continue
             fi
-            if [ "${estado}" = "BEHIND" ]; then
-              desactualizados=$((desactualizados + 1))
-              echo "::notice::El PR #${numero} está desactualizado respecto a main. Hay que pulsar «Update branch»; se reintenta en la próxima ejecución."
-              echo "- DESACTUALIZADO #${numero}: pulsar «Update branch» para que sus comprobaciones corran de nuevo" >> "${GITHUB_STEP_SUMMARY}"
-              continue
-            fi
             if [ "${estado}" = "DIRTY" ]; then
               fallos=$((fallos + 1))
               echo "::error::El PR #${numero} tiene conflictos con main. Hay que resolverlos."
               echo "- CONFLICTO #${numero}: resolver los conflictos con main" >> "${GITHUB_STEP_SUMMARY}"
               continue
+            fi
+            if [ "${estado}" = "BEHIND" ]; then
+              if [ $((SECONDS + ESPERA_INTENTOS * ESPERA_INTERVALO)) -gt "${PRESUPUESTO_SEGUNDOS}" ]; then
+                en_espera=$((en_espera + 1))
+                echo "::notice::No queda tiempo en esta ejecución para actualizar el PR #${numero}; se reintenta en la próxima."
+                echo "- EN ESPERA #${numero}: no alcanzó el tiempo para actualizar su rama" >> "${GITHUB_STEP_SUMMARY}"
+                continue
+              fi
+              actualizar_y_esperar "${numero}" "${rama}"
+              case "${RESULTADO}" in
+                verde)
+                  actualizados=$((actualizados + 1))
+                  echo "- rama de #${numero} actualizada con main y comprobaciones en verde" >> "${GITHUB_STEP_SUMMARY}"
+                  ;;
+                rojo)
+                  fallos=$((fallos + 1))
+                  echo "::error::Las comprobaciones del PR #${numero} fallaron tras actualizar su rama con main."
+                  echo "- CI EN ROJO #${numero}: fallaron las comprobaciones tras actualizar la rama con main" >> "${GITHUB_STEP_SUMMARY}"
+                  continue
+                  ;;
+                pendiente)
+                  en_espera=$((en_espera + 1))
+                  echo "::notice::Las comprobaciones del PR #${numero} no terminaron a tiempo; se reintenta en la próxima ejecución."
+                  echo "- EN ESPERA #${numero}: el CI no terminó a tiempo tras actualizar la rama" >> "${GITHUB_STEP_SUMMARY}"
+                  continue
+                  ;;
+                *)
+                  fallos=$((fallos + 1))
+                  echo "::error::No se pudo actualizar la rama del PR #${numero} ni lanzar su CI (¿conflicto con main?)."
+                  echo "- NO se pudo actualizar la rama de #${numero} (¿conflicto con main?)" >> "${GITHUB_STEP_SUMMARY}"
+                  continue
+                  ;;
+              esac
             fi
 
             if gh pr merge "${numero}" --repo "${REPO}" --merge; then
@@ -161,7 +258,7 @@ jobs:
               fi
               for hijo in ${hijos}; do
                 if gh pr edit "${hijo}" --repo "${REPO}" --base main; then
-                  gh pr comment "${hijo}" --repo "${REPO}" --body "La rama \`${rama}\` se fusionó a main (PR #${numero}, fusión programada), así que este PR ahora apunta a main. Pulsa «Update branch» para que sus comprobaciones corran contra main; se fusionará en la próxima ejecución si sigue aprobado y en verde." || true
+                  gh pr comment "${hijo}" --repo "${REPO}" --body "La rama \`${rama}\` se fusionó a main (PR #${numero}, fusión programada), así que este PR ahora apunta a main. La fusión programada actualizará su rama con main y lo fusionará en la próxima ejecución si sus comprobaciones salen en verde." || true
                   reapuntados=$((reapuntados + 1))
                   echo "- reapuntado a main el PR apilado #${hijo}" >> "${GITHUB_STEP_SUMMARY}"
                 else
@@ -179,8 +276,9 @@ jobs:
 
           {
             echo "- Fusionados: ${fusionados}"
+            echo "- Ramas actualizadas con main por el robot: ${actualizados}"
             echo "- PR apilados reapuntados a main: ${reapuntados}"
-            echo "- Desactualizados (esperado con strict): ${desactualizados}"
+            echo "- En espera para la próxima ejecución: ${en_espera}"
             echo "- Fallos reales: ${fallos}"
           } >> "${GITHUB_STEP_SUMMARY}"
 

@@ -24,7 +24,7 @@ describeSiHayHerramientas('fusión programada: qué PR se fusiona', () => {
       prs: [
         pr(1),
         pr(2, { isDraft: true }),
-        pr(3, { reviewDecision: 'REVIEW_REQUIRED' }),
+        pr(3, { reviewDecision: 'REVIEW_REQUIRED' }), // sin aprobación: se fusiona igual
         pr(4, { mergeable: 'CONFLICTING' }),
         pr(5, { labels: [{ name: 'no-fusionar' }] }),
         pr(6, { statusCheckRollup: [] }),
@@ -43,8 +43,45 @@ describeSiHayHerramientas('fusión programada: qué PR se fusiona', () => {
     expect(resultado.codigo).toBe(0);
     expect(llamadasA(resultado, 'pr merge')).toEqual([
       fusionar(1),
+      fusionar(3),
       fusionar(9),
     ]);
+  });
+
+  it('no exige aprobación: fusiona un PR sin revisión', () => {
+    const resultado = ejecutar({
+      prs: [
+        pr(1, { reviewDecision: '' }),
+        pr(2, { reviewDecision: 'REVIEW_REQUIRED' }),
+      ],
+    });
+    expect(resultado.codigo).toBe(0);
+    expect(numerosDe(resultado, 'pr merge')).toEqual(['1', '2']);
+  });
+
+  it('los PR que quedan fuera aparecen en el resumen con su motivo', () => {
+    const resultado = ejecutar({
+      prs: [
+        pr(1),
+        pr(2, { isDraft: true }),
+        pr(3, { labels: [{ name: 'no-fusionar' }] }),
+        pr(4, { mergeable: 'CONFLICTING' }),
+        pr(5, { statusCheckRollup: [] }),
+        pr(6, { statusCheckRollup: [{ conclusion: 'FAILURE' }] }),
+      ],
+    });
+    expect(resultado.resumen).toContain('Listos para fusionar: 1');
+    expect(resultado.resumen).toContain('omitido #2: es borrador');
+    expect(resultado.resumen).toContain(
+      'omitido #3: tiene la etiqueta no-fusionar',
+    );
+    expect(resultado.resumen).toContain(
+      'omitido #4: no se puede fusionar (CONFLICTING)',
+    );
+    expect(resultado.resumen).toContain('omitido #5: no tiene comprobaciones');
+    expect(resultado.resumen).toContain(
+      'omitido #6: tiene comprobaciones pendientes o en rojo',
+    );
   });
 
   it('fusiona del más antiguo al más nuevo', () => {
@@ -105,6 +142,8 @@ describeSiHayHerramientas('fusión programada: PR apilados y simulación', () =>
     expect(llamadasA(resultado, 'pr merge')).toEqual([]);
     expect(llamadasA(resultado, 'pr edit')).toEqual([]);
     expect(llamadasA(resultado, 'pr comment')).toEqual([]);
+    expect(llamadasA(resultado, 'pr update-branch')).toEqual([]);
+    expect(llamadasA(resultado, 'workflow run')).toEqual([]);
     expect(resultado.salida).toContain('SIMULACIÓN: fusionaría el PR #10');
     expect(resultado.salida).toContain(
       'SIMULACIÓN: reapuntaría el PR apilado #11 a main',
@@ -115,16 +154,6 @@ describeSiHayHerramientas('fusión programada: PR apilados y simulación', () =>
 describeSiHayHerramientas(
   'fusión programada: un PR que falla no detiene a los demás',
   () => {
-    it('un PR desactualizado se avisa, no es un fallo y no se fusiona', () => {
-      const resultado = ejecutar({
-        prs: [pr(10), pr(11)],
-        estados: { 10: 'BEHIND' },
-      });
-      expect(resultado.codigo).toBe(0);
-      expect(llamadasA(resultado, 'pr merge')).toEqual([fusionar(11)]);
-      expect(resultado.resumen).toContain('DESACTUALIZADO #10');
-    });
-
     it('un PR con conflictos es un fallo real, pero se fusiona el siguiente', () => {
       const resultado = ejecutar({
         prs: [pr(10), pr(11)],
